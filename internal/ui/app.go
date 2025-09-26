@@ -1,0 +1,714 @@
+package ui
+
+import (
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
+
+// EscTimeoutMsg is sent when the escape sequence times out
+type EscTimeoutMsg struct{}
+
+// App represents the main application state
+type App struct {
+	leftPanel    *Panel
+	rightPanel   *Panel
+	terminal     *Terminal
+	modalManager *ModalManager
+	width        int
+	height       int
+	activePanel  int // 0 = left, 1 = right
+	showTerminal bool
+	allResources []schema.GroupVersionKind
+	// Esc sequence tracking
+	escPressed bool
+}
+
+// NewApp creates a new application instance
+func NewApp() *App {
+	app := &App{
+		leftPanel:    NewPanel(""),
+		rightPanel:   NewPanel(""),
+		terminal:     NewTerminal(),
+		modalManager: NewModalManager(),
+		activePanel:  0,
+		showTerminal: false,
+		allResources: make([]schema.GroupVersionKind, 0),
+		escPressed:   false,
+	}
+
+	// Register modals
+	app.setupModals()
+
+	return app
+}
+
+// Init initializes the application
+func (a *App) Init() tea.Cmd {
+	return tea.Batch(
+		a.leftPanel.Init(),
+		a.rightPanel.Init(),
+		a.terminal.Init(),
+		func() tea.Msg {
+			// Focus the terminal initially since it's the main input area
+			a.terminal.Focus()
+			return nil
+		},
+	)
+}
+
+// Update handles messages and updates the application state
+func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	// Always adapt size
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		msg.Width = max(40, msg.Width)
+		msg.Height = max(5, msg.Height)
+
+		a.width = msg.Width
+		a.height = msg.Height
+
+		if a.terminal != nil {
+			// Reserve space for status bar (1 line)
+			// Terminal gets the remaining space
+			terminalMsg := tea.WindowSizeMsg{
+				Width:  msg.Width,
+				Height: msg.Height - 1,
+			}
+			model, cmd := a.terminal.Update(terminalMsg)
+			a.terminal = model.(*Terminal)
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	// Handle modals first
+	if a.modalManager.IsModalVisible() {
+		model, cmd := a.modalManager.Update(msg)
+		a.modalManager = model.(*ModalManager)
+		cmds = append(cmds, cmd)
+		return a, tea.Batch(cmds...)
+	}
+
+	// Check if terminal process has exited (check on every message)
+	if a.terminal.IsProcessExited() {
+		return a, tea.Quit
+	}
+
+	switch msg := msg.(type) {
+	case EscTimeoutMsg:
+		// Escape sequence timed out
+		a.escPressed = false
+		return a, nil
+
+	case tea.KeyMsg:
+		// Handle global shortcuts first
+		switch msg.String() {
+		case "ctrl+o":
+			// Toggle terminal mode
+			a.showTerminal = !a.showTerminal
+			a.terminal.SetShowPanels(!a.showTerminal)
+			// Always keep terminal focused for typing
+			a.terminal.Focus()
+			return a, nil
+
+		case "tab":
+			// Switch between panels
+			a.activePanel = (a.activePanel + 1) % 2
+			return a, nil
+
+		case "f10":
+			// F10 only quits kc when not in fullscreen mode
+			// In fullscreen mode, F10 should go to terminal (for shell commands)
+			if !a.showTerminal {
+				return a, tea.Quit
+			}
+			// In fullscreen mode, don't handle F10 here - let it go to terminal
+		case "ctrl+q":
+			return a, tea.Quit
+		}
+
+		// Handle Esc+number escape sequences (Esc then number)
+		keyStr := msg.String()
+		if keyStr == "esc" {
+			// Esc key pressed - start escape sequence with timeout
+			a.escPressed = true
+			return a, tea.Tick(time.Second, func(time.Time) tea.Msg {
+				return EscTimeoutMsg{}
+			})
+		} else if a.escPressed {
+			// We're in an escape sequence, check for numbers
+			switch keyStr {
+			case "0":
+				a.escPressed = false
+				// Esc 0 = F10, only quit when not in fullscreen mode
+				if !a.showTerminal {
+					return a, tea.Quit
+				}
+				// In fullscreen mode, let Esc+0 go to terminal
+			case "1":
+				a.escPressed = false
+				return a, a.showHelp() // Esc 1 = F1
+			case "2":
+				a.escPressed = false
+				return a, a.showResourceSelector() // Esc 2 = F2
+			case "3":
+				a.escPressed = false
+				return a, a.viewItem() // Esc 3 = F3
+			case "4":
+				a.escPressed = false
+				return a, a.editItem() // Esc 4 = F4
+			case "5":
+				a.escPressed = false
+				return a, a.copyItem() // Esc 5 = F5
+			case "6":
+				a.escPressed = false
+				return a, a.renameMoveItem() // Esc 6 = F6
+			case "7":
+				a.escPressed = false
+				return a, a.createNamespace() // Esc 7 = F7
+			case "8":
+				a.escPressed = false
+				return a, a.deleteResource() // Esc 8 = F8
+			case "9":
+				a.escPressed = false
+				return a, a.showContextMenu() // Esc 9 = F9
+			default:
+				// Not a number, cancel escape sequence
+				a.escPressed = false
+				// Continue with normal key handling
+			}
+		}
+
+		// In terminal mode, all input goes to terminal except Ctrl-O to return
+		if a.showTerminal {
+			// Only handle Ctrl-O to return to panel mode
+			if msg.String() == "ctrl+o" {
+				a.showTerminal = false
+				return a, nil
+			}
+			// Everything else goes to the terminal
+			model, cmd := a.terminal.Update(msg)
+			a.terminal = model.(*Terminal)
+			cmds = append(cmds, cmd)
+		} else {
+			// In panel mode, use smart key routing based on terminal state
+			if a.shouldRouteToPanel(msg.String()) {
+				// Handle panel-specific keys
+				if a.activePanel == 0 {
+					model, cmd := a.leftPanel.Update(msg)
+					a.leftPanel = model.(*Panel)
+					cmds = append(cmds, cmd)
+				} else {
+					model, cmd := a.rightPanel.Update(msg)
+					a.rightPanel = model.(*Panel)
+					cmds = append(cmds, cmd)
+				}
+			} else {
+				// Route to terminal
+				model, cmd := a.terminal.Update(msg)
+				a.terminal = model.(*Terminal)
+				cmds = append(cmds, cmd)
+			}
+		}
+	default:
+		// Pass other messages to terminal (e.g., process exit)
+		model, cmd := a.terminal.Update(msg)
+		a.terminal = model.(*Terminal)
+		cmds = append(cmds, cmd)
+	}
+
+	return a, tea.Batch(cmds...)
+}
+
+// shouldRouteToPanel determines if a key should be routed to the panel based on terminal state
+func (a *App) shouldRouteToPanel(key string) bool {
+	// Always route these keys to terminal
+	terminalKeys := []string{
+		"left", "right", // Always go to terminal
+		"space", // Never go to panels
+	}
+
+	for _, termKey := range terminalKeys {
+		if key == termKey {
+			return false
+		}
+	}
+
+	// Always route these keys to panels
+	// Always route specific keys to panels regardless of terminal state
+	panelKeys := []string{
+		// Navigation keys
+		"up", "down", "left", "right", // Navigate items
+		"home", "end", // Navigate to beginning/end
+		"pgup", "pgdown", // Page up/down
+		// Panel control keys
+		"tab",    // Switch panels
+		"ctrl+o", // Toggle fullscreen
+		// Selection keys
+		"ctrl+t", "insert", // Toggle selection
+		"*",      // Invert selection
+		"ctrl+a", // Select all
+		// Function keys (F10 handled separately for fullscreen vs panel mode)
+		"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f11", "f12",
+		// Other panel actions
+		"ctrl+r", // Refresh
+		"ctrl+s", // Search
+		"esc",    // Cancel
+	}
+
+	for _, panelKey := range panelKeys {
+		if key == panelKey {
+			return true
+		}
+	}
+
+	// Special handling for Enter key
+	if key == "enter" {
+		// Check if terminal has non-empty input
+		if a.terminal != nil && a.terminal.HasInput() {
+			return false // Route Enter to terminal if user is typing
+		}
+		return true // Route Enter to panels if terminal is empty
+	}
+
+	// Special handling for + and - keys (glob patterns)
+	if key == "+" || key == "-" {
+		// Only route to panels if terminal is empty
+		if a.terminal != nil && a.terminal.HasInput() {
+			return false // Route to terminal if user is typing
+		}
+		return true // Route to panels if terminal is empty
+	}
+
+	// Special handling for F10 key
+	if key == "f10" {
+		// In fullscreen mode, F10 goes to terminal (for shell commands)
+		// In panel mode, F10 quits kc (handled in main switch statement)
+		return false // Always route to terminal
+	}
+
+	// Default: route to terminal for typing
+	return false
+}
+
+// View renders the application
+func (a *App) View() (string, *tea.Cursor) {
+	// In fullscreen terminal mode, only show terminal
+	if a.showTerminal {
+		terminalView, terminalCursor := a.renderTerminalView()
+		return terminalView, terminalCursor
+	}
+
+	// In normal mode, show main view
+	mainView, mainCursor := a.renderMainView()
+
+	// Overlay modal if visible
+	if a.modalManager.IsModalVisible() {
+		modalView := a.modalManager.View()
+		combinedView := lipgloss.JoinVertical(lipgloss.Left, mainView, modalView)
+		return combinedView, mainCursor
+	}
+
+	return mainView, mainCursor
+}
+
+// renderMainView renders the main two-panel view
+func (a *App) renderMainView() (string, *tea.Cursor) {
+	// Calculate dimensions
+	// Reserve space for: terminal (2) + function keys (1) = 3 lines
+	panelHeight := a.height - 3
+	panelWidth := a.width / 2 // No separator needed
+
+	// Set dimensions for panel content (accounting for borders)
+	// Each panel needs 2 characters width and 2 lines height for borders
+	contentWidth := panelWidth - 2
+	contentHeight := panelHeight - 2
+	if contentWidth < 0 {
+		contentWidth = 1
+	}
+	if contentHeight < 0 {
+		contentHeight = 1
+	}
+
+	a.leftPanel.SetDimensions(contentWidth, contentHeight-1)  // -1 for footer space
+	a.rightPanel.SetDimensions(contentWidth, contentHeight-1) // -1 for footer space
+	leftContentView := a.leftPanel.ViewContentOnlyFocused(a.activePanel == 0)
+	rightContentView := a.rightPanel.ViewContentOnlyFocused(a.activePanel == 1)
+
+	// Calculate heights for frame and footer
+	footerHeight := 2
+	frameHeight := panelHeight - footerHeight
+
+	// Create frames with proper dimensions, passing focus state
+	leftFramed := a.createFrameWithOverlayTitle(leftContentView, a.leftPanel.GetCurrentPath(), panelWidth, frameHeight, a.activePanel == 0)
+	rightFramed := a.createFrameWithOverlayTitle(rightContentView, a.rightPanel.GetCurrentPath(), panelWidth, frameHeight, a.activePanel == 1)
+
+	// Create framed footers with T-junction connection
+	leftFooter := a.createFramedFooter(a.leftPanel.GetFooter(), panelWidth)
+	rightFooter := a.createFramedFooter(a.rightPanel.GetFooter(), panelWidth)
+
+	// Combine frame and footer for each panel
+	leftPanel := lipgloss.JoinVertical(lipgloss.Top, leftFramed, leftFooter)
+	rightPanel := lipgloss.JoinVertical(lipgloss.Top, rightFramed, rightFooter)
+
+	// Combine panels without separator
+	panels := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		leftPanel,
+		rightPanel,
+	)
+
+	// Add terminal (2 lines)
+	terminalView, terminalCursor := a.renderTerminalArea()
+
+	// Add function key bar
+	functionKeys := a.renderFunctionKeys()
+
+	combinedView := lipgloss.JoinVertical(
+		lipgloss.Left,
+		panels,
+		terminalView,
+		functionKeys,
+	)
+
+	// Adjust cursor position for the combined view
+	// The cursor needs to be offset by the height of panels
+	if terminalCursor != nil {
+		// Calculate the offset: panels height
+		offsetY := panelHeight
+		adjustedCursor := tea.NewCursor(terminalCursor.X, terminalCursor.Y+offsetY)
+		adjustedCursor.Blink = terminalCursor.Blink
+		adjustedCursor.Color = terminalCursor.Color
+		adjustedCursor.Shape = terminalCursor.Shape
+		return combinedView, adjustedCursor
+	}
+
+	return combinedView, nil
+}
+
+// renderTerminalArea renders the 2-line terminal area in main view
+func (a *App) renderTerminalArea() (string, *tea.Cursor) {
+	terminalView, terminalCursor := a.terminal.View()
+	return terminalView, terminalCursor
+}
+
+// renderTerminalView renders the full-screen terminal view
+func (a *App) renderTerminalView() (string, *tea.Cursor) {
+	// Get terminal view
+	terminalView, terminalCursor := a.terminal.View()
+
+	// Add toggle message
+	toggleMsg := a.renderToggleMessage()
+
+	// Combine terminal and toggle message
+	combinedView := lipgloss.JoinVertical(
+		lipgloss.Left,
+		terminalView,
+		toggleMsg,
+	)
+
+	// Adjust cursor position for the combined view
+	if terminalCursor != nil {
+		// Cursor position doesn't need adjustment since toggle message is below terminal
+		return combinedView, terminalCursor
+	}
+
+	return combinedView, nil
+}
+
+// renderFunctionKeys renders the function key bar
+func (a *App) renderFunctionKeys() string {
+	var keys []string
+
+	if a.showTerminal {
+		// In terminal mode, only show Ctrl-O to return
+		keys = []string{
+			FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels"),
+		}
+	} else {
+		// In panel mode, show all function keys
+		keys = []string{
+			FunctionKeyStyle.Render("F1") + FunctionKeyDescriptionStyle.Render("Help"),
+			FunctionKeyStyle.Render("F2") + FunctionKeyDescriptionStyle.Render("Resources"),
+			FunctionKeyStyle.Render("F3") + FunctionKeyDescriptionStyle.Render("View"),
+			FunctionKeyStyle.Render("F4") + FunctionKeyDescriptionStyle.Render("Edit"),
+			FunctionKeyStyle.Render("F5") + FunctionKeyDescriptionStyle.Render("Copy"),
+			FunctionKeyStyle.Render("F6") + FunctionKeyDescriptionStyle.Render("Rename/Move"),
+			FunctionKeyStyle.Render("F7") + FunctionKeyDescriptionStyle.Render("Namespace"),
+			FunctionKeyStyle.Render("F8") + FunctionKeyDescriptionStyle.Render("Delete"),
+			FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"),
+			FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"),
+			FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"),
+		}
+	}
+
+	// Add spaces between keys
+	renderedKeys := make([]string, 0, len(keys)*2-1)
+	for _, key := range keys {
+		renderedKeys = append(renderedKeys, key)
+	}
+
+	// Join all elements (keys + spaces)
+	joined := lipgloss.JoinHorizontal(lipgloss.Left, renderedKeys...)
+
+	// Always add "Kubernetes Commander" right-aligned
+	title := " Kubernetes Commander "
+
+	// Create a full-width container with left-aligned keys and right-aligned title
+	fullWidthStyle := FunctionKeyBarStyle.
+		Width(a.width).
+		Align(lipgloss.Left)
+
+	// Create a full-width container with left-aligned keys and right-aligned title
+	titleStyle := FunctionKeyTitleStyle.
+		Align(lipgloss.Center).
+		Width(a.width - lipgloss.Width(joined) - 1)
+
+	// Calculate the exact spacing needed to push title to the right edge
+	titleRendered := titleStyle.Render(title)
+
+	return fullWidthStyle.Render(joined + " " + titleRendered)
+}
+
+// renderToggleMessage renders the toggle message for fullscreen mode
+func (a *App) renderToggleMessage() string {
+	// Create the same layout as function keys
+	key := FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")
+	title := FunctionKeyTitleStyle.Render("Kubernetes Commander")
+
+	// Calculate the exact spacing needed to push title to the right edge
+	spacing := a.width - len(key) - len(title)
+	if spacing < 0 {
+		spacing = 1 // minimum spacing
+	}
+
+	content := key + strings.Repeat(" ", spacing) + title
+
+	// Create a full-width container
+	fullWidthStyle := FunctionKeyBarStyle.
+		Width(a.width).
+		Align(lipgloss.Center).
+		Width(a.width - lipgloss.Width(content))
+
+	return fullWidthStyle.Render(content)
+}
+
+// setupModals sets up the modal dialogs
+func (a *App) setupModals() {
+	// Resource selector modal
+	resourceSelector := NewResourceSelector(a.allResources)
+	resourceModal := NewModal("Resource Selection", resourceSelector)
+	resourceModal.SetOnClose(func() tea.Cmd {
+		// TODO: Apply selected resources to panels
+		return nil
+	})
+	a.modalManager.Register("resource_selector", resourceModal)
+}
+
+// Message handlers for function keys
+func (a *App) showResourceSelector() tea.Cmd {
+	a.modalManager.Show("resource_selector")
+	return nil
+}
+
+func (a *App) viewResource() tea.Cmd {
+	// TODO: Implement resource viewer
+	return nil
+}
+
+func (a *App) editResource() tea.Cmd {
+	// TODO: Implement resource editor
+	return nil
+}
+
+func (a *App) createNamespace() tea.Cmd {
+	// TODO: Implement namespace creation
+	return nil
+}
+
+func (a *App) deleteResource() tea.Cmd {
+	// TODO: Implement resource deletion
+	return nil
+}
+
+func (a *App) showContextMenu() tea.Cmd {
+	// TODO: Implement context menu
+	return nil
+}
+
+// Function key action methods
+func (a *App) showHelp() tea.Cmd {
+	// TODO: Implement help dialog
+	return nil
+}
+
+func (a *App) viewItem() tea.Cmd {
+	// TODO: Implement view functionality (F3)
+	return nil
+}
+
+func (a *App) editItem() tea.Cmd {
+	// TODO: Implement edit functionality (F4)
+	return nil
+}
+
+func (a *App) copyItem() tea.Cmd {
+	// TODO: Implement copy functionality (F5)
+	return nil
+}
+
+func (a *App) renameMoveItem() tea.Cmd {
+	// TODO: Implement rename/move functionality (F6)
+	return nil
+}
+
+// createFrameWithOverlayTitle creates a frame with title overlaid on the top border
+// Based on the approach from https://gist.github.com/meowgorithm/1777377a43373f563476a2bcb7d89306
+func (a *App) createFrameWithOverlayTitle(content, title string, width, height int, isFocused bool) string {
+	if title == "" {
+		// No title, just return regular frame
+		return lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color(ColorGrey)).
+			Background(lipgloss.Color(ColorDarkerBlue)).
+			Width(width).
+			Height(height).
+			Render(content)
+	}
+
+	// Create the box style
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color(ColorGrey)).
+		BorderBackground(lipgloss.Color(ColorDarkerBlue)).
+		Background(lipgloss.Color(ColorDarkerBlue)).
+		Width(width).
+		Height(height)
+
+	// Create label style for the title based on focus state
+	var labelStyle lipgloss.Style
+	if isFocused {
+		// Focused panel: grey background, black text
+		labelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ColorBlack)).
+			Background(lipgloss.Color(ColorGrey)).
+			Padding(0, 1)
+	} else {
+		// Unfocused panel: dark blue background, grey text
+		labelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ColorGrey)).
+			Background(lipgloss.Color(ColorDarkerBlue)).
+			Padding(0, 1)
+	}
+
+	// Get border properties
+	border := boxStyle.GetBorderStyle()
+	topBorderStyler := lipgloss.NewStyle().
+		Foreground(boxStyle.GetBorderTopForeground()).
+		Background(boxStyle.GetBorderTopBackground()).
+		Render
+
+	topLeft := topBorderStyler(border.TopLeft)
+	topRight := topBorderStyler(border.TopRight)
+	renderedLabel := labelStyle.Render(title)
+
+	// Calculate centered positioning for the title
+	availableSpace := width - lipgloss.Width(topLeft+topRight)
+	labelWidth := lipgloss.Width(renderedLabel)
+
+	var top string
+	if labelWidth >= availableSpace {
+		// Title too long, just put it at the start
+		gap := strings.Repeat(border.Top, max(0, availableSpace-labelWidth))
+		top = topLeft + renderedLabel + topBorderStyler(gap) + topRight
+	} else {
+		// Center the title
+		totalBorderNeeded := availableSpace - labelWidth
+		leftBorder := totalBorderNeeded / 2
+		rightBorder := totalBorderNeeded - leftBorder
+
+		leftGap := topBorderStyler(strings.Repeat(border.Top, leftBorder))
+		rightGap := topBorderStyler(strings.Repeat(border.Top, rightBorder))
+		top = topLeft + leftGap + renderedLabel + rightGap + topRight
+	}
+
+	// Render the rest of the box without the top border
+	bottom := boxStyle.Copy().
+		BorderTop(false).
+		Width(width).
+		Height(height - 1). // Subtract 1 since we're manually adding the top
+		Render(content)
+
+	// Replace the two corner characters at the TOP of the footer with T-junction characters
+	lines := strings.Split(bottom, "\n")
+	if len(lines) >= 2 {
+		// The bottom border line (last line) - replace └ with ├ and ┘ with ┤
+		bottomLine := lines[len(lines)-1]
+		bottomLine = strings.Replace(bottomLine, "└", "├", 1)
+		bottomLine = strings.Replace(bottomLine, "┘", "┤", 1)
+		lines[len(lines)-1] = bottomLine
+	}
+
+	// Combine the custom top with the box
+	return top + "\n" + strings.Join(lines, "\n")
+}
+
+// createFramedFooter creates a framed footer with T-junction characters at the top
+func (a *App) createFramedFooter(content string, width int) string {
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderTop(false). // No top border since it connects to the main frame
+		BorderForeground(lipgloss.Color(ColorGrey)).
+		BorderBackground(lipgloss.Color(ColorDarkerBlue)).
+		Background(lipgloss.Color(ColorDarkerBlue)).
+		Foreground(lipgloss.Color(ColorWhite)).
+		Width(width).
+		Render(content)
+}
+
+// Run starts the application
+func Run() error {
+	app := NewApp()
+
+	// Create program with proper options
+	p := tea.NewProgram(
+		app,
+		tea.WithAltScreen(),        // Use alternate screen buffer
+		tea.WithMouseCellMotion(),  // Enable mouse support
+		tea.WithoutSignalHandler(), // Handle signals ourselves
+	)
+
+	// Set up signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		// Send quit message to the program
+		p.Quit()
+	}()
+
+	// Ensure terminal is reset on exit
+	defer func() {
+		// Reset terminal to normal state
+		fmt.Print("\033[?1049l") // Exit alternate screen
+		fmt.Print("\033[?25h")   // Show cursor
+		fmt.Print("\033[0m")     // Reset all attributes
+	}()
+
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error running application: %v\n", err)
+		return err
+	}
+
+	return nil
+}
