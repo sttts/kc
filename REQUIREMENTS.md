@@ -68,6 +68,9 @@
 - "View" menu toggles panel settings per side: sort order (by name, creationTimestamp, last change time from `metadata.managedFields`), sort direction, column visibility, and optional grouping.
 - Tri‑state settings (Yes/No/Default) with scope: global defaults and per‑resource overrides (by resource plural). Example: Table View = Default globally, but Pods = Yes, Services = No.
 
+## Favorites
+- Provide a favorites list of resource types used to populate shortcuts (e.g., the default resource set in selectors). Seed this list from the server’s discovery alias "all". Users can add or remove resources from favorites to override discovery (persist this preference and respect it across sessions).
+
 ## Object Views
 - Pods: entering a pod shows its containers (including initContainers) as folders. Under each container, a `logs` entry exists. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + live streaming). `Esc` closes.
 - ConfigMaps/Secrets: entering shows data keys as file‑like entries. `F3` views the value in a modal; `F4` edits the field in an editor modal (text); binary data is indicated and not shown raw.
