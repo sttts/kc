@@ -10,17 +10,19 @@ import (
 
 // Panel represents a file/resource panel
 type Panel struct {
-	title     string
-	items     []Item
-	selected  int
-	scrollTop int
-	width     int
-	height    int
-	// Navigation state
-	currentPath string
-	pathHistory []string
-	// Position memory - maps path to position info
-	positionMemory map[string]PositionInfo
+    title     string
+    items     []Item
+    selected  int
+    scrollTop int
+    width     int
+    height    int
+    // Navigation state
+    currentPath string
+    pathHistory []string
+    // Position memory - maps path to position info
+    positionMemory map[string]PositionInfo
+    // Live data
+    nsData *NamespacesDataSource
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -60,15 +62,20 @@ const (
 
 // NewPanel creates a new panel
 func NewPanel(title string) *Panel {
-	return &Panel{
-		title:          title,
-		items:          make([]Item, 0),
-		selected:       0,
-		scrollTop:      0,
-		currentPath:    "/",
-		pathHistory:    make([]string, 0),
-		positionMemory: make(map[string]PositionInfo),
-	}
+    return &Panel{
+        title:          title,
+        items:          make([]Item, 0),
+        selected:       0,
+        scrollTop:      0,
+        currentPath:    "/",
+        pathHistory:    make([]string, 0),
+        positionMemory: make(map[string]PositionInfo),
+    }
+}
+
+// SetNamespacesDataSource wires a namespaces data source for live listings.
+func (p *Panel) SetNamespacesDataSource(ds *NamespacesDataSource) {
+    p.nsData = ds
 }
 
 // Init initializes the panel
@@ -576,13 +583,22 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 			{Name: "kind-kind", Type: ItemTypeContext, Size: "", Modified: "30m"},
 		}...)
 
-	case "/namespaces":
-		// Namespaces level - show available namespaces
-		p.items = append(p.items, []Item{
-			{Name: "default", Type: ItemTypeNamespace, Size: "", Modified: "2h", GVK: "v1 Namespace"},
-			{Name: "kube-system", Type: ItemTypeNamespace, Size: "", Modified: "2h", GVK: "v1 Namespace"},
-			{Name: "kube-public", Type: ItemTypeNamespace, Size: "", Modified: "2h", GVK: "v1 Namespace"},
-		}...)
+    case "/namespaces":
+        // Namespaces level - show available namespaces (live via data source if available)
+        if p.nsData != nil {
+            if items, err := p.nsData.List(); err == nil {
+                p.items = append(p.items, items...)
+            } else {
+                // Fallback to placeholder on error
+                p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
+            }
+        } else {
+            p.items = append(p.items, []Item{
+                {Name: "default", Type: ItemTypeNamespace, Size: "", Modified: "", GVK: "v1 Namespace"},
+                {Name: "kube-system", Type: ItemTypeNamespace, Size: "", Modified: "", GVK: "v1 Namespace"},
+                {Name: "kube-public", Type: ItemTypeNamespace, Size: "", Modified: "", GVK: "v1 Namespace"},
+            }...)
+        }
 
 	case "/cluster-resources":
 		// Cluster resources level - show cluster-wide resources
