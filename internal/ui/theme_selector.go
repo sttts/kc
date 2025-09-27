@@ -19,6 +19,7 @@ type ThemeSelector struct {
 func NewThemeSelector(onApply func(name string) tea.Cmd) *ThemeSelector {
     // Curated list to keep selection compact while useful.
     curated := []string{
+        "turbo-pascal", // custom style resembling Turbo Pascal colors
         "dracula", "monokai", "github-dark", "nord", "solarized-dark",
         "solarized-light", "gruvbox-dark", "friendly", "borland", "native",
     }
