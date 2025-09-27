@@ -17,6 +17,8 @@ type ThemeSelector struct {
 }
 
 func NewThemeSelector(onApply func(name string) tea.Cmd) *ThemeSelector {
+    // Ensure custom styles (e.g., turbo-pascal) are registered before fetching names
+    registerCustomStylesOnce()
     // Curated list to keep selection compact while useful.
     curated := []string{
         "turbo-pascal", // custom style resembling Turbo Pascal colors
