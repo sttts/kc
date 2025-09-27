@@ -17,7 +17,20 @@ type ThemeSelector struct {
 }
 
 func NewThemeSelector(onApply func(name string) tea.Cmd) *ThemeSelector {
-    names := styles.Names()
+    // Curated list to keep selection compact while useful.
+    curated := []string{
+        "dracula", "monokai", "github-dark", "nord", "solarized-dark",
+        "solarized-light", "gruvbox-dark", "friendly", "borland", "native",
+    }
+    // Intersect curated with available; fall back to all if intersection is small.
+    avail := styles.Names()
+    set := map[string]bool{}
+    for _, n := range avail { set[n] = true }
+    var names []string
+    for _, n := range curated { if set[n] { names = append(names, n) } }
+    if len(names) < 5 {
+        names = avail
+    }
     sort.Strings(names)
     return &ThemeSelector{names: names, selected: 0, onApply: onApply}
 }
@@ -69,4 +82,3 @@ func (s *ThemeSelector) View() string {
     }
     return PanelContentStyle.Width(s.width).Height(s.height).Render(b.String())
 }
-

@@ -16,6 +16,13 @@ type Modal struct {
     onClose func() tea.Cmd
 }
 
+// ModalFooterHints allows content to contribute footer key hints
+// rendered next to the default "Esc Close".
+type ModalFooterHints interface {
+    // FooterHints returns a list of key,label pairs to render in the footer.
+    FooterHints() [][2]string
+}
+
 // Init initializes the modal
 func (m *Modal) Init() tea.Cmd {
 	return m.content.Init()
@@ -152,6 +159,12 @@ func (m *Modal) View() string {
     frame := top + "\n" + strings.Join(lines, "\n")
     // Function key bar outside the frame
     footer := FunctionKeyStyle.Render("Esc") + FunctionKeyDescriptionStyle.Render("Close")
+    if provider, ok := m.content.(ModalFooterHints); ok {
+        for _, kv := range provider.FooterHints() {
+            key, label := kv[0], kv[1]
+            footer += " " + FunctionKeyStyle.Render(key) + FunctionKeyDescriptionStyle.Render(label)
+        }
+    }
     footerLine := FunctionKeyBarStyle.Width(m.width).Render(footer)
     return lipgloss.JoinVertical(lipgloss.Left, frame, footerLine)
 }
