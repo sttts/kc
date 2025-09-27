@@ -36,6 +36,20 @@ Current tasks
   - [ ] Ensure initial `Synced` event triggers first render to avoid empty flashes.
   - [ ] Extend live listings to namespace resources (e.g., `/namespaces/<ns>/pods`).
 
+## Object Views (Core UX)
+- [ ] Pods detail: entering a pod shows container list (containers + initContainers). Under each container, add a `logs` subresource. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + watch). `Esc` closes.
+- [ ] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal; `F4` edits the field in an editor modal. Handle binary secret data gracefully.
+- [ ] `F3` YAML viewer: fullscreen popup with syntax highlighting; supports Up/Down, PgUp/PgDn, Home/End, `Esc` to exit; `F4` from the viewer runs `kubectl edit`. Render the real object (strip `managedFields`).
+- [ ] `F4` Edit: launch `kubectl edit` for the current object; refresh on successful apply.
+- [ ] Function key bar: dynamic and context-aware (grey out unavailable actions per location/object).
+
+## Terminal 2‑Line Mode
+- [x] Enter and Ctrl‑C in 2‑line terminal (with prior typed input) return focus to the panel instead of sending the key to the terminal.
+
+## Table View Enhancements
+- [x] Namespaces: prefer server‑side Table with header + aligned columns.
+- [ ] Horizontal scroll: when columns exceed panel width, support column‑wise scrolling with Left/Right keys; gate on “no typed input” (same Enter routing gating).
+
 ## Milestone 3 — Terminal Follows Navigation
 - Terminal context manager for the integrated PTY session.
 - Strategy (non-destructive preferred):
