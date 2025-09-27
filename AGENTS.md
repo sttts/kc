@@ -44,6 +44,9 @@
 - PRs must include: concise summary, rationale, test plan/commands, linked issues, and screenshots/GIFs for TUI changes.
 - Keep changes focused; include or update tests and docs relevant to your change.
 
+### Build & Test Before Commit
+- Always compile and run tests before committing. At minimum: `go build ./...` and `go test ./...` (or the impacted packages when the full suite is costly). Do not commit if build or tests fail.
+
 See `TODO.md` for the active development plan and current tasks.
 
 ### Git Hygiene
