@@ -756,15 +756,29 @@ func (p *Panel) enterDirectory(item Item) tea.Cmd {
 }
 
 func (p *Panel) enterResource(item Item) tea.Cmd {
-	// Navigate into a resource group within the current namespace path or into an object instance when supported.
-	if strings.HasPrefix(p.currentPath, "/namespaces/") {
+	// Navigate into resource listings depending on location.
+	switch {
+	case strings.HasPrefix(p.currentPath, "/namespaces/"):
+		// Namespaced resource listing
 		newPath := p.currentPath + "/" + item.Name
 		cmd := p.navigateTo(newPath, true)
-		p.selected = 0
-		p.scrollTop = 0
+		p.selected, p.scrollTop = 0, 0
 		return cmd
+	case p.currentPath == "/":
+		// Cluster-scoped resource listing at root
+		newPath := "/" + item.Name
+		cmd := p.navigateTo(newPath, true)
+		p.selected, p.scrollTop = 0, 0
+		return cmd
+	case strings.HasPrefix(p.currentPath, "/contexts/"):
+		// Context-qualified cluster resources (same shape as root, under context)
+		newPath := p.currentPath + "/" + item.Name
+		cmd := p.navigateTo(newPath, true)
+		p.selected, p.scrollTop = 0, 0
+		return cmd
+	default:
+		return nil
 	}
-	return nil
 }
 
 func (p *Panel) enterNamespace(item Item) tea.Cmd {
