@@ -35,6 +35,8 @@ type Panel struct {
     namespacedCatalog map[string]schema.GroupVersionKind
     genericFactory func(schema.GroupVersionKind) *GenericDataSource
     currentResourceGVK *schema.GroupVersionKind
+    tableHeaders []string
+    tableRows    [][]string
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -315,8 +317,24 @@ func (p *Panel) renderItem(item Item, selected bool) string {
         line.WriteString(" ")
     }
 
-	// Item name
-	line.WriteString(item.Name)
+    // Item name or table row
+    if p.tableRows != nil && item.Name != ".." && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
+        // Determine row index, accounting for optional ".." at top
+        idx := p.indexOf(item)
+        if idx >= 0 {
+            if len(p.items) > 0 && p.items[0].Name == ".." { idx-- }
+            if idx >= 0 && idx < len(p.tableRows) {
+                rowStr := strings.Join(p.tableRows[idx], "  ")
+                line.WriteString(rowStr)
+            } else {
+                line.WriteString(item.Name)
+            }
+        } else {
+            line.WriteString(item.Name)
+        }
+    } else {
+        line.WriteString(item.Name)
+    }
 
 	// Size and modified time (if available)
 	if item.Size != "" || item.Modified != "" {
@@ -348,7 +366,17 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 		style = PanelItemSelectedStyle.Width(p.width)
 	}
 
-	return style.Render(lineStr)
+    return style.Render(lineStr)
+}
+
+// indexOf returns the index of the given item by name match.
+func (p *Panel) indexOf(target Item) int {
+    for i := range p.items {
+        if p.items[i].Name == target.Name && p.items[i].Type == target.Type {
+            return i
+        }
+    }
+    return -1
 }
 
 // renderFooter renders the panel footer
@@ -698,7 +726,13 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
                     }
                 }
                 if p.resourceData != nil {
-                    if items, err := p.resourceData.List(ns); err == nil {
+                    // Prefer server-side table if available
+                    if headers, rows, items, err := p.resourceData.ListTable(ns); err == nil {
+                        p.tableHeaders = headers
+                        p.tableRows = rows
+                        p.items = append(p.items, items...)
+                    } else if items, err := p.resourceData.List(ns); err == nil {
+                        p.tableHeaders, p.tableRows = nil, nil
                         p.items = append(p.items, items...)
                     } else {
                         p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
