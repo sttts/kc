@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/sschimanski/kc/pkg/handlers"
-	"github.com/sschimanski/kc/pkg/kubeconfig"
-	"github.com/sschimanski/kc/pkg/resources"
+	"github.com/sttts/kc/pkg/handlers"
+	"github.com/sttts/kc/pkg/kubeconfig"
+	"github.com/sttts/kc/pkg/resources"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sschimanski/kc/pkg/kubeconfig"
+	"github.com/sttts/kc/pkg/kubeconfig"
 )
 
 func writeKubeconfigFile(t *testing.T, dir, name string, kubeconfigYAML string) string {

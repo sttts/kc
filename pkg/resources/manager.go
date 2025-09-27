@@ -8,7 +8,7 @@ import (
     "sync"
     "time"
 
-	"github.com/sschimanski/kc/pkg/handlers"
+    "github.com/sttts/kc/pkg/handlers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"

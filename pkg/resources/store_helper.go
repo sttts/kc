@@ -3,7 +3,7 @@ package resources
 import (
     "time"
 
-    "github.com/sschimanski/kc/pkg/kubeconfig"
+    "github.com/sttts/kc/pkg/kubeconfig"
 )
 
 // NewStoreProviderForContext creates a StoreProvider bound to the given kubeconfig context.
@@ -15,4 +15,3 @@ func NewStoreProviderForContext(ctx *kubeconfig.Context, ttl time.Duration) (Sto
     key := ClusterKey{KubeconfigPath: ctx.Kubeconfig.Path, ContextName: ctx.Name}
     return NewCRStoreProvider(pool, key), pool
 }
-

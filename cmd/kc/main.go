@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sschimanski/kc/internal/ui"
+	"github.com/sttts/kc/internal/ui"
 )
 
 var (

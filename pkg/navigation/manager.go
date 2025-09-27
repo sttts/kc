@@ -7,8 +7,8 @@ import (
     "sort"
     "strings"
 
-    "github.com/sschimanski/kc/pkg/kubeconfig"
-    "github.com/sschimanski/kc/pkg/resources"
+    "github.com/sttts/kc/pkg/kubeconfig"
+    "github.com/sttts/kc/pkg/resources"
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
     "k8s.io/apimachinery/pkg/runtime/schema"
 )

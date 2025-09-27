@@ -12,9 +12,9 @@ import (
 
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/charmbracelet/lipgloss/v2"
-    "github.com/sschimanski/kc/pkg/kubeconfig"
-    "github.com/sschimanski/kc/pkg/navigation"
-    "github.com/sschimanski/kc/pkg/resources"
+    "github.com/sttts/kc/pkg/kubeconfig"
+    "github.com/sttts/kc/pkg/navigation"
+    "github.com/sttts/kc/pkg/resources"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime/schema"
 )

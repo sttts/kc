@@ -3,7 +3,7 @@ package resources
 import (
 	"testing"
 
-	"github.com/sschimanski/kc/pkg/handlers"
+	"github.com/sttts/kc/pkg/handlers"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"

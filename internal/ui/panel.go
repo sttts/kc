@@ -7,7 +7,7 @@ import (
 
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/charmbracelet/lipgloss/v2"
-    "github.com/sschimanski/kc/pkg/resources"
+    "github.com/sttts/kc/pkg/resources"
     "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
