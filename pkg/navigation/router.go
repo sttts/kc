@@ -70,9 +70,16 @@ func (r *SimpleRouter) Parse(raw string) (Path, error) {
     case RootContexts:
         // /contexts/<ctx>/... mirrors /cluster under the context
         if len(segs) >= 2 { p.Context = segs[1] }
-        // passthrough remaining components to cluster-style parsing
-        rem := append([]string{"cluster"}, segs[2:]...)
-        q, _ := r.Parse("/" + strings.Join(rem, "/"))
+        // Remaining path: if it already starts with a known root (cluster/groups), pass through; otherwise assume cluster root.
+        tail := []string{}
+        if len(segs) > 2 { tail = segs[2:] }
+        if len(tail) == 0 {
+            return p, nil
+        }
+        if tail[0] != "cluster" && tail[0] != "groups" {
+            tail = append([]string{"cluster"}, tail...)
+        }
+        q, _ := r.Parse("/" + strings.Join(tail, "/"))
         q.Raw = raw
         q.Context = p.Context
         return q, nil
@@ -151,4 +158,3 @@ func filterEmpty(in []string) []string {
     }
     return out
 }
-
