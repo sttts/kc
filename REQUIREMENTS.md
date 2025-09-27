@@ -45,6 +45,7 @@
 ## Data Model & Live Updates
 - All Kubernetes data is live via controller-runtime informers; list/watch requests prefer “Table” responses for columns.
 - Each kubeconfig+context uses its own controller-runtime `cluster` (and cache) so informers can be started/stopped independently.
+- UI list updates are driven by Watch events from the cache; emit a `Synced` signal after initial informer sync to trigger the first stable render.
 - Preserve cursor stability across updates where possible; when rows shrink, cursor may move up to the last item.
 
 ## Presentation

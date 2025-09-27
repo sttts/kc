@@ -13,7 +13,8 @@ Current tasks
 - [x] Store: scaffold `ReadOnlyStore` on controller-runtime clusters (one `cluster.Cluster` per kubeconfig+context) and wire into navigation for List.
 - [ ] Store: implement Watch via cache informers with payload (PartialObjectMetadata fields) and emit a `Synced` event after informer sync.
 - [ ] Store: make ClusterPool TTL configurable and add an eviction unit test.
-- [ ] Integration: provide a small helper to construct and inject a `CRStoreProvider` from kubeconfig+context in app startup.
+- [x] Integration: provide a small helper to construct and inject a `CRStoreProvider` from kubeconfig+context in app startup (`resources.NewStoreProviderForContext`).
+- [ ] App: call the helper during app startup and inject into navigation; manage pool lifecycle on shutdown.
 - [ ] Navigation: refactor to consume Router + Store incrementally (namespaces → pods first; lazy child loading, no fragile string matching).
 
 ## Milestone 2 — UI Navigation on the Model
@@ -29,6 +30,7 @@ Current tasks
 - [ ] Implement F3 using server YAML (kubectl or client-go) and F8 delete with confirm; add hooks for F4/F7.
 - [ ] Implement per-panel sorting toggle UI and apply to list model.
  - [ ] Use Watch events to drive live updates; keep cursor stable as much as possible.
+  - [ ] Ensure initial `Synced` event triggers first render to avoid empty flashes.
 
 ## Milestone 3 — Terminal Follows Navigation
 - Terminal context manager for the integrated PTY session.
