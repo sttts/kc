@@ -815,21 +815,24 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 		}...)
 
     case "/namespaces":
-        // Namespaces level - show available namespaces (live via data source if available)
+        // Namespaces level - server-side table when available
         if p.nsData != nil {
-            if items, err := p.nsData.List(); err == nil {
+            if headers, rows, items, err := p.nsData.ListTable(); err == nil {
+                p.tableHeaders = headers
+                p.tableRows = rows
+                p.items = append(p.items, items...)
+            } else if items, err := p.nsData.List(); err == nil {
+                p.tableHeaders, p.tableRows = nil, nil
                 p.items = append(p.items, items...)
             } else {
-                // Fallback to placeholder on error
                 p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
             }
-            // Start watching for live updates
             return p.startNamespacesWatch()
         } else {
             p.items = append(p.items, []Item{
-                {Name: "default", Type: ItemTypeNamespace, Size: "", Modified: "", GVK: "v1 Namespace"},
-                {Name: "kube-system", Type: ItemTypeNamespace, Size: "", Modified: "", GVK: "v1 Namespace"},
-                {Name: "kube-public", Type: ItemTypeNamespace, Size: "", Modified: "", GVK: "v1 Namespace"},
+                {Name: "default", Type: ItemTypeNamespace, GVK: "v1 Namespace"},
+                {Name: "kube-system", Type: ItemTypeNamespace, GVK: "v1 Namespace"},
+                {Name: "kube-public", Type: ItemTypeNamespace, GVK: "v1 Namespace"},
             }...)
         }
 
