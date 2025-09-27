@@ -91,7 +91,8 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Modal) View() string {
     if !m.visible { return "" }
     // Fullscreen modal styled like panel
-    // Reserve: 1 line for overlay header and 1 line for function key bar inside the frame
+    // Reserve 1 line for overlay header and 1 terminal line for the function key bar outside the frame.
+    // The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
     contentW := max(1, m.width-2)
     contentH := max(1, m.height-3)
     var inner string
@@ -139,18 +140,12 @@ func (m *Modal) View() string {
     bottom := boxStyle.Copy().
         BorderTop(false).
         Width(m.width).
-        Height(m.height-1).
+        // Reserve one terminal line for the footer outside the frame
+        Height(m.height-2).
         Render(inner)
 
     // Replace bottom corners to T junction at the top border of bottom
     lines := strings.Split(bottom, "\n")
-    if len(lines) >= 2 {
-        // adjust last line corners visually if needed
-        last := lines[len(lines)-1]
-        last = strings.Replace(last, "└", "├", 1)
-        last = strings.Replace(last, "┘", "┤", 1)
-        lines[len(lines)-1] = last
-    }
     frame := top + "\n" + strings.Join(lines, "\n")
     // Function key bar outside the frame
     footer := FunctionKeyStyle.Render("Esc") + FunctionKeyDescriptionStyle.Render("Close")
