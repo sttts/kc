@@ -3,6 +3,7 @@ package resources
 import (
     "context"
     "fmt"
+    "time"
 
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -72,34 +73,67 @@ func (s *CRReadOnlyStore) Watch(ctx context.Context, key StoreKey) (<-chan Event
         AddFunc: func(obj interface{}) {
             if pom, ok := obj.(*metav1.PartialObjectMetadata); ok {
                 if key.Namespace == "" || pom.GetNamespace() == key.Namespace {
-                    out <- Event{Type: Added, Object: &unstructured.Unstructured{Object: map[string]interface{}{}}}
+                    out <- Event{Type: Added, Object: pomToUnstructured(pom)}
                 }
             }
         },
         UpdateFunc: func(oldObj, newObj interface{}) {
             if pom, ok := newObj.(*metav1.PartialObjectMetadata); ok {
                 if key.Namespace == "" || pom.GetNamespace() == key.Namespace {
-                    out <- Event{Type: Modified, Object: &unstructured.Unstructured{Object: map[string]interface{}{}}}
+                    out <- Event{Type: Modified, Object: pomToUnstructured(pom)}
                 }
             }
         },
         DeleteFunc: func(obj interface{}) {
             if pom, ok := obj.(*metav1.PartialObjectMetadata); ok {
                 if key.Namespace == "" || pom.GetNamespace() == key.Namespace {
-                    out <- Event{Type: Deleted, Object: &unstructured.Unstructured{Object: map[string]interface{}{}}}
+                    out <- Event{Type: Deleted, Object: pomToUnstructured(pom)}
                 }
             }
         },
     })
     if err != nil { cancel(); return nil, nil, fmt.Errorf("add handler: %w", err) }
 
-    // Emit a Synced event once the informer syncs, if available.
+    // Emit a Synced event once the informer syncs, then keep streaming; close on cancel.
     go func() {
-        <-stopCtx.Done()
-        close(out)
+        ticker := time.NewTicker(100 * time.Millisecond)
+        defer ticker.Stop()
+        syncedSent := false
+        for {
+            select {
+            case <-stopCtx.Done():
+                close(out)
+                return
+            case <-ticker.C:
+                if !syncedSent && inf.HasSynced() {
+                    out <- Event{Type: Synced}
+                    syncedSent = true
+                }
+            }
+        }
     }()
 
     return out, cancel, nil
+}
+
+// pomToUnstructured maps PartialObjectMetadata to a minimal unstructured with metadata.
+func pomToUnstructured(pom *metav1.PartialObjectMetadata) *unstructured.Unstructured {
+    u := &unstructured.Unstructured{}
+    // apiVersion/kind
+    if gv := pom.GetObjectKind().GroupVersionKind().GroupVersion().String(); gv != "/" {
+        u.SetAPIVersion(gv)
+    }
+    u.SetKind(pom.GetObjectKind().GroupVersionKind().Kind)
+    // metadata
+    u.SetName(pom.GetName())
+    u.SetNamespace(pom.GetNamespace())
+    u.SetUID(pom.GetUID())
+    u.SetResourceVersion(pom.GetResourceVersion())
+    u.SetGeneration(pom.GetGeneration())
+    u.SetCreationTimestamp(pom.GetCreationTimestamp())
+    u.SetLabels(pom.GetLabels())
+    u.SetAnnotations(pom.GetAnnotations())
+    return u
 }
 
 // CRStoreProvider adapts a ClusterPool as a StoreProvider.
