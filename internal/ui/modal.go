@@ -148,8 +148,8 @@ func (m *Modal) View() string {
 
 // ModalManager manages multiple modals
 type ModalManager struct {
-	modals map[string]*Modal
-	active string
+    modals map[string]*Modal
+    active string
 }
 
 // Init initializes the modal manager
