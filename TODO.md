@@ -19,6 +19,7 @@ Current tasks
  - [ ] Discovery: add periodic discovery refresh (~30s) by invalidating cached discovery and resetting RESTMapper; ensure CRDs appear/disappear dynamically.
  - [ ] Generalize data sources and watchers: move from pods-specific to generic GVK/GVR-driven listings and watches; use discovery to enumerate resources under namespaces.
  - [ ] Table horizontal scroll: when a server-side Table exceeds panel width, support column-wise horizontal scrolling with Left/Right keys. Only enable when the terminal has not received typed input (same gating logic used for Enter routing to terminal vs panel).
+ - [ ] Favorites: build a favorites list of resource types (seed from discovery alias "all"); allow users to add/remove favorites to override discovery. Persist and use favorites to populate resource selectors and shortcuts.
 
 ## Milestone 2 — UI Navigation on the Model
 - Panel adapter reads model nodes; implements `Enter`, `Back(..)`, breadcrumbs, and `..` entries.
@@ -37,9 +38,9 @@ Current tasks
   - [ ] Extend live listings to namespace resources (e.g., `/namespaces/<ns>/pods`).
 
 ## Object Views (Core UX)
+- [ ] YAML syntax highlighting for `F3` viewer (e.g., Chroma), matching panel theme; preserve managedFields stripping.
 - [ ] Pods detail: entering a pod shows container list (containers + initContainers). Under each container, add a `logs` subresource. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + watch). `Esc` closes.
 - [ ] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal; `F4` edits the field in an editor modal. Handle binary secret data gracefully.
-- [ ] `F3` YAML viewer: fullscreen popup with syntax highlighting; supports Up/Down, PgUp/PgDn, Home/End, `Esc` to exit; `F4` from the viewer runs `kubectl edit`. Render the real object (strip `managedFields`).
 - [ ] `F4` Edit: launch `kubectl edit` for the current object; refresh on successful apply.
 - [ ] Function key bar: dynamic and context-aware (grey out unavailable actions per location/object).
 
