@@ -89,6 +89,7 @@ func NewPanel(title string) *Panel {
         currentPath:    "/",
         pathHistory:    make([]string, 0),
         positionMemory: make(map[string]PositionInfo),
+        tableViewEnabled: true,
     }
 }
 
