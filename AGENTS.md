@@ -1,5 +1,13 @@
 # Repository Guidelines
 
+## Dependencies Policy (Important)
+- Only use Bubble Tea v2: import `github.com/charmbracelet/bubbletea/v2` everywhere (including tests). Do NOT import `github.com/charmbracelet/bubbletea` without `/v2`.
+- Keep module paths consistent with Go’s major version semantics. If a module ships a v2+, the import path must include the `/vN` suffix.
+- If you see mixed v0/v1 vs v2 imports, fix them immediately and run `go mod tidy`.
+- Example:
+  - Correct: `tea "github.com/charmbracelet/bubbletea/v2"`
+  - Incorrect: `tea "github.com/charmbracelet/bubbletea"` (will break types between v1/v2)
+
 ## Project Structure & Module Organization
 - `cmd/kc/`: Application entrypoint (main package).
 - `internal/ui/`: TUI components (App, Panel, Terminal).
