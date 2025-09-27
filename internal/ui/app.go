@@ -1,6 +1,7 @@
 package ui
 
 import (
+    "context"
     "fmt"
     "os"
     "os/signal"
@@ -14,6 +15,7 @@ import (
     "github.com/sschimanski/kc/pkg/kubeconfig"
     "github.com/sschimanski/kc/pkg/navigation"
     "github.com/sschimanski/kc/pkg/resources"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -768,6 +770,22 @@ func (a *App) initData() error {
     nsDS := NewNamespacesDataSource(a.storeProvider, a.resMgr.GVKToGVR)
     a.leftPanel.SetNamespacesDataSource(nsDS)
     a.rightPanel.SetNamespacesDataSource(nsDS)
+    // Discovery-backed catalog
+    if infos, err := a.resMgr.GetResourceInfos(); err == nil {
+        a.leftPanel.SetResourceCatalog(infos)
+        a.rightPanel.SetResourceCatalog(infos)
+    } else {
+        fmt.Printf("Warning: discovery resources: %v\n", err)
+    }
+    // Generic data source factory (per-GVK)
+    factory := func(gvk schema.GroupVersionKind) *GenericDataSource {
+        tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
+            return a.resMgr.ListTableByGVR(ctx, gvr, ns)
+        }
+        return NewGenericDataSource(a.storeProvider, a.resMgr.GVKToGVR, tableFn, gvk)
+    }
+    a.leftPanel.SetGenericDataSourceFactory(factory)
+    a.rightPanel.SetGenericDataSourceFactory(factory)
     return nil
 }
 
