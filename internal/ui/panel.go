@@ -8,6 +8,7 @@ import (
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/charmbracelet/lipgloss/v2"
     "github.com/sschimanski/kc/pkg/resources"
+    "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Panel represents a file/resource panel
@@ -27,9 +28,13 @@ type Panel struct {
     nsData *NamespacesDataSource
     nsWatchCh <-chan resources.Event
     nsWatchCancel context.CancelFunc
-    resourceData *PodsDataSource // currently pods; will generalize to any resource
+    resourceData *GenericDataSource // per-GVK data source
     resourceWatchCh <-chan resources.Event
     resourceWatchCancel context.CancelFunc
+    // Discovery-backed catalog (plural -> GVK)
+    namespacedCatalog map[string]schema.GroupVersionKind
+    genericFactory func(schema.GroupVersionKind) *GenericDataSource
+    currentResourceGVK *schema.GroupVersionKind
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -85,8 +90,23 @@ func (p *Panel) SetNamespacesDataSource(ds *NamespacesDataSource) {
     p.nsData = ds
 }
 
-// SetPodsDataSource wires a pods data source for live listings.
-func (p *Panel) SetPodsDataSource(ds *PodsDataSource) { p.resourceData = ds }
+// SetPodsDataSource retained for compatibility; prefer SetGenericDataSourceFactory.
+func (p *Panel) SetPodsDataSource(ds *PodsDataSource) { /* no-op in generic mode */ }
+
+// SetResourceCatalog injects the namespaced resource catalog (plural -> GVK).
+func (p *Panel) SetResourceCatalog(infos []resources.ResourceInfo) {
+    p.namespacedCatalog = make(map[string]schema.GroupVersionKind)
+    for _, info := range infos {
+        if info.Namespaced {
+            p.namespacedCatalog[info.Resource] = info.GVK
+        }
+    }
+}
+
+// SetGenericDataSourceFactory sets a factory for creating per-GVK data sources.
+func (p *Panel) SetGenericDataSourceFactory(factory func(schema.GroupVersionKind) *GenericDataSource) {
+    p.genericFactory = factory
+}
 
 // Init initializes the panel
 func (p *Panel) Init() tea.Cmd {
@@ -650,13 +670,23 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
             // /namespaces/<ns>[/<resource>]
             parts := strings.Split(path, "/")
             if len(parts) == 3 {
-                // namespace level: list resource groups
-                p.items = append(p.items, []Item{
-                    {Name: "pods", Type: ItemTypeResource, GVK: "v1 Pod"},
-                    // TODO: add generic resources via discovery
-                }...)
-            } else if len(parts) >= 4 && parts[3] == "pods" {
+                // namespace level: list resource groups from discovery
+                if len(p.namespacedCatalog) > 0 {
+                    for res := range p.namespacedCatalog {
+                        p.items = append(p.items, Item{Name: res, Type: ItemTypeResource})
+                    }
+                } else {
+                    p.items = append(p.items, Item{Name: "pods", Type: ItemTypeResource})
+                }
+            } else if len(parts) >= 4 {
                 ns := parts[2]
+                res := parts[3]
+                if gvk, ok := p.namespacedCatalog[res]; ok && p.genericFactory != nil {
+                    if p.currentResourceGVK == nil || *p.currentResourceGVK != gvk {
+                        p.resourceData = p.genericFactory(gvk)
+                        p.currentResourceGVK = &gvk
+                    }
+                }
                 if p.resourceData != nil {
                     if items, err := p.resourceData.List(ns); err == nil {
                         p.items = append(p.items, items...)
