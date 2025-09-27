@@ -27,6 +27,9 @@ type Panel struct {
     nsData *NamespacesDataSource
     nsWatchCh <-chan resources.Event
     nsWatchCancel context.CancelFunc
+    resourceData *PodsDataSource // currently pods; will generalize to any resource
+    resourceWatchCh <-chan resources.Event
+    resourceWatchCancel context.CancelFunc
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -82,6 +85,9 @@ func (p *Panel) SetNamespacesDataSource(ds *NamespacesDataSource) {
     p.nsData = ds
 }
 
+// SetPodsDataSource wires a pods data source for live listings.
+func (p *Panel) SetPodsDataSource(ds *PodsDataSource) { p.resourceData = ds }
+
 // Init initializes the panel
 func (p *Panel) Init() tea.Cmd {
 	// Load initial items
@@ -97,6 +103,12 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             _ = p.loadItemsForPath("/namespaces")
         }
         return p, p.startNamespacesWatch()
+    case resourceEventMsg:
+        // Live update: reload pods for the namespace in message
+        if strings.HasPrefix(p.currentPath, "/namespaces/") && strings.Contains(p.currentPath, "/pods") {
+            _ = p.loadItemsForPath(p.currentPath)
+        }
+        return p, p.startResourceWatch(msg.namespace)
     case tea.KeyMsg:
         switch msg.String() {
 		// Navigation keys (Midnight Commander style)
@@ -453,9 +465,12 @@ func (p *Panel) enterDirectory(item Item) tea.Cmd {
 }
 
 func (p *Panel) enterResource(item Item) tea.Cmd {
-	// For now, just show a message that we're entering a resource
-	// In a real implementation, this would load the resource details
-	return nil
+    // Navigate into a resource within the current namespace path.
+    if strings.HasPrefix(p.currentPath, "/namespaces/") {
+        newPath := p.currentPath + "/" + item.Name
+        return p.navigateTo(newPath, true)
+    }
+    return nil
 }
 
 func (p *Panel) enterNamespace(item Item) tea.Cmd {
@@ -504,6 +519,9 @@ func (p *Panel) navigateTo(path string, addToHistory bool) tea.Cmd {
     // Stop any active watches when leaving a path
     if p.currentPath == "/namespaces" && path != "/namespaces" {
         p.stopNamespacesWatch()
+    }
+    if strings.Contains(p.currentPath, "/pods") && !strings.Contains(path, "/pods") {
+        p.stopResourceWatch()
     }
 
     // Add current path to history only if requested
@@ -634,17 +652,27 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 				{Name: "namespaces", Type: ItemTypeDirectory, Size: "", Modified: ""},
 				{Name: "cluster-resources", Type: ItemTypeDirectory, Size: "", Modified: ""},
 			}...)
-		} else if len(path) > 12 && path[:12] == "/namespaces/" {
-			// namespace := path[12:] // TODO: Use namespace for actual resource loading
-			// Show resources in the namespace
-			p.items = append(p.items, []Item{
-				{Name: "pods", Type: ItemTypeResource, Size: "5", Modified: "1m", GVK: "v1 Pod"},
-				{Name: "services", Type: ItemTypeResource, Size: "2", Modified: "5m", GVK: "v1 Service"},
-				{Name: "deployments", Type: ItemTypeResource, Size: "3", Modified: "10m", GVK: "apps/v1 Deployment"},
-				{Name: "configmaps", Type: ItemTypeResource, Size: "1", Modified: "20m", GVK: "v1 ConfigMap"},
-				{Name: "secrets", Type: ItemTypeResource, Size: "2", Modified: "25m", GVK: "v1 Secret"},
-			}...)
-		} else {
+        } else if len(path) > 12 && path[:12] == "/namespaces/" {
+            // /namespaces/<ns>[/<resource>]
+            parts := strings.Split(path, "/")
+            if len(parts) == 3 {
+                // namespace level: list resource groups
+                p.items = append(p.items, []Item{
+                    {Name: "pods", Type: ItemTypeResource, GVK: "v1 Pod"},
+                    // TODO: add generic resources via discovery
+                }...)
+            } else if len(parts) >= 4 && parts[3] == "pods" {
+                ns := parts[2]
+                if p.resourceData != nil {
+                    if items, err := p.resourceData.List(ns); err == nil {
+                        p.items = append(p.items, items...)
+                    } else {
+                        p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
+                    }
+                    return p.startResourceWatch(ns)
+                }
+            }
+        } else {
 			// Unknown path - show empty
 			p.items = append(p.items, Item{
 				Name:     "Empty",
@@ -663,6 +691,7 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 
 // namespacesEventMsg signals that namespaces changed; payload not needed for a reload.
 type namespacesEventMsg struct{}
+type resourceEventMsg struct{ namespace string }
 
 // startNamespacesWatch sets up a watch loop and returns a Cmd to await the first event.
 func (p *Panel) startNamespacesWatch() tea.Cmd {
@@ -693,6 +722,36 @@ func (p *Panel) stopNamespacesWatch() {
         p.nsWatchCancel()
         p.nsWatchCancel = nil
         p.nsWatchCh = nil
+    }
+}
+
+// startResourceWatch watches a namespaced resource list (currently pods) in a namespace.
+func (p *Panel) startResourceWatch(ns string) tea.Cmd {
+    if p.resourceData == nil { return nil }
+    if p.resourceWatchCh == nil {
+        ctx, cancel := context.WithCancel(context.Background())
+        ch, stop, err := p.resourceData.Watch(ctx, ns)
+        if err == nil {
+            p.resourceWatchCh = ch
+            p.resourceWatchCancel = func(){ stop(); cancel() }
+        } else {
+            cancel()
+        }
+    }
+    if p.resourceWatchCh == nil { return nil }
+    return func() tea.Msg {
+        if _, ok := <-p.resourceWatchCh; ok {
+            return resourceEventMsg{namespace: ns}
+        }
+        return resourceEventMsg{namespace: ns}
+    }
+}
+
+func (p *Panel) stopResourceWatch() {
+    if p.resourceWatchCancel != nil {
+        p.resourceWatchCancel()
+        p.resourceWatchCancel = nil
+        p.resourceWatchCh = nil
     }
 }
 
