@@ -59,13 +59,30 @@
 - Preserve cursor stability across updates where possible; when rows shrink, cursor may move up to the last item.
 
 ## Presentation
-- Table columns: use server-provided table columns where available for each resource type.
+- Table columns: use server-provided Table columns where available for each resource type; render a header row and column‑aligned cells; fall back to names/metadata when unavailable.
 - Status line in each panel bottom shows key details for the item under the cursor.
-- Path breadcrumb is drawn at the top of the panel overlaying the frame (e.g., `/cluster/namespaces/kube-system/pods`).
+- Path breadcrumb is drawn at the top of the panel overlaying the frame (e.g., `/cluster/namespaces/kube-system/pods`) and is ellipsized from the left (`.../kube-system/pods`) when too long to keep the frame intact.
 
 ## Menus & View Options
 - Popdown menu bar (mc-style) planned at the top.
 - "View" menu toggles panel settings per side: sort order (by name, creationTimestamp, last change time from `metadata.managedFields`), sort direction, column visibility, and optional grouping.
+- Tri‑state settings (Yes/No/Default) with scope: global defaults and per‑resource overrides (by resource plural). Example: Table View = Default globally, but Pods = Yes, Services = No.
+
+## Object Views
+- Pods: entering a pod shows its containers (including initContainers) as folders. Under each container, a `logs` entry exists. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + live streaming). `Esc` closes.
+- ConfigMaps/Secrets: entering shows data keys as file‑like entries. `F3` views the value in a modal; `F4` edits the field in an editor modal (text); binary data is indicated and not shown raw.
+- YAML view (`F3`): fullscreen popup with syntax highlighting; supports Up/Down, PgUp/PgDn, Home/End, and `Esc` to exit. `F4` from the viewer runs `kubectl edit`. Always render the real object (strip `managedFields`), not a Table.
+- Edit (`F4`): runs `kubectl edit` for the current object; on save, refreshes the view.
+
+## Function Keys
+- The function key bar is dynamic and context‑aware. Keys with no action in the current location/object are greyed out; active keys are highlighted.
+
+## Terminal 2‑Line Mode
+- When the 2‑line terminal has typed input, `Enter` and `Ctrl+C` return focus to the panel instead of sending the keys to the terminal. Otherwise keys are routed according to the standard gating rules.
+
+## Table Behavior
+- Namespaces and resource lists prefer server‑side Tables with headers and aligned columns when available; fall back to metadata otherwise.
+- When a Table exceeds the panel width, implement column‑wise horizontal scrolling with Left/Right keys (only when the terminal has no typed input).
 - Additional sort keys:
   - Nodes: by Capacity (CPU/memory), by Resource Consumption (from metrics API), by Status health.
   - Pods: by Resource Consumption (CPU/memory), by Status health, by Ready containers.
@@ -94,6 +111,9 @@
 ## Panels & Focus
 - Two symmetrical panels; only one focused. `Tab` switches focus.
 - Up/Down moves cursor; `Enter` follows into folders/resources; `..` moves up one level.
+- Entering any folder (namespace/context/resource group/resource) positions the cursor on `..`; going back restores the previous selection when possible.
+- Only enterable kinds show a leading `/` and accept `Enter`: pods (containers/logs), secrets/configmaps (keys view) are enterable; non‑enterable kinds (e.g., services) appear as plain rows.
+- At `/namespaces/<ns>` hide empty resource folders; show a count column for non‑empty resource folders.
 
 ## Contexts & Kubeconfigs
 - All browsing is for the current kubeconfig and context by default.
