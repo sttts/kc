@@ -1,9 +1,9 @@
 package ui
 
 import (
-    "testing"
+	"testing"
 
-    tea "github.com/charmbracelet/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea/v2"
 )
 
 // mockModel is a simple mock model for testing
@@ -115,8 +115,8 @@ func TestNewModalManager(t *testing.T) {
 		t.Error("Expected modals map to be initialized")
 	}
 
-	if manager.active != "" {
-		t.Error("Expected active to be empty initially")
+	if len(manager.stack) != 0 {
+		t.Error("Expected no active modal initially")
 	}
 }
 
@@ -144,8 +144,8 @@ func TestModalManagerShow(t *testing.T) {
 		t.Error("Expected modal to be visible")
 	}
 
-	if manager.active != "test" {
-		t.Errorf("Expected active to be 'test', got '%s'", manager.active)
+	if !(len(manager.stack) > 0 && manager.stack[len(manager.stack)-1] == "test") {
+		t.Errorf("Expected 'test' to be the active modal")
 	}
 
 	if !modal.IsVisible() {
@@ -166,8 +166,8 @@ func TestModalManagerHide(t *testing.T) {
 		t.Error("Expected modal to not be visible after Hide()")
 	}
 
-	if manager.active != "" {
-		t.Error("Expected active to be empty after Hide()")
+	if len(manager.stack) != 0 {
+		t.Error("Expected no active modal after Hide()")
 	}
 
 	if modal.IsVisible() {

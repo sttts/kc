@@ -20,11 +20,11 @@ type Modal struct {
 	escPressed       bool
 	closeOnSingleEsc bool
 	// Windowed overlay support
-	windowed   bool
-	winWidth   int
-	winHeight  int
-    background string // full-screen base to overlay on when windowed
-    backgroundFunc func() string // dynamic background provider
+	windowed       bool
+	winWidth       int
+	winHeight      int
+	background     string        // full-screen base to overlay on when windowed
+	backgroundFunc func() string // dynamic background provider
 }
 
 // RedrawTickMsg is emitted periodically to force a re-render while a
@@ -91,9 +91,9 @@ func (m *Modal) SetCloseOnSingleEsc(v bool) { m.closeOnSingleEsc = v }
 // size over the provided background (full-screen base). If bg is empty, the
 // window is centered over a blank backdrop.
 func (m *Modal) SetWindowed(winW, winH int, bg string) {
-    m.windowed = true
-    m.winWidth, m.winHeight = winW, winH
-    m.background = bg
+	m.windowed = true
+	m.winWidth, m.winHeight = winW, winH
+	m.background = bg
 }
 
 // SetWindowedBackgroundProvider sets a function to produce the background
@@ -167,18 +167,18 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-    // Update the content
-    model, cmd := m.content.Update(msg)
-    m.content = model
-    cmds = append(cmds, cmd)
+	// Update the content
+	model, cmd := m.content.Update(msg)
+	m.content = model
+	cmds = append(cmds, cmd)
 
-    // If we have a dynamic background provider, schedule a redraw tick so
-    // the composed background stays fresh even when only the selection moves.
-    if m.windowed && m.backgroundFunc != nil {
-        cmds = append(cmds, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return RedrawTickMsg{} }))
-    }
+	// If we have a dynamic background provider, schedule a redraw tick so
+	// the composed background stays fresh even when only the selection moves.
+	if m.windowed && m.backgroundFunc != nil {
+		cmds = append(cmds, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return RedrawTickMsg{} }))
+	}
 
-    return m, tea.Batch(cmds...)
+	return m, tea.Batch(cmds...)
 }
 
 // View renders the modal
@@ -194,10 +194,12 @@ func (m *Modal) View() string {
 
 	if m.windowed {
 		// Render background (use provided base or blank)
-        base := m.background
-        if m.backgroundFunc != nil {
-            if s := m.backgroundFunc(); s != "" { base = s }
-        }
+		base := m.background
+		if m.backgroundFunc != nil {
+			if s := m.backgroundFunc(); s != "" {
+				base = s
+			}
+		}
 		if base == "" {
 			base = lipgloss.NewStyle().Width(m.width).Height(m.height).Render("")
 		}
@@ -223,15 +225,15 @@ func (m *Modal) View() string {
 		// - Border: double, white
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.DoubleBorder()).
-			BorderForeground(lipgloss.Color(ColorBlack)).
-			BorderBackground(lipgloss.Color(ColorGrey)).
-			Background(lipgloss.Color(ColorGrey)).
+			BorderForeground(lipgloss.Black).
+			BorderBackground(lipgloss.White).
+			Background(lipgloss.White).
 			Width(winW).
 			Height(winH)
 
 		labelStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorBlack)).
-			Background(lipgloss.Color(ColorGrey)).
+			Foreground(lipgloss.Black).
+			Background(lipgloss.White).
 			Padding(0, 1)
 		label := labelStyle.Render(m.title)
 		border := boxStyle.GetBorderStyle()
@@ -255,7 +257,7 @@ func (m *Modal) View() string {
 		}
 		// Render inner content with dialog colors (white on dark cyan)
 		inner = lipgloss.NewStyle().
-			Background(lipgloss.Color(ColorGrey)).
+			Background(lipgloss.White).
 			Foreground(lipgloss.Black).
 			Width(innerW).
 			Height(innerH).
@@ -297,7 +299,7 @@ func (m *Modal) View() string {
 		composed = strings.Join(bgLines, "\n")
 		// Ensure full-width/height with blue background to avoid artifacts.
 		return lipgloss.NewStyle().
-			Background(lipgloss.Color(ColorGrey)).
+			Background(lipgloss.White).
 			Width(m.width).
 			Height(m.height).
 			Render(composed)
@@ -314,14 +316,14 @@ func (m *Modal) View() string {
 	// Build frame with overlay title (match focused panel style)
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(ColorGrey)).
-		BorderBackground(lipgloss.Color(ColorDarkerBlue)).
-		Background(lipgloss.Color(ColorDarkerBlue))
+		BorderForeground(lipgloss.White).
+		BorderBackground(lipgloss.Blue).
+		Background(lipgloss.Blue)
 
-	// Focused panel title chip style
+		// Focused panel title chip style
 	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorBlack)).
-		Background(lipgloss.Color(ColorGrey)).
+		Foreground(lipgloss.Black).
+		Background(lipgloss.White).
 		Padding(0, 1)
 	label := labelStyle.Render(m.title)
 	border := boxStyle.GetBorderStyle()

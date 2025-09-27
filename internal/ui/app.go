@@ -821,8 +821,8 @@ func (a *App) createFrameWithOverlayTitle(content, title string, width, height i
 		// No title, just return regular frame
 		return lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.Color(ColorGrey)).
-			Background(lipgloss.Color(ColorDarkerBlue)).
+			BorderForeground(lipgloss.White).
+			Background(lipgloss.Blue).
 			Width(width).
 			Height(height).
 			Render(content)
@@ -831,9 +831,9 @@ func (a *App) createFrameWithOverlayTitle(content, title string, width, height i
 	// Create the box style
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(ColorGrey)).
-		BorderBackground(lipgloss.Color(ColorDarkerBlue)).
-		Background(lipgloss.Color(ColorDarkerBlue)).
+		BorderForeground(lipgloss.White).
+		BorderBackground(lipgloss.Blue).
+		Background(lipgloss.Blue).
 		Width(width).
 		Height(height)
 
@@ -842,14 +842,14 @@ func (a *App) createFrameWithOverlayTitle(content, title string, width, height i
 	if isFocused {
 		// Focused panel: grey background, black text
 		labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorBlack)).
-			Background(lipgloss.Color(ColorGrey)).
+			Foreground(lipgloss.Black).
+			Background(lipgloss.White).
 			Padding(0, 1)
 	} else {
 		// Unfocused panel: dark blue background, grey text
 		labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ColorGrey)).
-			Background(lipgloss.Color(ColorDarkerBlue)).
+			Foreground(lipgloss.White).
+			Background(lipgloss.Blue).
 			Padding(0, 1)
 	}
 
@@ -910,9 +910,9 @@ func (a *App) createFramedFooter(content string, width int) string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderTop(false). // No top border since it connects to the main frame
-		BorderForeground(lipgloss.Color(ColorGrey)).
-		BorderBackground(lipgloss.Color(ColorDarkerBlue)).
-		Background(lipgloss.Color(ColorDarkerBlue)).
+		BorderForeground(lipgloss.White).
+		BorderBackground(lipgloss.Blue).
+		Background(lipgloss.Blue).
 		Foreground(lipgloss.Color(ColorWhite)).
 		Width(width).
 		Render(content)
