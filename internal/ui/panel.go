@@ -430,21 +430,42 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 		line.WriteString(item.Name)
 	}
 
-	// Size and modified time (if available)
-	if item.Size != "" || item.Modified != "" {
-		// Calculate available space for size/modified info
-		currentLength := len(line.String())
-		// Reserve 20 characters for size and modified time
-		targetWidth := p.width - 20
-		if targetWidth > currentLength {
-			line.WriteString(strings.Repeat(" ", targetWidth-currentLength))
+	// Right-align counts for root items (number of sub-elements).
+	if p.currentPath == "/" && item.Size != "" && item.Modified == "" {
+		base := line.String()
+		// Trim if base already exceeds width minus count width
+		count := item.Size
+		rightCol := len(count)
+		if rightCol > p.width {
+			rightCol = p.width
 		}
-		if item.Size != "" {
-			line.WriteString(item.Size)
+		maxBase := max(0, p.width-rightCol)
+		if len(base) > maxBase {
+			base = base[:maxBase]
 		}
-		if item.Modified != "" {
-			line.WriteString(" ")
-			line.WriteString(item.Modified)
+		// Pad spaces up to the column before the count and append count
+		if len(base) < maxBase {
+			base += strings.Repeat(" ", maxBase-len(base))
+		}
+		base += count
+		line.Reset()
+		line.WriteString(base)
+	} else if item.Size != "" || item.Modified != "" {
+		// Generic trailing info: keep simple spacing, trimming to width.
+		current := line.String()
+		info := strings.TrimSpace(strings.TrimSpace(item.Size + " " + item.Modified))
+		// If there is space, insert at the right edge; otherwise, append after a single space.
+		if info != "" {
+			maxBase := max(0, p.width-len(info))
+			if len(current) > maxBase {
+				current = current[:maxBase]
+			}
+			if len(current) < maxBase {
+				current += strings.Repeat(" ", maxBase-len(current))
+			}
+			current += info
+			line.Reset()
+			line.WriteString(current)
 		}
 	}
 
