@@ -769,7 +769,10 @@ func (a *App) initData() error {
         fmt.Printf("Warning: load context resources: %v\n", err)
     }
     // Wire panel data sources
-    nsDS := NewNamespacesDataSource(a.storeProvider, a.resMgr.GVKToGVR)
+    tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
+        return a.resMgr.ListTableByGVR(ctx, gvr, ns)
+    }
+    nsDS := NewNamespacesDataSource(a.storeProvider, a.resMgr.GVKToGVR, tableFn)
     a.leftPanel.SetNamespacesDataSource(nsDS)
     a.rightPanel.SetNamespacesDataSource(nsDS)
     // Discovery-backed catalog
@@ -781,9 +784,6 @@ func (a *App) initData() error {
     }
     // Generic data source factory (per-GVK)
     factory := func(gvk schema.GroupVersionKind) *GenericDataSource {
-        tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
-            return a.resMgr.ListTableByGVR(ctx, gvr, ns)
-        }
         return NewGenericDataSource(a.storeProvider, a.resMgr.GVKToGVR, tableFn, gvk)
     }
     a.leftPanel.SetGenericDataSourceFactory(factory)

@@ -13,10 +13,11 @@ import (
 type NamespacesDataSource struct {
     store  resources.StoreProvider
     mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)
+    table  func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error)
 }
 
-func NewNamespacesDataSource(store resources.StoreProvider, mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)) *NamespacesDataSource {
-    return &NamespacesDataSource{store: store, mapper: mapper}
+func NewNamespacesDataSource(store resources.StoreProvider, mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error), table func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error)) *NamespacesDataSource {
+    return &NamespacesDataSource{store: store, mapper: mapper, table: table}
 }
 
 // List returns items for namespaces at "/namespaces".
@@ -44,6 +45,35 @@ func (d *NamespacesDataSource) List() ([]Item, error) {
         })
     }
     return items, nil
+}
+
+// ListTable returns headers, rows and items when server-side Table is available for namespaces.
+func (d *NamespacesDataSource) ListTable() ([]string, [][]string, []Item, error) {
+    if d.store == nil || d.mapper == nil || d.table == nil {
+        return nil, nil, nil, fmt.Errorf("table not available")
+    }
+    gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+    gvr, err := d.mapper(gvk)
+    if err != nil { return nil, nil, nil, err }
+    tbl, err := d.table(context.Background(), gvr, "")
+    if err != nil || tbl == nil { return nil, nil, nil, fmt.Errorf("no table") }
+    headers := make([]string, len(tbl.ColumnDefinitions))
+    nameIdx := 0
+    for i, col := range tbl.ColumnDefinitions {
+        headers[i] = col.Name
+        if col.Name == "Name" || col.Name == "NAME" || col.Name == "name" { nameIdx = i }
+    }
+    rows := make([][]string, 0, len(tbl.Rows))
+    items := make([]Item, 0, len(tbl.Rows))
+    for _, r := range tbl.Rows {
+        cells := make([]string, len(r.Cells))
+        for i := range r.Cells { cells[i] = fmt.Sprint(r.Cells[i]) }
+        rows = append(rows, cells)
+        name := ""
+        if nameIdx < len(cells) { name = cells[nameIdx] } else if len(cells) > 0 { name = cells[0] }
+        items = append(items, Item{Name: name, Type: ItemTypeNamespace})
+    }
+    return headers, rows, items, nil
 }
 
 // Watch opens a watch channel for namespace events and returns it with a cancel func.
