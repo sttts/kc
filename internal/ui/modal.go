@@ -91,17 +91,15 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Modal) View() string {
     if !m.visible { return "" }
     // Fullscreen modal styled like panel
+    // Reserve: 1 line for overlay header and 1 line for function key bar inside the frame
     contentW := max(1, m.width-2)
-    contentH := max(1, m.height-2)
+    contentH := max(1, m.height-3)
+    var inner string
     if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
         setter.SetDimensions(contentW, contentH)
     }
-    // Render content
-    var inner string
     if m.content != nil {
-        if viewable, ok := m.content.(interface{ View() string }); ok {
-            inner = viewable.View()
-        } else { inner = "" }
+        if viewable, ok := m.content.(interface{ View() string }); ok { inner = viewable.View() }
     }
     // Build frame with overlay title (similar to app frame)
     boxStyle := lipgloss.NewStyle().
@@ -132,12 +130,17 @@ func (m *Modal) View() string {
         top = topLeft + topBorderStyler(strings.Repeat(border.Top, left)) + label + topBorderStyler(strings.Repeat(border.Top, right)) + topRight
     }
 
+    // Compose content + footer bar to fit inside the box (under the header)
+    footer := FunctionKeyStyle.Render("Esc") + FunctionKeyDescriptionStyle.Render("Close")
+    footerRendered := FunctionKeyBarStyle.Width(contentW).Render(footer)
+    framedContent := lipgloss.JoinVertical(lipgloss.Left, inner, footerRendered)
+
     // Box content under header
     bottom := boxStyle.Copy().
         BorderTop(false).
         Width(m.width).
         Height(m.height-1).
-        Render(inner)
+        Render(framedContent)
 
     // Replace bottom corners to T junction at the top border of bottom
     lines := strings.Split(bottom, "\n")
