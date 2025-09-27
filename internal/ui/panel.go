@@ -4,6 +4,7 @@ import (
     "fmt"
     "strings"
     "context"
+    "sort"
 
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/charmbracelet/lipgloss/v2"
@@ -562,10 +563,10 @@ func (p *Panel) handleItemEnter(item Item) tea.Cmd {
 
 // Navigation methods for item handling
 func (p *Panel) enterDirectory(item Item) tea.Cmd {
-	// Handle ".." (parent directory)
-	if item.Name == ".." {
-		return p.goToParent()
-	}
+    // Handle ".." (parent directory)
+    if item.Name == ".." {
+        return p.goToParent()
+    }
 
 	// Navigate to subdirectory
 	newPath := p.currentPath
@@ -575,7 +576,11 @@ func (p *Panel) enterDirectory(item Item) tea.Cmd {
 		newPath = newPath + "/" + item.Name
 	}
 
-	return p.navigateTo(newPath, true) // Add to history when going forward
+    // When entering a folder, move cursor to ".." (top) in the new view.
+    cmd := p.navigateTo(newPath, true) // Add to history when going forward
+    p.selected = 0
+    p.scrollTop = 0
+    return cmd
 }
 
 func (p *Panel) enterResource(item Item) tea.Cmd {
@@ -780,10 +785,24 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
             // /namespaces/<ns>[/<resource>]
             parts := strings.Split(path, "/")
             if len(parts) == 3 {
-                // namespace level: list resource groups from discovery
-                if len(p.namespacedCatalog) > 0 {
-                    for res := range p.namespacedCatalog {
-                        p.items = append(p.items, Item{Name: res, Type: ItemTypeResource})
+                // namespace level: list resource groups from discovery, hide empties and show counts
+                if len(p.namespacedCatalog) > 0 && p.genericFactory != nil {
+                    ns := parts[2]
+                    // deterministic order: collect and sort names
+                    names := make([]string, 0, len(p.namespacedCatalog))
+                    for res := range p.namespacedCatalog { names = append(names, res) }
+                    sort.Strings(names)
+                    for _, res := range names {
+                        gvk := p.namespacedCatalog[res]
+                        ds := p.genericFactory(gvk)
+                        if ds == nil { continue }
+                        if items, err := ds.List(ns); err == nil && len(items) > 0 {
+                            p.items = append(p.items, Item{Name: res, Type: ItemTypeResource, Size: fmt.Sprintf("%d", len(items))})
+                        }
+                    }
+                    if len(p.items) == 1 && p.items[0].Name == ".." {
+                        // no resources, leave empty indicator
+                        p.items = append(p.items, Item{Name: "(no resources)", Type: ItemTypeDirectory})
                     }
                 } else {
                     p.items = append(p.items, Item{Name: "pods", Type: ItemTypeResource})
