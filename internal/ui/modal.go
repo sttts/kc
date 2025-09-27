@@ -1,8 +1,9 @@
 package ui
 
 import (
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+    tea "github.com/charmbracelet/bubbletea/v2"
+    "github.com/charmbracelet/lipgloss/v2"
+    "strings"
 )
 
 // Modal represents a modal dialog
@@ -88,62 +89,66 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the modal
 func (m *Modal) View() string {
-	if !m.visible {
-		return ""
-	}
+    if !m.visible { return "" }
+    // Fullscreen modal styled like panel
+    contentW := max(1, m.width-2)
+    contentH := max(1, m.height-2)
+    if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
+        setter.SetDimensions(contentW, contentH)
+    }
+    // Render content
+    var inner string
+    if m.content != nil {
+        if viewable, ok := m.content.(interface{ View() string }); ok {
+            inner = viewable.View()
+        } else { inner = "" }
+    }
+    // Build frame with overlay title (similar to app frame)
+    boxStyle := lipgloss.NewStyle().
+        Border(lipgloss.NormalBorder()).
+        BorderForeground(lipgloss.Color(ColorGrey)).
+        Background(lipgloss.Color(ColorDarkerBlue))
 
-	// Calculate modal dimensions (centered)
-	modalWidth := m.width * 3 / 4
-	modalHeight := m.height * 3 / 4
+    labelStyle := PanelHeaderStyle
+    label := labelStyle.Render(m.title)
+    border := boxStyle.GetBorderStyle()
+    topBorderStyler := lipgloss.NewStyle().
+        Foreground(boxStyle.GetBorderTopForeground()).
+        Background(boxStyle.GetBorderTopBackground()).
+        Render
 
-	// Set content dimensions
-	if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
-		setter.SetDimensions(modalWidth-4, modalHeight-4) // -4 for border
-	}
+    topLeft := topBorderStyler(border.TopLeft)
+    topRight := topBorderStyler(border.TopRight)
+    available := m.width - lipgloss.Width(topLeft+topRight)
+    lw := lipgloss.Width(label)
+    var top string
+    if lw >= available {
+        gap := strings.Repeat(border.Top, max(0, available-lw))
+        top = topLeft + label + topBorderStyler(gap) + topRight
+    } else {
+        total := available - lw
+        left := total / 2
+        right := total - left
+        top = topLeft + topBorderStyler(strings.Repeat(border.Top, left)) + label + topBorderStyler(strings.Repeat(border.Top, right)) + topRight
+    }
 
-	// Create border
-	border := ModalBorderStyle.
-		Width(modalWidth).
-		Height(modalHeight).
-		Border(lipgloss.RoundedBorder()).
-		Padding(1, 2)
+    // Box content under header
+    bottom := boxStyle.Copy().
+        BorderTop(false).
+        Width(m.width).
+        Height(m.height-1).
+        Render(inner)
 
-	// Create title
-	title := ModalTitleStyle.
-		Width(modalWidth - 4).
-		Height(1).
-		Align(lipgloss.Center).
-		Render(m.title)
-
-	// Create content
-	var content string
-	if m.content != nil {
-		// Use type assertion to get the View method
-		if viewable, ok := m.content.(interface{ View() string }); ok {
-			content = viewable.View()
-		} else {
-			content = "Content not viewable"
-		}
-	}
-
-	// Combine title and content
-	modalContent := lipgloss.JoinVertical(
-		lipgloss.Left,
-		title,
-		content,
-	)
-
-	// Apply border
-	modal := border.Render(modalContent)
-
-	// Center the modal
-	centered := lipgloss.NewStyle().
-		Width(m.width).
-		Height(m.height).
-		Align(lipgloss.Center, lipgloss.Center).
-		Render(modal)
-
-	return centered
+    // Replace bottom corners to T junction at the top border of bottom
+    lines := strings.Split(bottom, "\n")
+    if len(lines) >= 2 {
+        // adjust last line corners visually if needed
+        last := lines[len(lines)-1]
+        last = strings.Replace(last, "└", "├", 1)
+        last = strings.Replace(last, "┘", "┤", 1)
+        lines[len(lines)-1] = last
+    }
+    return top + "\n" + strings.Join(lines, "\n")
 }
 
 // ModalManager manages multiple modals
