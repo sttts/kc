@@ -3,6 +3,10 @@ package main
 import (
     "fmt"
     "log"
+    "os"
+    "path/filepath"
+    "runtime"
+    "strings"
     "time"
 
     "github.com/sschimanski/kc/pkg/kubeconfig"
@@ -22,12 +26,12 @@ func main() {
         log.Printf("Failed to discover kubeconfigs: %v", err)
         return
     }
-    contexts := kubeMgr.GetContexts()
-    if len(contexts) == 0 {
-        fmt.Println("No contexts discovered; ensure ~/.kube/config exists")
+    // Choose current context from the selected kubeconfig (prefer $KUBECONFIG if set)
+    ctx := selectCurrentContext(kubeMgr)
+    if ctx == nil {
+        fmt.Println("No current context found; ensure ~/.kube/config exists and has a current-context")
         return
     }
-    ctx := contexts[0]
     fmt.Printf("Using context: %s (kubeconfig: %s)\n", ctx.Name, ctx.Kubeconfig.Path)
 
     // Build a controller-runtime resources.Manager for mapping and fallbacks.
@@ -83,3 +87,35 @@ func findContextNodeByName(n *navigation.Node, name string) *navigation.Node {
     return nil
 }
 
+// selectCurrentContext prefers $KUBECONFIG (first path) current-context, else any kubeconfig's current-context, else first.
+func selectCurrentContext(mgr *kubeconfig.Manager) *kubeconfig.Context {
+    // From env
+    if env := os.Getenv("KUBECONFIG"); env != "" {
+        sep := ":"
+        if runtime.GOOS == "windows" { sep = ";" }
+        for _, p := range strings.Split(env, sep) {
+            p = strings.TrimSpace(p)
+            if p == "" { continue }
+            for _, kc := range mgr.GetKubeconfigs() {
+                if sameFile(kc.Path, p) {
+                    if ctx := mgr.GetCurrentContext(kc); ctx != nil { return ctx }
+                }
+            }
+        }
+    }
+    // Any kubeconfig with a current-context
+    for _, kc := range mgr.GetKubeconfigs() {
+        if ctx := mgr.GetCurrentContext(kc); ctx != nil { return ctx }
+    }
+    // Fallback: first discovered context
+    cs := mgr.GetContexts()
+    if len(cs) > 0 { return cs[0] }
+    return nil
+}
+
+func sameFile(a, b string) bool {
+    ap, err1 := filepath.Abs(a)
+    bp, err2 := filepath.Abs(b)
+    if err1 != nil || err2 != nil { return a == b }
+    return ap == bp
+}
