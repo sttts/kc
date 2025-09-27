@@ -37,6 +37,8 @@ type Panel struct {
     currentResourceGVK *schema.GroupVersionKind
     tableHeaders []string
     tableRows    [][]string
+    columnWidths []int
+    tableViewEnabled bool
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -160,6 +162,10 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.selectAll()
         case "ctrl+r":
             return p, p.refresh()
+        case "ctrl+v":
+            // Toggle table view rendering on resource lists
+            p.tableViewEnabled = !p.tableViewEnabled
+            return p, p.refresh()
 		case "*":
 			p.invertSelection()
 		case "+", "-":
@@ -282,20 +288,14 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 
 	// Render visible items
     var lines []string
-    addedHeader := false
+    // Render table header first when applicable
+    if p.tableViewEnabled && p.tableRows != nil && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
+        p.columnWidths = p.computeColumnWidths(p.tableHeaders, p.tableRows, p.width)
+        header := p.formatRow(p.tableHeaders, p.columnWidths)
+        lines = append(lines, PanelTableHeaderStyle.Width(p.width).Render(header))
+    }
     for i := start; i < end; i++ {
         item := p.items[i]
-        // Insert table header once before the first non-".." item when table rows are present
-        if p.tableRows != nil && !addedHeader && item.Name != ".." {
-            header := strings.Join(p.tableHeaders, "  ")
-            if len(header) > p.width { header = header[:p.width] }
-            lines = append(lines, PanelTableHeaderStyle.Width(p.width).Render(header))
-            addedHeader = true
-            // If header filled the visible viewport, stop
-            if len(lines) >= visibleHeight {
-                break
-            }
-        }
         line := p.renderItem(item, i == p.selected && isFocused)
         lines = append(lines, line)
         if len(lines) >= visibleHeight { break }
@@ -331,13 +331,14 @@ func (p *Panel) renderItem(item Item, selected bool) string {
     }
 
     // Item name or table row
-    if p.tableRows != nil && item.Name != ".." && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
+    if p.tableViewEnabled && p.tableRows != nil && item.Name != ".." && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
         // Determine row index, accounting for optional ".." at top
         idx := p.indexOf(item)
         if idx >= 0 {
             if len(p.items) > 0 && p.items[0].Name == ".." { idx-- }
             if idx >= 0 && idx < len(p.tableRows) {
-                rowStr := strings.Join(p.tableRows[idx], "  ")
+                // format cells with column widths
+                rowStr := p.formatRow(p.tableRows[idx], p.columnWidths)
                 line.WriteString(rowStr)
             } else {
                 line.WriteString(item.Name)
@@ -390,6 +391,64 @@ func (p *Panel) indexOf(target Item) int {
         }
     }
     return -1
+}
+
+// computeColumnWidths determines column widths that fit into the panel width.
+func (p *Panel) computeColumnWidths(headers []string, rows [][]string, width int) []int {
+    n := len(headers)
+    if n == 0 { return nil }
+    widths := make([]int, n)
+    for i := 0; i < n; i++ { widths[i] = len(headers[i]) }
+    for _, r := range rows {
+        for i := 0; i < n && i < len(r); i++ {
+            if l := len(fmt.Sprint(r[i])); l > widths[i] { widths[i] = l }
+        }
+    }
+    spaces := n - 1
+    budget := width - spaces
+    if budget <= n { // minimal 1 char per col
+        for i := 0; i < n; i++ { widths[i] = 1 }
+        return widths
+    }
+    sum := 0
+    for _, w := range widths { sum += w }
+    if sum <= budget { return widths }
+    // Cap each column to maxPerCol and then reduce widest until fits
+    maxPerCol := budget / n
+    for i := 0; i < n; i++ { if widths[i] > maxPerCol { widths[i] = maxPerCol } }
+    sum = 0
+    for _, w := range widths { sum += w }
+    // Reduce from widest columns until sum fits
+    for sum > budget {
+        // find widest index
+        idx := 0
+        for i := 1; i < n; i++ { if widths[i] > widths[idx] { idx = i } }
+        if widths[idx] <= 1 { break }
+        widths[idx]--
+        sum--
+    }
+    return widths
+}
+
+// formatRow pads/trims cells to widths and joins with a single space.
+func (p *Panel) formatRow(cells []string, widths []int) string {
+    if widths == nil { return strings.Join(cells, "  ") }
+    n := len(widths)
+    out := make([]string, n)
+    for i := 0; i < n; i++ {
+        var s string
+        if i < len(cells) { s = fmt.Sprint(cells[i]) } else { s = "" }
+        w := widths[i]
+        if len(s) > w {
+            s = s[:w]
+        } else if len(s) < w {
+            s = s + strings.Repeat(" ", w-len(s))
+        }
+        out[i] = s
+    }
+    row := strings.Join(out, " ")
+    if len(row) > p.width { row = row[:p.width] }
+    return row
 }
 
 // renderFooter renders the panel footer
@@ -896,9 +955,9 @@ func (p *Panel) pageDown() {
 
 // Action methods
 func (p *Panel) refresh() tea.Cmd {
-	// Clear position memory when refreshing to ensure fresh state
-	p.clearPositionMemory()
-	return p.loadItems()
+    // Clear position memory when refreshing to ensure fresh state
+    p.clearPositionMemory()
+    return p.loadItems()
 }
 
 func (p *Panel) showResourceSelector() tea.Cmd {
