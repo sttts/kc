@@ -16,6 +16,8 @@ Current tasks
 - [x] Integration: provide a small helper to construct and inject a `CRStoreProvider` from kubeconfig+context in app startup (`resources.NewStoreProviderForContext`).
 - [ ] App: call the helper during app startup and inject into navigation; manage pool lifecycle on shutdown.
 - [ ] Navigation: refactor to consume Router + Store incrementally (namespaces → pods first; lazy child loading, no fragile string matching).
+ - [ ] Discovery: add periodic discovery refresh (~30s) by invalidating cached discovery and resetting RESTMapper; ensure CRDs appear/disappear dynamically.
+ - [ ] Generalize data sources and watchers: move from pods-specific to generic GVK/GVR-driven listings and watches; use discovery to enumerate resources under namespaces.
 
 ## Milestone 2 — UI Navigation on the Model
 - Panel adapter reads model nodes; implements `Enter`, `Back(..)`, breadcrumbs, and `..` entries.
@@ -31,6 +33,7 @@ Current tasks
 - [ ] Implement per-panel sorting toggle UI and apply to list model.
  - [ ] Use Watch events to drive live updates; keep cursor stable as much as possible.
   - [ ] Ensure initial `Synced` event triggers first render to avoid empty flashes.
+  - [ ] Extend live listings to namespace resources (e.g., `/namespaces/<ns>/pods`).
 
 ## Milestone 3 — Terminal Follows Navigation
 - Terminal context manager for the integrated PTY session.

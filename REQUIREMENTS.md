@@ -46,6 +46,16 @@
 - All Kubernetes data is live via controller-runtime informers; list/watch requests prefer “Table” responses for columns.
 - Each kubeconfig+context uses its own controller-runtime `cluster` (and cache) so informers can be started/stopped independently.
 - UI list updates are driven by Watch events from the cache; emit a `Synced` signal after initial informer sync to trigger the first stable render.
+
+## API Surface Coverage
+- Discover all resources (including CRDs) via discovery; navigation must work generically for every resource. Use OpenAPI v3 where necessary for creation dialogs and schema-aware input.
+- Periodically refresh discovery (≈ every 30s) and reset RESTMapper to pick up new/removed APIs. Prefer aggregated discovery clients and cached mappers with invalidation.
+
+## Resource‑Agnostic Model
+- Listings and watches are resource‑agnostic: drive UI from GroupVersionResource (GVR) resolved via discovery/RESTMapper, not hardcoded kinds.
+- Use controller‑runtime cache/informers for watch events keyed by GVR and namespace; emit an initial Synced signal to trigger first render.
+- Panels render generic tables using server‑provided Table columns when available; fall back to minimal metadata (name, namespace, age, status).
+- Extensible enhancements are allowed for well‑known resources (e.g., Pods, Nodes) without wrapping core types; compose via handlers/actions.
 - Preserve cursor stability across updates where possible; when rows shrink, cursor may move up to the last item.
 
 ## Presentation
