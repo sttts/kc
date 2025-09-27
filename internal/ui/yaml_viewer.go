@@ -2,7 +2,6 @@ package ui
 
 import (
     tea "github.com/charmbracelet/bubbletea/v2"
-    "github.com/charmbracelet/lipgloss/v2"
     "strings"
 )
 
@@ -59,6 +58,6 @@ func (v *YAMLViewer) View() string {
         if len(ln) > v.width { ln = ln[:v.width] }
         trimmed[i] = ln
     }
-    return lipgloss.NewStyle().Width(v.width).Height(v.height).Render(strings.Join(trimmed, "\n"))
+    // Render using panel content style for consistent look
+    return PanelContentStyle.Width(v.width).Height(v.height).Render(strings.Join(trimmed, "\n"))
 }
-
