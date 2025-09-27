@@ -55,6 +55,8 @@ func (v *YAMLViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             if v.onEdit != nil { return v, v.onEdit() }
         case "t":
             if v.onTheme != nil { return v, v.onTheme() }
+        case "f9":
+            if v.onTheme != nil { return v, v.onTheme() }
         }
     }
     return v, nil
@@ -70,6 +72,11 @@ func (v *YAMLViewer) View() string {
     lines := v.content[v.offset:end]
     // Let lipgloss handle width/height; it is ANSI-aware
     return PanelContentStyle.Width(v.width).Height(v.height).Render(strings.Join(lines, "\n"))
+}
+
+// FooterHints implements ModalFooterHints to show extra footer actions.
+func (v *YAMLViewer) FooterHints() [][2]string {
+    return [][2]string{{"T", "Theme"}}
 }
 
 // SetTheme updates the theme and re-highlights content.
