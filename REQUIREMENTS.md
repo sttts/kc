@@ -144,3 +144,13 @@
 ## Performance & Reliability
 - Avoid blocking UI on network; use async loads with spinners/placeholders.
 - Cache informer data per kubeconfig/context/namespace; reuse across panels when possible.
+
+## Viewer Search
+- YAML viewer must support starting a search with any of: `F7`, `Ctrl+F`, or `/`.
+- The function key bar documents `F7` and `F` as the search action.
+- `F2` continues to the next match (wrap-around at end).
+- All current matches are highlighted in the viewport; the current match is scrolled into view.
+
+## Filtering & Find in Panels
+- Panel object views include a filtering function accessible via the menu.
+- Implement `Ctrl+F` to find text within the current panel listing; highlight the current match and support “find next” (e.g., `F2`).
