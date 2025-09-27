@@ -2,6 +2,7 @@ package resources
 
 import (
     "context"
+    "encoding/json"
     "fmt"
     "strings"
     "sync"
@@ -11,11 +12,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/discovery/cached/memory"
-	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/restmapper"
+    "k8s.io/client-go/discovery"
+    "k8s.io/client-go/discovery/cached/memory"
+    "k8s.io/client-go/dynamic"
+    "k8s.io/client-go/rest"
+    "k8s.io/client-go/restmapper"
+    "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -246,6 +248,69 @@ func (m *Manager) GetSupportedResources() ([]schema.GroupVersionKind, error) {
 	return gvks, nil
 }
 
+// GetResourceInfos returns API resource infos including GVK, plural resource name, and namespaced flag.
+func (m *Manager) GetResourceInfos() ([]ResourceInfo, error) {
+    discoveryClient, err := discovery.NewDiscoveryClientForConfig(m.cluster.GetConfig())
+    if err != nil {
+        return nil, fmt.Errorf("failed to create discovery client: %w", err)
+    }
+    apiResources, err := discoveryClient.ServerPreferredResources()
+    if err != nil {
+        return nil, fmt.Errorf("failed to get server resources: %w", err)
+    }
+    var infos []ResourceInfo
+    for _, apiResourceList := range apiResources {
+        gv, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
+        if err != nil { continue }
+        for _, apiResource := range apiResourceList.APIResources {
+            if isSubresource(apiResource.Name) || isNonResourceType(apiResource.Kind) { continue }
+            infos = append(infos, ResourceInfo{
+                GVK: schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: apiResource.Kind},
+                Resource: apiResource.Name, // plural
+                Namespaced: apiResource.Namespaced,
+            })
+        }
+    }
+    return infos, nil
+}
+
+// restClientForGV constructs a REST client for a specific GroupVersion using the cluster config.
+func (m *Manager) restClientForGV(gv schema.GroupVersion) (*rest.RESTClient, error) {
+    cfg := rest.CopyConfig(m.cluster.GetConfig())
+    cfg.GroupVersion = &gv
+    if gv.Group == "" {
+        cfg.APIPath = "/api"
+    } else {
+        cfg.APIPath = "/apis"
+    }
+    cfg.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
+    return rest.RESTClientFor(cfg)
+}
+
+// ListTableByGVR retrieves a server-side Table for the given resource using Accept negotiation.
+// Falls back to a JSON decode of the response into metav1.Table.
+func (m *Manager) ListTableByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*metav1.Table, error) {
+    rc, err := m.restClientForGV(schema.GroupVersion{Group: gvr.Group, Version: gvr.Version})
+    if err != nil {
+        return nil, fmt.Errorf("rest client: %w", err)
+    }
+    req := rc.Get().Resource(gvr.Resource)
+    if namespace != "" {
+        req = req.Namespace(namespace)
+    }
+    // Ask for Table with JSON fallback per K8s API content negotiation.
+    req.SetHeader("Accept", "application/json;as=Table;g=meta.k8s.io;v=v1, application/json")
+    data, err := req.DoRaw(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("list table: %w", err)
+    }
+    var table metav1.Table
+    if err := json.Unmarshal(data, &table); err != nil {
+        return nil, fmt.Errorf("decode table: %w", err)
+    }
+    return &table, nil
+}
+
 // isSubresource checks if a resource name indicates a subresource
 func isSubresource(name string) bool {
 	// Subresources typically contain a slash (e.g., "pods/log", "pods/status")
@@ -272,4 +337,10 @@ func isNonResourceType(kind string) bool {
 	}
 
 	return nonResourceTypes[kind]
+}
+// ResourceInfo describes a discoverable API resource kind.
+type ResourceInfo struct {
+    GVK        schema.GroupVersionKind
+    Resource   string // plural resource name (e.g., pods)
+    Namespaced bool
 }
