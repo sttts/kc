@@ -45,3 +45,15 @@ func (d *NamespacesDataSource) List() ([]Item, error) {
     return items, nil
 }
 
+// Watch opens a watch channel for namespace events and returns it with a cancel func.
+func (d *NamespacesDataSource) Watch(ctx context.Context) (<-chan resources.Event, context.CancelFunc, error) {
+    if d.store == nil || d.mapper == nil {
+        return nil, func(){}, fmt.Errorf("data source not initialized")
+    }
+    gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+    gvr, err := d.mapper(gvk)
+    if err != nil { return nil, func(){}, err }
+    ch, cancel, err := d.store.Store().Watch(ctx, resources.StoreKey{GVR: gvr, Namespace: ""})
+    if err != nil { return nil, func(){}, err }
+    return ch, cancel, nil
+}

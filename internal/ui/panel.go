@@ -1,11 +1,13 @@
 package ui
 
 import (
-	"fmt"
-	"strings"
+    "fmt"
+    "strings"
+    "context"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+    tea "github.com/charmbracelet/bubbletea/v2"
+    "github.com/charmbracelet/lipgloss/v2"
+    "github.com/sschimanski/kc/pkg/resources"
 )
 
 // Panel represents a file/resource panel
@@ -23,6 +25,8 @@ type Panel struct {
     positionMemory map[string]PositionInfo
     // Live data
     nsData *NamespacesDataSource
+    nsWatchCh <-chan resources.Event
+    nsWatchCancel context.CancelFunc
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -86,9 +90,15 @@ func (p *Panel) Init() tea.Cmd {
 
 // Update handles messages and updates the panel state
 func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
+    switch msg := msg.(type) {
+    case namespacesEventMsg:
+        // Live update: reload namespaces and continue watching
+        if p.currentPath == "/namespaces" {
+            _ = p.loadItemsForPath("/namespaces")
+        }
+        return p, p.startNamespacesWatch()
+    case tea.KeyMsg:
+        switch msg.String() {
 		// Navigation keys (Midnight Commander style)
 		case "up":
 			p.moveUp()
@@ -108,14 +118,14 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p.pageDown()
 
 		// Selection keys
-		case "enter":
-			return p, p.enterItem()
+        case "enter":
+            return p, p.enterItem()
 		case "ctrl+t", "insert":
 			p.toggleSelection()
 		case "ctrl+a":
 			p.selectAll()
-		case "ctrl+r":
-			return p, p.refresh()
+        case "ctrl+r":
+            return p, p.refresh()
 		case "*":
 			p.invertSelection()
 		case "+", "-":
@@ -488,14 +498,19 @@ func (p *Panel) goToParent() tea.Cmd {
 
 // navigateTo navigates to a specific path
 func (p *Panel) navigateTo(path string, addToHistory bool) tea.Cmd {
-	// Save current position before navigating away
-	p.saveCurrentPosition()
+    // Save current position before navigating away
+    p.saveCurrentPosition()
 
-	// Add current path to history only if requested
-	if addToHistory && p.currentPath != path {
-		p.pathHistory = append(p.pathHistory, p.currentPath)
-	}
-	p.currentPath = path
+    // Stop any active watches when leaving a path
+    if p.currentPath == "/namespaces" && path != "/namespaces" {
+        p.stopNamespacesWatch()
+    }
+
+    // Add current path to history only if requested
+    if addToHistory && p.currentPath != path {
+        p.pathHistory = append(p.pathHistory, p.currentPath)
+    }
+    p.currentPath = path
 
 	// Reload items for the new path
 	return p.loadItemsForPath(path)
@@ -553,7 +568,7 @@ func (p *Panel) loadItems() tea.Cmd {
 
 // loadItemsForPath loads items for a specific path
 func (p *Panel) loadItemsForPath(path string) tea.Cmd {
-	p.items = make([]Item, 0)
+    p.items = make([]Item, 0)
 
 	// Add parent directory if not at root
 	if path != "/" {
@@ -592,6 +607,8 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
                 // Fallback to placeholder on error
                 p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
             }
+            // Start watching for live updates
+            return p.startNamespacesWatch()
         } else {
             p.items = append(p.items, []Item{
                 {Name: "default", Type: ItemTypeNamespace, Size: "", Modified: "", GVK: "v1 Namespace"},
@@ -638,10 +655,45 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 		}
 	}
 
-	// Restore position for this path
-	p.restorePosition(path)
+    // Restore position for this path
+    p.restorePosition(path)
 
-	return nil
+    return nil
+}
+
+// namespacesEventMsg signals that namespaces changed; payload not needed for a reload.
+type namespacesEventMsg struct{}
+
+// startNamespacesWatch sets up a watch loop and returns a Cmd to await the first event.
+func (p *Panel) startNamespacesWatch() tea.Cmd {
+    // If an existing watch is present, keep it.
+    if p.nsWatchCh == nil && p.nsData != nil {
+        ctx, cancel := context.WithCancel(context.Background())
+        ch, stop, err := p.nsData.Watch(ctx)
+        if err != nil {
+            cancel()
+        } else {
+            p.nsWatchCh = ch
+            p.nsWatchCancel = func(){ stop(); cancel() }
+        }
+    }
+    if p.nsWatchCh == nil { return nil }
+    return func() tea.Msg {
+        // Block until next event or channel close; then signal UI to reload.
+        if _, ok := <-p.nsWatchCh; ok {
+            return namespacesEventMsg{}
+        }
+        return namespacesEventMsg{}
+    }
+}
+
+// stopNamespacesWatch cancels the namespaces watch if running.
+func (p *Panel) stopNamespacesWatch() {
+    if p.nsWatchCancel != nil {
+        p.nsWatchCancel()
+        p.nsWatchCancel = nil
+        p.nsWatchCh = nil
+    }
 }
 
 // Getters
