@@ -46,6 +46,7 @@
 
 ### Build & Test Before Commit
 - Always compile and run tests before committing. At minimum: `go build ./...` and `go test ./...` (or the impacted packages when the full suite is costly). Do not commit if build or tests fail.
+- Before committing, run `git status` to ensure there are no unintended or forgotten changes; stage only what belongs in the focused commit.
 
 See `TODO.md` for the active development plan and current tasks.
 
