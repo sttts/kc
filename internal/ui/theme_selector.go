@@ -5,6 +5,7 @@ import (
     "strings"
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/alecthomas/chroma/v2/styles"
+    "github.com/charmbracelet/lipgloss/v2"
 )
 
 // ThemeSelector is a simple list to choose a chroma style.
@@ -76,7 +77,15 @@ func (s *ThemeSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (s *ThemeSelector) View() string {
-    // Render a simple list with current selection highlighted
+    // Dialog-specific styling: whole area cyan background with black text;
+    // selected row contrasted as white background with black text.
+    base := lipgloss.NewStyle().
+        Background(lipgloss.Color(ColorGrey)).
+        Foreground(lipgloss.Color(ColorBlack))
+    sel := lipgloss.NewStyle().
+        Background(lipgloss.Cyan).
+        Foreground(lipgloss.Color(ColorBlack))
+
     var b strings.Builder
     start := 0
     end := len(s.names)
@@ -90,15 +99,11 @@ func (s *ThemeSelector) View() string {
     for i := start; i < end && i < len(s.names); i++ {
         name := s.names[i]
         line := name
-        if i == s.selected {
-            line = PanelItemSelectedStyle.Render(line)
-        } else {
-            line = PanelItemStyle.Render(line)
-        }
+        if i == s.selected { line = sel.Render(line) } else { line = base.Render(line) }
         b.WriteString(line)
         if i < end-1 { b.WriteString("\n") }
     }
-    return PanelContentStyle.Width(s.width).Height(s.height).Render(b.String())
+    return base.Width(s.width).Height(s.height).Render(b.String())
 }
 
 // SetOnChange sets a callback invoked when selection changes via navigation.

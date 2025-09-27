@@ -24,12 +24,13 @@ type YAMLViewer struct {
     hOffset    int    // horizontal scroll (left column index)
     theme      string
     onEdit     func() tea.Cmd  // invoked on F4
-    onTheme    func() tea.Cmd  // invoked on 't' to open theme selector
+    onTheme    func() tea.Cmd  // invoked on F9 to open theme selector
+    onClose    func() tea.Cmd  // invoked on F10 to close modal
     rawLines   []string         // raw, uncolored lines for measuring widths
 }
 
-func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd) *YAMLViewer {
-    v := &YAMLViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme}
+func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *YAMLViewer {
+    v := &YAMLViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
     v.rawLines = strings.Split(text, "\n")
     v.content = v.highlightWithTheme(text, theme)
     return v
@@ -75,6 +76,8 @@ func (v *YAMLViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             if v.onEdit != nil { return v, v.onEdit() }
         case "f9":
             if v.onTheme != nil { return v, v.onTheme() }
+        case "f10":
+            if v.onClose != nil { return v, v.onClose() }
         }
     }
     return v, nil
@@ -98,7 +101,7 @@ func (v *YAMLViewer) View() string {
 
 // FooterHints implements ModalFooterHints to show extra footer actions.
 func (v *YAMLViewer) FooterHints() [][2]string {
-    return [][2]string{{"F9", "Theme"}}
+    return [][2]string{{"F9", "Theme"}, {"F10", "Close"}}
 }
 
 // SetTheme updates the theme and re-highlights content.
@@ -110,6 +113,9 @@ func (v *YAMLViewer) SetTheme(theme string) {
 
 // SetOnTheme sets the callback invoked when user requests theme selection.
 func (v *YAMLViewer) SetOnTheme(fn func() tea.Cmd) { v.onTheme = fn }
+
+// SetOnClose sets the callback used to close the surrounding modal.
+func (v *YAMLViewer) SetOnClose(fn func() tea.Cmd) { v.onClose = fn }
 
 // RequestTheme allows external callers (e.g., modal ESC-number mapping)
 // to trigger the theme selector without synthesizing a key event.
@@ -128,6 +134,10 @@ func (v *YAMLViewer) highlightWithTheme(text, theme string) []string {
     if err != nil {
         return strings.Split(text, "\n")
     }
+    if theme == "turbo-pascal" {
+        out := formatTurboPascalANSI(iterator)
+        return strings.Split(out, "\n")
+    }
     // Ensure custom styles are registered
     registerCustomStylesOnce()
     // Use selected style (predefined or custom) for foregrounds; do not set backgrounds
@@ -140,6 +150,79 @@ func (v *YAMLViewer) highlightWithTheme(text, theme string) []string {
     return strings.Split(out, "\n")
 }
 
+// formatTurboPascalANSI renders with ANSI 16 colors to mimic Turbo Pascal IDE
+// colors on a blue background and adds YAML-aware key/value heuristics.
+func formatTurboPascalANSI(it chroma.Iterator) string {
+    var buf bytes.Buffer
+    buf.WriteString("\033[44m") // blue background
+    prevWasColon := false
+    atLineStart := true
+    for token := it(); token != chroma.EOF; token = it() {
+        t := token.Type
+        ansi := "37" // light gray
+        bold := false
+        val := token.Value
+        hasNL := strings.Contains(val, "\n")
+
+        // Colon handling
+        if t == chroma.Punctuation && strings.Contains(val, ":") {
+            buf.WriteString("\033[1m\033[35m") // magenta
+            buf.WriteString(val)
+            buf.WriteString("\033[39m\033[22m")
+            prevWasColon = true
+            if hasNL { prevWasColon, atLineStart = false, true } else { atLineStart = false }
+            continue
+        }
+
+        // Track whether we force a color (to avoid being overridden by token mapping)
+        forced := false
+
+        // Value after colon becomes bold yellow
+        if prevWasColon {
+            if strings.TrimSpace(val) != "" && t != chroma.Punctuation {
+                ansi, bold = "33", true
+                prevWasColon = false
+                forced = true
+            }
+        }
+
+        // Keys: at start of a line until ':'
+        if !forced && atLineStart && !prevWasColon && strings.TrimSpace(val) != "" {
+            if !(t == chroma.Punctuation && strings.TrimSpace(val) != "-") {
+                ansi, bold = "36", true // cyan bold
+                forced = true
+            }
+        }
+
+        switch {
+        case t == chroma.NameTag || t.Category() == chroma.Name:
+            ansi, bold = "36", true // cyan keys/tags
+        case !forced && (t == chroma.LiteralString || t.Category() == chroma.LiteralString):
+            ansi, bold = "33", true // yellow strings
+        case !forced && (t == chroma.LiteralNumber || t.Category() == chroma.LiteralNumber):
+            ansi, bold = "32", true // green numbers
+        case !forced && (t == chroma.Punctuation || t == chroma.Operator):
+            ansi, bold = "35", true // magenta punctuation
+        case !forced && (t == chroma.Comment || t.Category() == chroma.Comment):
+            ansi = "34" // blue comments
+        default:
+            ansi = "37"
+        }
+
+        if bold { buf.WriteString("\033[1m") }
+        buf.WriteString("\033[" + ansi + "m")
+        buf.WriteString(val)
+        buf.WriteString("\033[39m\033[22m")
+        if hasNL { prevWasColon = false; atLineStart = true } else { atLineStart = false }
+    }
+    buf.WriteString("\033[0m")
+    return buf.String()
+}
+
+// formatTurboPascalANSI renders with ANSI 16 colors to mimic Turbo Pascal IDE
+// colors on a blue background.
+// duplicate function removed; see YAML-aware version below
+
 // --- Custom Styles Registration ---
 var customStylesRegistered = false
 
@@ -148,17 +231,17 @@ func registerCustomStylesOnce() {
     // Register Turbo Pascal inspired style (foreground-only)
     tp := chroma.MustNewStyle("turbo-pascal", chroma.StyleEntries{
         chroma.Background:       "",
-        chroma.Text:             "#d7d7d7",    // light gray
-        chroma.Comment:          "#87afff",    // light blue (Pascal comment often blue)
-        chroma.Keyword:          "bold #87afff", // keywords light blue
+        chroma.Text:             "#d7d7d7",       // light gray text
+        chroma.Comment:          "#00afff",       // bright cyan-ish for comments
+        chroma.Keyword:          "bold #00afff",  // bright blue keywords
         chroma.Name:             "#d7d7d7",
         chroma.NameAttribute:    "#d7d7d7",
         chroma.NameTag:          "#d7d7d7",
-        chroma.LiteralString:    "#ffd75f",    // strings yellow
+        chroma.LiteralString:    "#ffd75f",       // yellow strings
         chroma.LiteralStringDoc: "#ffd75f",
-        chroma.LiteralNumber:    "#5fff5f",    // numbers green
-        chroma.Operator:         "#ff5fd7",    // magenta-ish operators/punct
-        chroma.Punctuation:      "#ff5fd7",
+        chroma.LiteralNumber:    "#5fff5f",       // green numbers
+        chroma.Operator:         "#ffffff",       // white operators
+        chroma.Punctuation:      "#ffffff",       // white punctuation
         chroma.Error:            "#ff5555",
     })
     styles.Register(tp)
