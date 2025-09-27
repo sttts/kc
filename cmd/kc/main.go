@@ -4,8 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/go-logr/logr"
 	"github.com/sttts/kc/internal/ui"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 var (
@@ -22,6 +26,10 @@ func main() {
 
 	flag.Parse()
 
+	// Set up controller-runtime logging. By default discard logs entirely.
+	// If DEBUG=1, write logs to ~/.kc/debug.log in dev-friendly format.
+	setupControllerRuntimeLogger()
+
 	if *help {
 		showHelp()
 		return
@@ -37,6 +45,32 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// setupControllerRuntimeLogger configures controller-runtime's global logger.
+// Default: drop logs. If DEBUG=1, write to ~/.kc/debug.log.
+func setupControllerRuntimeLogger() {
+	if os.Getenv("DEBUG") == "1" {
+		if home, err := os.UserHomeDir(); err == nil {
+			dir := filepath.Join(home, ".kc")
+			// Best-effort create directory and file; fallback to discard on error.
+			if err := os.MkdirAll(dir, 0o700); err == nil {
+				fpath := filepath.Join(dir, "debug.log")
+				f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+				if err == nil {
+					// We intentionally do not close f until process exit.
+					l := crzap.New(
+						crzap.UseDevMode(true),
+						crzap.WriteTo(f),
+					)
+					ctrllog.SetLogger(l)
+					return
+				}
+			}
+		}
+	}
+	// Fallback: discard all controller-runtime logs
+	ctrllog.SetLogger(logr.Discard())
 }
 
 func showHelp() {
