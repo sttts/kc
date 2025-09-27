@@ -46,6 +46,11 @@
 - Status line in each panel bottom shows key details for the item under the cursor.
 - Path breadcrumb is drawn at the top of the panel overlaying the frame (e.g., `/cluster/namespaces/kube-system/pods`).
 
+## Menus & View Options
+- Popdown menu bar (mc-style) planned at the top.
+- "View" menu toggles panel settings per side: sort order (by name, creationTimestamp, last change time derived from `metadata.managedFields`), sort direction, column visibility, and optional grouping.
+- Menu navigation via keyboard shortcuts and F-keys; persists per panel and path kind.
+
 ## Panels & Focus
 - Two symmetrical panels; only one focused. `Tab` switches focus.
 - Up/Down moves cursor; `Enter` follows into folders/resources; `..` moves up one level.
@@ -53,6 +58,12 @@
 ## Contexts & Kubeconfigs
 - All browsing is for the current kubeconfig and context by default.
 - `/contexts` lets users switch context; `/kubeconfigs` lists known kubeconfigs and offers “Add kubeconfig…” dialog to register a path.
+
+## API Group Hierarchy (Optional)
+- Optional path mode to expose group/version layout:
+  - `/groups/<api-group>/<version>/[namespaces/<ns>/]<resource>`
+- When enabled, both classic paths (e.g., `/cluster/pods`) and group paths resolve to the same data source.
+- Group mode aids discovery and disambiguation for resources with identical kinds across groups.
 
 ## Non-Goals (for now)
 - No live-cluster destructive operations without confirmation dialogs.
