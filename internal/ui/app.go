@@ -42,6 +42,7 @@ type App struct {
     storePool     *resources.ClusterPool
     storeProvider resources.StoreProvider
     currentCtx    *kubeconfig.Context
+    viewConfig    *ViewConfig
 }
 
 // NewApp creates a new application instance
@@ -55,6 +56,7 @@ func NewApp() *App {
         showTerminal: false,
         allResources: make([]schema.GroupVersionKind, 0),
         escPressed:   false,
+        viewConfig:   NewViewConfig(),
     }
 
 	// Register modals
@@ -786,6 +788,8 @@ func (a *App) initData() error {
     }
     a.leftPanel.SetGenericDataSourceFactory(factory)
     a.rightPanel.SetGenericDataSourceFactory(factory)
+    a.leftPanel.SetViewConfig(a.viewConfig)
+    a.rightPanel.SetViewConfig(a.viewConfig)
     return nil
 }
 
