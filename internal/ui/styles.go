@@ -60,10 +60,15 @@ var (
 		Background(lipgloss.Color(ColorBlack)).
 		Padding(0, 0, 0, 1)
 
-	FunctionKeyDescriptionStyle = lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorCyan)).
-		Foreground(lipgloss.Color(ColorBlack)).
-		Padding(0, 1, 0, 0)
+    FunctionKeyDescriptionStyle = lipgloss.NewStyle().
+        Background(lipgloss.Color(ColorCyan)).
+        Foreground(lipgloss.Color(ColorBlack)).
+        Padding(0, 1, 0, 0)
+
+    FunctionKeyDisabledStyle = lipgloss.NewStyle().
+        Background(lipgloss.Color(ColorDarkerBlue)).
+        Foreground(lipgloss.Color(ColorGrey)).
+        Padding(0, 1, 0, 0)
 
 	FunctionKeyBarStyle = lipgloss.NewStyle().
 		Background(lipgloss.Color(ColorBlack)).

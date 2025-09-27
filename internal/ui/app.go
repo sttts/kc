@@ -124,9 +124,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.escPressed = false
 		return a, nil
 
-	case tea.KeyMsg:
-		// Handle global shortcuts first
-		switch msg.String() {
+    case tea.KeyMsg:
+        // Handle global shortcuts first
+        switch msg.String() {
 		case "ctrl+o":
 			// Toggle terminal mode
 			a.showTerminal = !a.showTerminal
@@ -149,9 +149,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// In fullscreen mode, don't handle F10 here - let it go to terminal
 		case "ctrl+q":
 			return a, tea.Quit
-		}
+        }
 
-		// Handle Esc+number escape sequences (Esc then number)
+        // Handle Esc+number escape sequences (Esc then number)
 		keyStr := msg.String()
 		if keyStr == "esc" {
 			// Esc key pressed - start escape sequence with timeout
@@ -203,8 +203,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// In terminal mode, all input goes to terminal except Ctrl-O to return
-		if a.showTerminal {
+        // In terminal mode, all input goes to terminal except Ctrl-O to return
+        if a.showTerminal {
 			// Only handle Ctrl-O to return to panel mode
 			if msg.String() == "ctrl+o" {
 				a.showTerminal = false
@@ -214,9 +214,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model, cmd := a.terminal.Update(msg)
 			a.terminal = model.(*Terminal)
 			cmds = append(cmds, cmd)
-		} else {
-			// In panel mode, use smart key routing based on terminal state
-			if a.shouldRouteToPanel(msg.String()) {
+        } else {
+            // In panel mode, use smart key routing based on terminal state
+            // Special: if user typed in the 2-line terminal, Enter or Ctrl+C should return focus to panel without sending to terminal
+            if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() {
+                a.terminal.ClearTyped()
+                return a, nil
+            }
+            if a.shouldRouteToPanel(msg.String()) {
 				// Handle panel-specific keys
 				if a.activePanel == 0 {
 					model, cmd := a.leftPanel.Update(msg)
@@ -442,29 +447,60 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
 
 // renderFunctionKeys renders the function key bar
 func (a *App) renderFunctionKeys() string {
-	var keys []string
+    var keys []string
 
-	if a.showTerminal {
-		// In terminal mode, only show Ctrl-O to return
-		keys = []string{
-			FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels"),
-		}
-	} else {
-		// In panel mode, show all function keys
-		keys = []string{
-			FunctionKeyStyle.Render("F1") + FunctionKeyDescriptionStyle.Render("Help"),
-			FunctionKeyStyle.Render("F2") + FunctionKeyDescriptionStyle.Render("Resources"),
-			FunctionKeyStyle.Render("F3") + FunctionKeyDescriptionStyle.Render("View"),
-			FunctionKeyStyle.Render("F4") + FunctionKeyDescriptionStyle.Render("Edit"),
-			FunctionKeyStyle.Render("F5") + FunctionKeyDescriptionStyle.Render("Copy"),
-			FunctionKeyStyle.Render("F6") + FunctionKeyDescriptionStyle.Render("Rename/Move"),
-			FunctionKeyStyle.Render("F7") + FunctionKeyDescriptionStyle.Render("Namespace"),
-			FunctionKeyStyle.Render("F8") + FunctionKeyDescriptionStyle.Render("Delete"),
-			FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"),
-			FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"),
-			FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"),
-		}
-	}
+    if a.showTerminal {
+        keys = []string{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")}
+    } else {
+        // Determine capabilities from active panel
+        p := a.leftPanel
+        if a.activePanel == 1 { p = a.rightPanel }
+        path := p.GetCurrentPath()
+        cur := p.GetCurrentItem()
+        // Defaults
+        canView, canEdit, canCreateNS, canDelete := false, false, false, false
+        // Location-based rules
+        if path == "/namespaces" {
+            canCreateNS = true
+            // viewing a namespace YAML is allowed when an item selected
+            if cur != nil && cur.Type == ItemTypeNamespace { canView, canEdit, canDelete = true, true, true }
+        } else if strings.HasPrefix(path, "/namespaces/") {
+            parts := strings.Split(path, "/")
+            if len(parts) == 3 { // /namespaces/<ns>
+                // resource folders only; F3/F4/F8 disabled
+            } else if len(parts) == 4 { // /namespaces/<ns>/<resource>
+                // viewing/editing/deleting objects is possible when an object row is selected (not ".." and not a folder)
+                if cur != nil && cur.Name != ".." && !cur.Enterable { canView, canEdit, canDelete = true, true, true }
+            } else if len(parts) >= 5 { // object or deeper
+                if cur != nil && cur.Name != ".." {
+                    canView = true
+                    canEdit = true
+                    canDelete = true
+                }
+            }
+        }
+
+        // Helper to render enabled/disabled key
+        renderKey := func(key, label string, enabled bool) string {
+            desc := FunctionKeyDescriptionStyle
+            if !enabled { desc = FunctionKeyDisabledStyle }
+            return FunctionKeyStyle.Render(key) + desc.Render(label)
+        }
+
+        keys = []string{
+            renderKey("F1", "Help", true),
+            renderKey("F2", "Resources", true),
+            renderKey("F3", "View", canView),
+            renderKey("F4", "Edit", canEdit),
+            renderKey("F5", "Copy", false),
+            renderKey("F6", "Rename/Move", false),
+            renderKey("F7", "Namespace", canCreateNS),
+            renderKey("F8", "Delete", canDelete),
+            renderKey("F9", "Menu", true),
+            FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"),
+            FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"),
+        }
+    }
 
 	// Add spaces between keys
 	renderedKeys := make([]string, 0, len(keys)*2-1)

@@ -10,6 +10,7 @@ import (
     "github.com/charmbracelet/lipgloss/v2"
     "github.com/sttts/kc/pkg/resources"
     "k8s.io/apimachinery/pkg/runtime/schema"
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // Panel represents a file/resource panel
@@ -886,6 +887,59 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
             } else if len(parts) >= 4 {
                 ns := parts[2]
                 res := parts[3]
+                // Object-level navigation
+                if len(parts) == 5 {
+                    name := parts[4]
+                    if res == "pods" && p.genericFactory != nil {
+                        // Show containers for the pod
+                        if gvk, ok := p.namespacedCatalog[res]; ok {
+                            ds := p.genericFactory(gvk)
+                            if ds != nil {
+                                if obj, err := ds.Get(ns, name); err == nil && obj != nil {
+                                    // containers
+                                    if arr, found, _ := unstructured.NestedSlice(obj.Object, "spec", "containers"); found {
+                                        for _, c := range arr {
+                                            if m, ok := c.(map[string]interface{}); ok {
+                                                if n, ok := m["name"].(string); ok {
+                                                    p.items = append(p.items, Item{Name: n, Type: ItemTypeDirectory, Enterable: true})
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // initContainers
+                                    if arr, found, _ := unstructured.NestedSlice(obj.Object, "spec", "initContainers"); found {
+                                        for _, c := range arr {
+                                            if m, ok := c.(map[string]interface{}); ok {
+                                                if n, ok := m["name"].(string); ok {
+                                                    p.items = append(p.items, Item{Name: n, Type: ItemTypeDirectory, Enterable: true})
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if (res == "configmaps" || res == "secrets") && p.genericFactory != nil {
+                        if gvk, ok := p.namespacedCatalog[res]; ok {
+                            ds := p.genericFactory(gvk)
+                            if ds != nil {
+                                if obj, err := ds.Get(ns, name); err == nil && obj != nil {
+                                    // list data keys
+                                    if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found {
+                                        keys := make([]string, 0, len(data))
+                                        for k := range data { keys = append(keys, k) }
+                                        sort.Strings(keys)
+                                        for _, k := range keys {
+                                            p.items = append(p.items, Item{Name: k, Type: ItemTypeFile})
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Done with object view
+                    return nil
+                }
                 if gvk, ok := p.namespacedCatalog[res]; ok && p.genericFactory != nil {
                     if p.currentResourceGVK == nil || *p.currentResourceGVK != gvk {
                         p.resourceData = p.genericFactory(gvk)
