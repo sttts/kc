@@ -659,7 +659,17 @@ func (a *App) openYAMLForSelection() tea.Cmd {
     // Marshal to YAML
     yb, _ := yaml.Marshal(obj.Object)
     viewer := NewYAMLViewer(name, string(yb), func() tea.Cmd { return a.editSelection() })
-    modal := NewModal("YAML", viewer)
+    // Title: full breadcrumb of the object
+    title := path
+    if ok {
+        // If path doesn't already contain the object name (list level), append it
+        if !strings.HasSuffix(path, "/"+name) {
+            title = path + "/" + name
+        }
+    } else if path == "/namespaces" {
+        title = "/namespaces/" + name
+    }
+    modal := NewModal(title, viewer)
     modal.SetDimensions(a.width, a.height)
     a.modalManager.Register("yaml_viewer", modal)
     a.modalManager.Show("yaml_viewer")
