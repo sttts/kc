@@ -17,6 +17,8 @@ import (
     "github.com/sttts/kc/pkg/resources"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime/schema"
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    yaml "sigs.k8s.io/yaml"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
@@ -43,6 +45,8 @@ type App struct {
     storeProvider resources.StoreProvider
     currentCtx    *kubeconfig.Context
     viewConfig    *ViewConfig
+    resCatalog    map[string]schema.GroupVersionKind
+    genericFactory func(schema.GroupVersionKind) *GenericDataSource
 }
 
 // NewApp creates a new application instance
@@ -57,6 +61,7 @@ func NewApp() *App {
         allResources: make([]schema.GroupVersionKind, 0),
         escPressed:   false,
         viewConfig:   NewViewConfig(),
+        resCatalog:   make(map[string]schema.GroupVersionKind),
     }
 
 	// Register modals
@@ -220,6 +225,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() {
                 a.terminal.ClearTyped()
                 return a, nil
+            }
+            // Intercept F3/F4 to open viewers/editors
+            if msg.String() == "f3" {
+                return a, a.openYAMLForSelection()
+            }
+            if msg.String() == "f4" {
+                return a, a.editSelection()
             }
             if a.shouldRouteToPanel(msg.String()) {
 				// Handle panel-specific keys
@@ -603,13 +615,69 @@ func (a *App) showHelp() tea.Cmd {
 }
 
 func (a *App) viewItem() tea.Cmd {
-	// TODO: Implement view functionality (F3)
-	return nil
+    return a.openYAMLForSelection()
 }
 
 func (a *App) editItem() tea.Cmd {
-	// TODO: Implement edit functionality (F4)
-	return nil
+    return a.editSelection()
+}
+
+// openYAMLForSelection fetches the selected object and opens a YAML viewer modal.
+func (a *App) openYAMLForSelection() tea.Cmd {
+    // Determine active panel and current selection
+    p := a.leftPanel
+    if a.activePanel == 1 { p = a.rightPanel }
+    item := p.GetCurrentItem()
+    if item == nil || item.Name == ".." { return nil }
+    path := p.GetCurrentPath()
+    // Resolve namespace/resource/name
+    ns, res, name, ok := parseNamespacedObjectPath(path, item.Name)
+    var gvk schema.GroupVersionKind
+    if !ok {
+        // Special case: viewing a namespace YAML at /namespaces
+        if path == "/namespaces" && item.Type == ItemTypeNamespace {
+            gvk = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+            name = item.Name
+        } else {
+            return nil
+        }
+    } else {
+        if v, exists := a.resCatalog[res]; exists { gvk = v } else { return nil }
+    }
+    // Fetch object via GenericDataSource
+    ds := a.genericFactory(gvk)
+    obj, err := ds.Get(ns, name)
+    if err != nil { return nil }
+    // Strip managedFields
+    unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+    // Marshal to YAML
+    yb, _ := yaml.Marshal(obj.Object)
+    viewer := NewYAMLViewer(name, string(yb), func() tea.Cmd { return a.editSelection() })
+    modal := NewModal("YAML", viewer)
+    modal.SetDimensions(a.width, a.height)
+    a.modalManager.Register("yaml_viewer", modal)
+    a.modalManager.Show("yaml_viewer")
+    return nil
+}
+
+// editSelection triggers kubectl edit for the selected object (stub wiring; full logic in later step).
+func (a *App) editSelection() tea.Cmd {
+    // Placeholder: actual kubectl edit integration will be added in the Edit task.
+    return nil
+}
+
+func parseNamespacedObjectPath(path, currentName string) (ns, res, name string, ok bool) {
+    // /namespaces/<ns>/<res>[/<name>]
+    if strings.HasPrefix(path, "/namespaces/") {
+        parts := strings.Split(path, "/")
+        if len(parts) == 4 { // object list level
+            return parts[2], parts[3], currentName, true
+        }
+        if len(parts) >= 5 { // object level
+            return parts[2], parts[3], parts[4], true
+        }
+    }
+    return "", "", "", false
 }
 
 func (a *App) copyItem() tea.Cmd {
