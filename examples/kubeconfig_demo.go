@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/sschimanski/kc/pkg/kubeconfig"
+	"github.com/sttts/kc/pkg/kubeconfig"
 )
 
 func main() {

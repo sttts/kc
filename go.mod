@@ -1,4 +1,4 @@
-module github.com/sschimanski/kc
+module github.com/sttts/kc
 
 go 1.24.4
 

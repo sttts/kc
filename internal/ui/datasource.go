@@ -4,7 +4,7 @@ import (
     "context"
     "fmt"
 
-    "github.com/sschimanski/kc/pkg/resources"
+    "github.com/sttts/kc/pkg/resources"
     "k8s.io/apimachinery/pkg/runtime/schema"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
