@@ -54,12 +54,14 @@ A TUI (Terminal User Interface) for Kubernetes inspired by Midnight Commander, b
 
 ### Building
 ```bash
-go build cmd/kc/main.go
+go build -o kc ./cmd/kc
 ```
 
 ### Running
 ```bash
-./main
+./kc
+# or without building first
+go run ./cmd/kc
 ```
 
 ### Key Bindings
@@ -94,6 +96,11 @@ go run examples/kubeconfig/main.go
 Run all tests:
 ```bash
 go test ./... -v
+```
+
+With coverage summary:
+```bash
+go test ./... -cover
 ```
 
 Run specific component tests:
@@ -133,10 +140,13 @@ kc/
 ## Contributing
 
 This project follows Go best practices:
+- Non-trivial logic MUST be covered by unit tests
 - Write tests first (TDD approach)
 - Use existing Kubernetes concepts directly
 - Keep components modular and extensible
 - Comprehensive testing for all functionality
+
+See AGENTS.md for detailed contributor guidelines.
 
 ## License
 
