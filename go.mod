@@ -5,7 +5,6 @@ go 1.24.4
 toolchain go1.24.7
 
 require (
-	github.com/charmbracelet/bubbletea v0.27.0
 	github.com/charmbracelet/bubbletea/v2 v2.0.0-beta.4
 	github.com/charmbracelet/lipgloss v0.9.1
 	github.com/taigrr/bubbleterm v0.0.2

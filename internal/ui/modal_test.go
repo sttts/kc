@@ -1,9 +1,9 @@
 package ui
 
 import (
-	"testing"
+    "testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+    tea "github.com/charmbracelet/bubbletea/v2"
 )
 
 // mockModel is a simple mock model for testing
