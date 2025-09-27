@@ -287,19 +287,13 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 		line.WriteString(" ")
 	}
 
-	// Item type indicator
-	switch item.Type {
-	case ItemTypeDirectory:
-		line.WriteString("/")
-	case ItemTypeFile:
-		line.WriteString(" ")
-	case ItemTypeResource:
-		line.WriteString(" ")
-	case ItemTypeNamespace:
-		line.WriteString(" ")
-	case ItemTypeContext:
-		line.WriteString(" ")
-	}
+    // Item type indicator: anything enterable should look like a folder ("/")
+    enterable := item.Type != ItemTypeFile
+    if enterable {
+        line.WriteString("/")
+    } else {
+        line.WriteString(" ")
+    }
 
 	// Item name
 	line.WriteString(item.Name)
