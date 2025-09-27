@@ -159,59 +159,7 @@ func (t *Terminal) renderTwoLineViewWithCursor() (string, *tea.Cursor) {
     }
 
     terminalView, termCur := t.terminal.View()
-    terminalLines := strings.Split(terminalView, "\n")
-
-    if termCur == nil {
-        // No cursor available, show last 2 lines of terminal output
-        var lines []string
-        if len(terminalLines) >= 2 {
-            lines = terminalLines[len(terminalLines)-2:]
-        } else {
-            lines = terminalLines
-        }
-        // Ensure we have exactly 2 lines
-        for len(lines) < 2 {
-            lines = append(lines, "")
-        }
-        content := strings.Join(lines, "\n")
-        view := lipgloss.NewStyle().
-            Width(t.width).
-            Height(2).
-            Render(content)
-        return view, nil
-    }
-
-    // Show the cursor line and the line before it
-    var lines []string
-    // Defensive bounds: clamp cursor Y into the available lines
-    if len(terminalLines) == 0 {
-        lines = []string{"", ""}
-        view := lipgloss.NewStyle().
-            Width(t.width).
-            Height(2).
-            Render(strings.Join(lines, "\n"))
-        return view, nil
-    }
-    y := termCur.Y
-    if y < 0 {
-        y = 0
-    }
-    if y >= len(terminalLines) {
-        y = len(terminalLines) - 1
-    }
-    cur := *termCur
-    cur.Y = 1
-    cur.Blink = true
-    if y > 0 {
-        lines = []string{terminalLines[y-1], terminalLines[y]}
-    } else {
-        lines = []string{"", terminalLines[y]}
-    }
-
-	return lipgloss.NewStyle().
-		Width(t.width).
-		Height(2).
-		Render(strings.Join(lines, "\n")), &cur
+    return renderTwoLineFrom(terminalView, termCur, t.width)
 }
 
 // renderTwoLineView renders the 2-line view when panels are visible
@@ -246,6 +194,64 @@ func (t *Terminal) renderTwoLineView() string {
 		Width(t.width).
 		Height(2).
 		Render(content)
+}
+
+// renderTwoLineFrom produces a two-line view from a full terminal view and optional cursor.
+// It clamps the cursor position to existing lines and always returns exactly 2 lines rendered
+// to the specified width. When the cursor is present, it is repositioned to Y=1.
+func renderTwoLineFrom(terminalView string, termCur *tea.Cursor, width int) (string, *tea.Cursor) {
+    terminalLines := strings.Split(terminalView, "\n")
+
+    if termCur == nil {
+        // No cursor available, show last 2 lines of terminal output
+        var lines []string
+        if len(terminalLines) >= 2 {
+            lines = terminalLines[len(terminalLines)-2:]
+        } else {
+            lines = terminalLines
+        }
+        // Ensure we have exactly 2 lines
+        for len(lines) < 2 {
+            lines = append(lines, "")
+        }
+        content := strings.Join(lines, "\n")
+        view := lipgloss.NewStyle().
+            Width(width).
+            Height(2).
+            Render(content)
+        return view, nil
+    }
+
+    // Show the cursor line and the line before it
+    var lines []string
+    if len(terminalLines) == 0 {
+        lines = []string{"", ""}
+        view := lipgloss.NewStyle().
+            Width(width).
+            Height(2).
+            Render(strings.Join(lines, "\n"))
+        return view, nil
+    }
+    y := termCur.Y
+    if y < 0 {
+        y = 0
+    }
+    if y >= len(terminalLines) {
+        y = len(terminalLines) - 1
+    }
+    cur := *termCur
+    cur.Y = 1
+    cur.Blink = true
+    if y > 0 {
+        lines = []string{terminalLines[y-1], terminalLines[y]}
+    } else {
+        lines = []string{"", terminalLines[y]}
+    }
+    view := lipgloss.NewStyle().
+        Width(width).
+        Height(2).
+        Render(strings.Join(lines, "\n"))
+    return view, &cur
 }
 
 // SetShowPanels sets whether panels are visible
