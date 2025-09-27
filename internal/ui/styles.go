@@ -34,6 +34,12 @@ var (
         Background(lipgloss.Color(ColorCyan)).
         Foreground(lipgloss.Color(ColorBlack))
 
+    // Table header style for server-side Table rendering in panel content
+    PanelTableHeaderStyle = lipgloss.NewStyle().
+        Background(lipgloss.Color(ColorDarkerBlue)).
+        Foreground(lipgloss.Color(ColorGrey)).
+        Bold(true)
+
 	// Border and frame styles
 	BorderStyle = lipgloss.NewStyle().
 		Foreground(lipgloss.Color(ColorCyan))

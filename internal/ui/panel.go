@@ -264,7 +264,7 @@ func (p *Panel) renderContent() string {
 
 // renderContentFocused renders the panel content with focus state
 func (p *Panel) renderContentFocused(isFocused bool) string {
-	if len(p.items) == 0 {
+    if len(p.items) == 0 {
 		return PanelContentStyle.
 			Width(p.width).
 			Height(p.height).
@@ -281,12 +281,25 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 	}
 
 	// Render visible items
-	var lines []string
-	for i := start; i < end; i++ {
-		item := p.items[i]
-		line := p.renderItem(item, i == p.selected && isFocused)
-		lines = append(lines, line)
-	}
+    var lines []string
+    addedHeader := false
+    for i := start; i < end; i++ {
+        item := p.items[i]
+        // Insert table header once before the first non-".." item when table rows are present
+        if p.tableRows != nil && !addedHeader && item.Name != ".." {
+            header := strings.Join(p.tableHeaders, "  ")
+            if len(header) > p.width { header = header[:p.width] }
+            lines = append(lines, PanelTableHeaderStyle.Width(p.width).Render(header))
+            addedHeader = true
+            // If header filled the visible viewport, stop
+            if len(lines) >= visibleHeight {
+                break
+            }
+        }
+        line := p.renderItem(item, i == p.selected && isFocused)
+        lines = append(lines, line)
+        if len(lines) >= visibleHeight { break }
+    }
 
 	// Fill remaining space if needed
 	for len(lines) < visibleHeight {
