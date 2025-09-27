@@ -322,9 +322,12 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
     var lines []string
     // Render table header first when applicable
     if p.shouldRenderTable() && p.tableRows != nil && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
-        p.columnWidths = p.computeColumnWidths(p.tableHeaders, p.tableRows, p.width)
+        p.columnWidths = p.computeColumnWidths(p.tableHeaders, p.tableRows, p.width-2)
         header := p.formatRow(p.tableHeaders, p.columnWidths)
-        lines = append(lines, PanelTableHeaderStyle.Width(p.width).Render(header))
+        // Add two-char prefix to align with selection + type column in rows
+        prefixed := "  " + header
+        if len(prefixed) > p.width { prefixed = prefixed[:p.width] }
+        lines = append(lines, PanelTableHeaderStyle.Width(p.width).Render(prefixed))
     }
     for i := start; i < end; i++ {
         item := p.items[i]
