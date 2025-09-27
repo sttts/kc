@@ -70,12 +70,13 @@ type Item struct {
 // GetFooterInfo returns the display string for this item in the footer
 func (i *Item) GetFooterInfo() string {
 	// Prefer precise identity: Group/Version/Resource
-	if i.TypedGVR.Resource != "" || i.TypedGVR.Version != "" || i.TypedGVR.Group != "" {
+	if i.TypedGVR.Version != "" || i.TypedGVR.Group != "" {
 		if i.TypedGVR.Group == "" {
-			// core
-			return fmt.Sprintf("%s (%s/%s)", i.Name, i.TypedGVR.Version, i.TypedGVR.Resource)
+			// core group: show only version
+			return fmt.Sprintf("%s (%s)", i.Name, i.TypedGVR.Version)
 		}
-		return fmt.Sprintf("%s (%s/%s/%s)", i.Name, i.TypedGVR.Group, i.TypedGVR.Version, i.TypedGVR.Resource)
+		// show group/version without repeating resource
+		return fmt.Sprintf("%s (%s/%s)", i.Name, i.TypedGVR.Group, i.TypedGVR.Version)
 	}
 	if i.GVK != "" {
 		return fmt.Sprintf("%s (%s)", i.Name, i.GVK)
@@ -359,8 +360,8 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 
 	// Render visible items
 	var lines []string
-	// Render table header first when applicable
-	if p.shouldRenderTable() && p.tableRows != nil && ((strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4) || p.currentPath == "/namespaces") {
+	// Render table header first when applicable (object lists or resource-group lists)
+	if p.tableRows != nil && (p.shouldRenderTable() || p.isGroupListView()) && (((strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4) || p.currentPath == "/namespaces") || p.isGroupListView()) {
 		p.columnWidths = p.computeColumnWidths(p.tableHeaders, p.tableRows, p.width-2)
 		header := p.formatRow(p.tableHeaders, p.columnWidths)
 		// Add two-char prefix to align with selection + type column in rows
@@ -388,6 +389,89 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
+// isObjectsPath reports whether the current path points at an object listing
+// of a resource (cluster-scoped or namespaced) and returns the resource name.
+func (p *Panel) isObjectsPath() (string, bool) {
+	parts := strings.Split(p.currentPath, "/")
+	if len(parts) == 2 && parts[0] == "" && parts[1] != "" { // "/<resource>"
+		return parts[1], true
+	}
+	if len(parts) >= 4 && parts[1] == "namespaces" && parts[3] != "" { // "/namespaces/<ns>/<resource>"
+		return parts[3], true
+	}
+	return "", false
+}
+
+// isGroupListView reports whether we're listing resource groups (root or namespace level).
+func (p *Panel) isGroupListView() bool {
+	if p.currentPath == "/" {
+		return true
+	}
+	parts := strings.Split(p.currentPath, "/")
+	return len(parts) == 3 && parts[1] == "namespaces"
+}
+
+// buildResourceGroupItems returns resource group items with counts, hiding empty ones.
+// If namespace is empty, cluster-scoped resources are listed; otherwise namespaced.
+func (p *Panel) buildResourceGroupItems(infos []resources.ResourceInfo, namespace string, skipNamespaceResource bool) []Item {
+	if len(infos) == 0 || p.genericFactory == nil {
+		return nil
+	}
+	// Sort deterministically by resource plural
+	names := make([]string, 0, len(infos))
+	for _, info := range infos {
+		names = append(names, info.Resource)
+	}
+	sort.Strings(names)
+	// Map for lookup
+	byRes := make(map[string]resources.ResourceInfo, len(infos))
+	for _, info := range infos {
+		byRes[info.Resource] = info
+	}
+	var out []Item
+	for _, res := range names {
+		if skipNamespaceResource && res == "namespaces" {
+			continue
+		}
+		info := byRes[res]
+		gvk := info.GVK
+		// Filter out resources without list support
+		hasList := false
+		for _, v := range info.Verbs {
+			if v == "list" {
+				hasList = true
+				break
+			}
+		}
+		if !hasList {
+			continue
+		}
+		ds := p.genericFactory(gvk)
+		if ds == nil {
+			continue
+		}
+		// Count via Table when available, fallback to List. On error, include entry
+		// with unknown count so the user can still enter.
+		count := -1
+		if _, rows, _, err := ds.ListTable(namespace); err == nil && rows != nil {
+			count = len(rows)
+		} else if lst, err := ds.List(namespace); err == nil {
+			count = len(lst)
+		}
+		if count == 0 {
+			continue // verified empty -> hide
+		}
+		size := ""
+		if count > 0 {
+			size = fmt.Sprintf("%d", count)
+		}
+		it := Item{Name: res, Type: ItemTypeResource, Size: size, Enterable: true, TypedGVK: gvk}
+		it.TypedGVR = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
+		out = append(out, it)
+	}
+	return out
+}
+
 // renderItem renders a single item
 func (p *Panel) renderItem(item Item, selected bool) string {
 	// Create item line
@@ -408,8 +492,8 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 		line.WriteString(" ")
 	}
 
-	// Item name or table row
-	if p.shouldRenderTable() && p.tableRows != nil && item.Name != ".." && ((strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4) || p.currentPath == "/namespaces") {
+	// Item name or table row (object lists or resource-group lists)
+	if p.tableRows != nil && item.Name != ".." && (p.isGroupListView() || ((strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4) || p.currentPath == "/namespaces")) {
 		// Determine row index, accounting for optional ".." at top
 		idx := p.indexOf(item)
 		if idx >= 0 {
@@ -430,27 +514,57 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 		line.WriteString(item.Name)
 	}
 
-	// Right-align counts for root items (number of sub-elements).
-	if p.currentPath == "/" && item.Size != "" && item.Modified == "" {
-		base := line.String()
-		// Trim if base already exceeds width minus count width
+	// Right-align counts for resource-group listings (root and /namespaces/<ns>).
+	parts := strings.Split(p.currentPath, "/")
+	isGroupListing := (p.currentPath == "/") || (len(parts) == 3 && parts[1] == "namespaces")
+	if isGroupListing && p.tableRows == nil {
+		prefix := ""
+		if item.Selected {
+			prefix += "*"
+		} else {
+			prefix += " "
+		}
+		if (item.Type == ItemTypeDirectory) || (item.Type == ItemTypeNamespace) || (item.Type == ItemTypeContext) || item.Enterable {
+			prefix += "/"
+		} else {
+			prefix += " "
+		}
+		name := item.Name
 		count := item.Size
 		rightCol := len(count)
 		if rightCol > p.width {
 			rightCol = p.width
 		}
-		maxBase := max(0, p.width-rightCol)
-		if len(base) > maxBase {
-			base = base[:maxBase]
+		leftW := max(0, p.width-rightCol)
+		// group/version string in faint white (light gray)
+		group := item.TypedGVK.Group
+		if group == "" {
+			group = "core"
 		}
-		// Pad spaces up to the column before the count and append count
-		if len(base) < maxBase {
-			base += strings.Repeat(" ", maxBase-len(base))
+		gv := group + "/" + item.TypedGVK.Version
+		gvEsc := "\033[2m\033[37m" + gv + "\033[39m\033[22m"
+		prefixW := lipgloss.Width(prefix)
+		innerW := max(0, leftW-prefixW)
+		showGV := (len(name)+2+len(gv) <= innerW)
+		var body strings.Builder
+		body.WriteString(name)
+		if showGV {
+			body.WriteString("  ")
+			body.WriteString(gvEsc)
 		}
-		base += count
+		visibleInner := len(name)
+		if showGV {
+			visibleInner += 2 + len(gv)
+		}
+		if visibleInner < innerW {
+			body.WriteString(strings.Repeat(" ", innerW-visibleInner))
+		}
+		// Compose
 		line.Reset()
-		line.WriteString(base)
-	} else if item.Size != "" || item.Modified != "" {
+		line.WriteString(prefix)
+		line.WriteString(body.String())
+		line.WriteString(count)
+	} else if (item.Size != "" || item.Modified != "") && !(isGroupListing && p.tableRows != nil) {
 		// Generic trailing info: keep simple spacing, trimming to width.
 		current := line.String()
 		info := strings.TrimSpace(strings.TrimSpace(item.Size + " " + item.Modified))
@@ -466,6 +580,34 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 			current += info
 			line.Reset()
 			line.WriteString(current)
+		}
+	}
+
+	// Insert a dimmed middle column with group/version for object listings
+	if p.tableRows == nil {
+		if _, ok := p.isObjectsPath(); ok && item.Type == ItemTypeResource && item.Name != ".." {
+			base := line.String()
+			group := item.TypedGVK.Group
+			if group == "" {
+				group = "core"
+			}
+			gv := group + "/" + item.TypedGVK.Version
+			gvEsc := "\033[90m" + gv + "\033[39m"
+			mid := p.width / 2
+			if mid < len(base)+2 {
+				mid = len(base) + 2
+			}
+			if mid+len(gv) <= p.width {
+				if len(base) < mid {
+					base += strings.Repeat(" ", mid-len(base))
+				}
+				base += gvEsc
+				if len(base) > p.width {
+					base = base[:p.width]
+				}
+				line.Reset()
+				line.WriteString(base)
+			}
 		}
 	}
 
@@ -539,11 +681,11 @@ func (p *Panel) computeColumnWidths(headers []string, rows [][]string, width int
 	}
 	widths := make([]int, n)
 	for i := 0; i < n; i++ {
-		widths[i] = len(headers[i])
+		widths[i] = lipgloss.Width(headers[i])
 	}
 	for _, r := range rows {
 		for i := 0; i < n && i < len(r); i++ {
-			if l := len(fmt.Sprint(r[i])); l > widths[i] {
+			if l := lipgloss.Width(fmt.Sprint(r[i])); l > widths[i] {
 				widths[i] = l
 			}
 		}
@@ -607,15 +749,20 @@ func (p *Panel) formatRow(cells []string, widths []int) string {
 			s = ""
 		}
 		w := widths[i]
-		if len(s) > w {
-			s = s[:w]
-		} else if len(s) < w {
-			s = s + strings.Repeat(" ", w-len(s))
+		vis := lipgloss.Width(s)
+		if vis > w {
+			for len(s) > 0 && lipgloss.Width(s) > w {
+				s = s[:len(s)-1]
+			}
+			// ensure foreground/bold reset after trimmed ANSI content
+			s += "\033[39m\033[22m"
+		} else if vis < w {
+			s = s + strings.Repeat(" ", w-vis)
 		}
 		out[i] = s
 	}
 	row := strings.Join(out, " ")
-	if len(row) > p.width {
+	if lipgloss.Width(row) > p.width {
 		row = row[:p.width]
 	}
 	return row
@@ -957,51 +1104,54 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 	// Load items based on path
 	switch path {
 	case "/":
-		// Root level - contexts, namespaces, then cluster-scoped resources directly
-		// Contexts entry with count (if known)
-		ctxCount := ""
-		if c := p.countContexts(); c >= 0 {
-			ctxCount = fmt.Sprintf("%d", c)
-		}
-		p.items = append(p.items, Item{Name: "contexts", Type: ItemTypeDirectory, Size: ctxCount})
-		// Namespaces entry with live count when available
-		nsCount := ""
-		if p.nsData != nil {
-			if _, rows, _, err := p.nsData.ListTable(); err == nil && rows != nil {
-				nsCount = fmt.Sprintf("%d", len(rows))
-			} else if items, err := p.nsData.List(); err == nil {
-				nsCount = fmt.Sprintf("%d", len(items))
+		// Root: contexts first (no group/count), then namespaces (real resource row),
+		// then other cluster-scoped resources.
+		p.items = append(p.items, Item{Name: "contexts", Type: ItemTypeDirectory})
+		groups := p.buildResourceGroupItems(p.clusterInfos, "", false)
+		// Move namespaces to the top after contexts if present
+		nsIdx := -1
+		for i, it := range groups {
+			if it.Name == "namespaces" {
+				nsIdx = i
+				break
 			}
 		}
-		p.items = append(p.items, Item{Name: "namespaces", Type: ItemTypeDirectory, Size: nsCount})
-		// Cluster-scoped resources (sorted), each with object count when retrievable
-		if len(p.clusterInfos) > 0 && p.genericFactory != nil {
-			names := make([]string, 0, len(p.clusterInfos))
-			for _, info := range p.clusterInfos {
-				names = append(names, info.Resource)
-			}
-			sort.Strings(names)
-			for _, res := range names {
-				var gvk schema.GroupVersionKind
-				for _, info := range p.clusterInfos {
-					if info.Resource == res {
-						gvk = info.GVK
-						break
-					}
+		if nsIdx >= 0 {
+			p.items = append(p.items, groups[nsIdx])
+			groups = append(groups[:nsIdx], groups[nsIdx+1:]...)
+		}
+		p.items = append(p.items, groups...)
+
+		// Prepare table headers/rows for group list view
+		p.tableHeaders = []string{"Name", "Group", "Count"}
+		startRow := 0
+		if len(p.items) > 0 && p.items[0].Name == ".." {
+			startRow = 1
+		}
+		p.tableRows = make([][]string, len(p.items)-startRow)
+		for i := startRow; i < len(p.items); i++ {
+			it := p.items[i]
+			gv := ""
+			if it.Name != "contexts" && it.Name != ".." {
+				g := it.TypedGVK.Group
+				v := it.TypedGVK.Version
+				if g == "" {
+					gv = v
+				} else if v != "" {
+					gv = g + "/" + v
+				} else {
+					gv = g
 				}
-				ds := p.genericFactory(gvk)
-				count := ""
-				if ds != nil {
-					if _, rows, _, err := ds.ListTable(""); err == nil && rows != nil {
-						count = fmt.Sprintf("%d", len(rows))
-					} else if lst, err := ds.List(""); err == nil {
-						count = fmt.Sprintf("%d", len(lst))
-					}
-				}
-				item := Item{Name: res, Type: ItemTypeResource, Size: count, Enterable: true, TypedGVK: gvk}
-				item.TypedGVR = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
-				p.items = append(p.items, item)
 			}
+			gvDim := ""
+			if gv != "" {
+				gvDim = "\033[2m" + gv + "\033[22m"
+			}
+			cnt := it.Size
+			if it.Name == "contexts" || it.Name == ".." {
+				cnt = ""
+			}
+			p.tableRows[i-startRow] = []string{it.Name, gvDim, cnt}
 		}
 
 	case "/contexts":
@@ -1043,89 +1193,55 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 		}
 
 	case "/cluster-resources":
-		// Deprecated: kept for compatibility; show the same as root cluster-scoped listing
-		if len(p.clusterInfos) > 0 && p.genericFactory != nil {
-			names := make([]string, 0, len(p.clusterInfos))
-			for _, info := range p.clusterInfos {
-				names = append(names, info.Resource)
-			}
-			sort.Strings(names)
-			for _, res := range names {
-				var gvk schema.GroupVersionKind
-				for _, info := range p.clusterInfos {
-					if info.Resource == res {
-						gvk = info.GVK
-						break
-					}
-				}
-				ds := p.genericFactory(gvk)
-				count := ""
-				if ds != nil {
-					if _, rows, _, err := ds.ListTable(""); err == nil && rows != nil {
-						count = fmt.Sprintf("%d", len(rows))
-					} else if lst, err := ds.List(""); err == nil {
-						count = fmt.Sprintf("%d", len(lst))
-					}
-				}
-				item := Item{Name: res, Type: ItemTypeResource, Size: count, Enterable: true, TypedGVK: gvk}
-				item.TypedGVR = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
-				p.items = append(p.items, item)
-			}
-		}
+		// Deprecated: mirror root listing (skip 'namespaces')
+		p.items = append(p.items, p.buildResourceGroupItems(p.clusterInfos, "", true)...)
 
 	default:
 		// Check if it's a context path
 		if len(path) > 10 && path[:10] == "/contexts/" {
 			// contextName := path[10:] // TODO: Use context name for actual resource loading
-			// Show namespaces and cluster resources for this context
+			// Show namespaces and non-empty cluster resources for this context
 			p.items = append(p.items, Item{Name: "namespaces", Type: ItemTypeDirectory})
-			if len(p.clusterInfos) > 0 {
-				names := make([]string, 0, len(p.clusterInfos))
-				for _, info := range p.clusterInfos {
-					names = append(names, info.Resource)
-				}
-				sort.Strings(names)
-				for _, res := range names {
-					p.items = append(p.items, Item{Name: res, Type: ItemTypeResource, Enterable: true})
-				}
-			}
+			p.items = append(p.items, p.buildResourceGroupItems(p.clusterInfos, "", true)...)
 		} else if len(path) > 12 && path[:12] == "/namespaces/" {
 			// /namespaces/<ns>[/<resource>]
 			parts := strings.Split(path, "/")
 			if len(parts) == 3 {
 				// namespace level: list resource groups from discovery, hide empties and show counts
-				if len(p.namespacedInfos) > 0 && p.genericFactory != nil {
-					ns := parts[2]
-					// deterministic order: collect and sort names
-					names := make([]string, 0, len(p.namespacedInfos))
-					for _, info := range p.namespacedInfos {
-						names = append(names, info.Resource)
+				ns := parts[2]
+				p.items = append(p.items, p.buildResourceGroupItems(p.namespacedInfos, ns, false)...)
+				// Group list table for namespace
+				p.tableHeaders = []string{"Name", "Group", "Count"}
+				startRow := 0
+				if len(p.items) > 0 && p.items[0].Name == ".." {
+					startRow = 1
+				}
+				p.tableRows = make([][]string, len(p.items)-startRow)
+				for i := startRow; i < len(p.items); i++ {
+					it := p.items[i]
+					g := it.TypedGVK.Group
+					v := it.TypedGVK.Version
+					gv := ""
+					if g == "" {
+						gv = v
+					} else if v != "" {
+						gv = g + "/" + v
+					} else {
+						gv = g
 					}
-					sort.Strings(names)
-					for _, res := range names {
-						var gvk schema.GroupVersionKind
-						for _, info := range p.namespacedInfos {
-							if info.Resource == res {
-								gvk = info.GVK
-								break
-							}
-						}
-						ds := p.genericFactory(gvk)
-						if ds == nil {
-							continue
-						}
-						if items, err := ds.List(ns); err == nil && len(items) > 0 {
-							item := Item{Name: res, Type: ItemTypeResource, Size: fmt.Sprintf("%d", len(items)), Enterable: true, TypedGVK: gvk}
-							item.TypedGVR = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
-							p.items = append(p.items, item)
-						}
+					gvDim := ""
+					if gv != "" {
+						gvDim = "\033[2m" + gv + "\033[22m"
 					}
-					if len(p.items) == 1 && p.items[0].Name == ".." {
-						// no resources, leave empty indicator
-						p.items = append(p.items, Item{Name: "(no resources)", Type: ItemTypeDirectory})
+					cnt := it.Size
+					if it.Name == ".." {
+						cnt = ""
 					}
-				} else {
-					p.items = append(p.items, Item{Name: "pods", Type: ItemTypeResource})
+					p.tableRows[i-startRow] = []string{it.Name, gvDim, cnt}
+				}
+				if len(p.items) == 1 && p.items[0].Name == ".." {
+					// no resources, leave empty indicator
+					p.items = append(p.items, Item{Name: "(no resources)", Type: ItemTypeDirectory})
 				}
 			} else if len(parts) == 2 {
 				// Cluster-scoped resource objects: "/<resource>"

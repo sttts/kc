@@ -14,7 +14,7 @@ func main() {
 
 	// Create kubeconfig manager
 	kubeMgr := kubeconfig.NewManager()
-	
+
 	// Discover kubeconfigs
 	fmt.Println("\n1. Discovering kubeconfigs...")
 	err := kubeMgr.DiscoverKubeconfigs()
@@ -26,7 +26,7 @@ func main() {
 
 	// Create navigation manager
 	navMgr := navigation.NewManager(kubeMgr, nil)
-	
+
 	// Build hierarchy
 	fmt.Println("\n2. Building navigation hierarchy...")
 	err = navMgr.BuildHierarchy()
@@ -40,7 +40,7 @@ func main() {
 
 	// Show current state
 	state := navMgr.GetState()
-	fmt.Printf("\n4. Current node: %s (type: %v)\n", 
+	fmt.Printf("\n4. Current node: %s (type: %v)\n",
 		state.CurrentNode.Name, state.CurrentNode.Type)
 
 	// Test node operations
@@ -55,10 +55,10 @@ func displayHierarchy(node *navigation.Node, depth int) {
 	for i := 0; i < depth; i++ {
 		indent += "  "
 	}
-	
+
 	nodeTypeStr := getNodeTypeString(node.Type)
 	fmt.Printf("%s- %s (%s)\n", indent, node.Name, nodeTypeStr)
-	
+
 	for _, child := range node.Children {
 		displayHierarchy(child, depth+1)
 	}
@@ -86,24 +86,24 @@ func testNodeOperations(state *navigation.NavigationState) {
 	if len(state.Root.Children) > 0 {
 		firstChild := state.Root.Children[0]
 		fmt.Printf("Testing expand/collapse on: %s\n", firstChild.Name)
-		
+
 		// Toggle expanded state
 		state.ToggleExpanded(firstChild)
 		fmt.Printf("  Expanded: %v\n", state.IsExpanded(firstChild))
-		
+
 		state.ToggleExpanded(firstChild)
 		fmt.Printf("  Expanded after toggle: %v\n", state.IsExpanded(firstChild))
 	}
-	
+
 	// Test selection
 	if len(state.Root.Children) > 0 {
 		firstChild := state.Root.Children[0]
 		fmt.Printf("Testing selection on: %s\n", firstChild.Name)
-		
+
 		// Add to selection
 		state.AddSelectedNode(firstChild)
 		fmt.Printf("  Selected nodes: %d\n", len(state.GetSelectedNodes()))
-		
+
 		// Clear selection
 		state.ClearSelection()
 		fmt.Printf("  Selected nodes after clear: %d\n", len(state.GetSelectedNodes()))

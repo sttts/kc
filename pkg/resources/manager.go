@@ -1,23 +1,23 @@
 package resources
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "strings"
-    "sync"
-    "time"
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+	"time"
 
-    "github.com/sttts/kc/pkg/handlers"
+	"github.com/sttts/kc/pkg/handlers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-    "k8s.io/client-go/discovery"
-    "k8s.io/client-go/discovery/cached/memory"
-    "k8s.io/client-go/dynamic"
-    "k8s.io/client-go/rest"
-    "k8s.io/client-go/restmapper"
-    "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -63,54 +63,54 @@ func NewManager(config *rest.Config) (*Manager, error) {
 
 // Start starts the manager
 func (m *Manager) Start() error {
-    // Start the cluster asynchronously; Start blocks until stop.
-    go func() {
-        // Error is captured only for logging; callers should operate even if cache isn't fully warm yet.
-        _ = m.cluster.Start(m.ctx)
-    }()
+	// Start the cluster asynchronously; Start blocks until stop.
+	go func() {
+		// Error is captured only for logging; callers should operate even if cache isn't fully warm yet.
+		_ = m.cluster.Start(m.ctx)
+	}()
 
-    // Best-effort: wait briefly for cache sync. If no informers are registered yet, this will return immediately.
-    synced := make(chan struct{})
-    go func() {
-        m.cache.WaitForCacheSync(m.ctx)
-        close(synced)
-    }()
-    select {
-    case <-synced:
-    case <-time.After(2 * time.Second):
-        // Proceed without blocking; cache will continue warming in background.
-    }
+	// Best-effort: wait briefly for cache sync. If no informers are registered yet, this will return immediately.
+	synced := make(chan struct{})
+	go func() {
+		m.cache.WaitForCacheSync(m.ctx)
+		close(synced)
+	}()
+	select {
+	case <-synced:
+	case <-time.After(2 * time.Second):
+		// Proceed without blocking; cache will continue warming in background.
+	}
 
-    // Start discovery refresh loop (invalidate cached discovery and reset RESTMapper periodically)
-    go m.discoveryRefresher(30 * time.Second)
-    return nil
+	// Start discovery refresh loop (invalidate cached discovery and reset RESTMapper periodically)
+	go m.discoveryRefresher(30 * time.Second)
+	return nil
 }
 
 // Stop stops the manager
 func (m *Manager) Stop() {
-    m.cancel()
+	m.cancel()
 }
 
 // discoveryRefresher periodically invalidates discovery and resets the RESTMapper to pick up CRDs and API changes.
 func (m *Manager) discoveryRefresher(interval time.Duration) {
-    ticker := time.NewTicker(interval)
-    defer ticker.Stop()
-    for {
-        select {
-        case <-m.ctx.Done():
-            return
-        case <-ticker.C:
-            // Lazily initialize discovery if needed, then invalidate caches.
-            if err := m.ensureDiscovery(); err == nil {
-                if m.disco != nil {
-                    m.disco.Invalidate()
-                }
-                if m.mapper != nil {
-                    m.mapper.Reset()
-                }
-            }
-        }
-    }
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-ticker.C:
+			// Lazily initialize discovery if needed, then invalidate caches.
+			if err := m.ensureDiscovery(); err == nil {
+				if m.disco != nil {
+					m.disco.Invalidate()
+				}
+				if m.mapper != nil {
+					m.mapper.Reset()
+				}
+			}
+		}
+	}
 }
 
 // Client returns the client
@@ -163,20 +163,20 @@ func (m *Manager) GVKToGVR(gvk schema.GroupVersionKind) (schema.GroupVersionReso
 // ResourceToGVK resolves a resource plural (e.g., "pods") to a preferred GroupVersionKind
 // using the RESTMapper backed by discovery. The discovery cache is refreshed periodically.
 func (m *Manager) ResourceToGVK(resource string) (schema.GroupVersionKind, error) {
-    if err := m.ensureDiscovery(); err != nil {
-        return schema.GroupVersionKind{}, err
-    }
-    // Resolve resource to concrete GVR (preferred)
-    gvr, err := m.mapper.ResourceFor(schema.GroupVersionResource{Resource: resource})
-    if err != nil {
-        return schema.GroupVersionKind{}, fmt.Errorf("map resource %q: %w", resource, err)
-    }
-    // Then find the preferred kind
-    gvk, err := m.mapper.KindFor(gvr)
-    if err != nil {
-        return schema.GroupVersionKind{}, fmt.Errorf("kind for %s: %w", gvr.String(), err)
-    }
-    return gvk, nil
+	if err := m.ensureDiscovery(); err != nil {
+		return schema.GroupVersionKind{}, err
+	}
+	// Resolve resource to concrete GVR (preferred)
+	gvr, err := m.mapper.ResourceFor(schema.GroupVersionResource{Resource: resource})
+	if err != nil {
+		return schema.GroupVersionKind{}, fmt.Errorf("map resource %q: %w", resource, err)
+	}
+	// Then find the preferred kind
+	gvk, err := m.mapper.KindFor(gvr)
+	if err != nil {
+		return schema.GroupVersionKind{}, fmt.Errorf("kind for %s: %w", gvr.String(), err)
+	}
+	return gvk, nil
 }
 
 // ListByGVK lists resources generically using unstructured objects for the given GVK
@@ -269,65 +269,70 @@ func (m *Manager) GetSupportedResources() ([]schema.GroupVersionKind, error) {
 
 // GetResourceInfos returns API resource infos including GVK, plural resource name, and namespaced flag.
 func (m *Manager) GetResourceInfos() ([]ResourceInfo, error) {
-    discoveryClient, err := discovery.NewDiscoveryClientForConfig(m.cluster.GetConfig())
-    if err != nil {
-        return nil, fmt.Errorf("failed to create discovery client: %w", err)
-    }
-    apiResources, err := discoveryClient.ServerPreferredResources()
-    if err != nil {
-        return nil, fmt.Errorf("failed to get server resources: %w", err)
-    }
-    var infos []ResourceInfo
-    for _, apiResourceList := range apiResources {
-        gv, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
-        if err != nil { continue }
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(m.cluster.GetConfig())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create discovery client: %w", err)
+	}
+	apiResources, err := discoveryClient.ServerPreferredResources()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server resources: %w", err)
+	}
+	var infos []ResourceInfo
+	for _, apiResourceList := range apiResources {
+		gv, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
+		if err != nil {
+			continue
+		}
         for _, apiResource := range apiResourceList.APIResources {
-            if isSubresource(apiResource.Name) || isNonResourceType(apiResource.Kind) { continue }
+            if isSubresource(apiResource.Name) || isNonResourceType(apiResource.Kind) {
+                continue
+            }
             infos = append(infos, ResourceInfo{
-                GVK: schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: apiResource.Kind},
-                Resource: apiResource.Name, // plural
+                GVK:        schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: apiResource.Kind},
+                Resource:   apiResource.Name, // plural
                 Namespaced: apiResource.Namespaced,
+                Verbs:      apiResource.Verbs,
             })
         }
-    }
-    return infos, nil
+	}
+	return infos, nil
 }
 
 // restClientForGV constructs a REST client for a specific GroupVersion using the cluster config.
 func (m *Manager) restClientForGV(gv schema.GroupVersion) (*rest.RESTClient, error) {
-    cfg := rest.CopyConfig(m.cluster.GetConfig())
-    cfg.GroupVersion = &gv
-    if gv.Group == "" {
-        cfg.APIPath = "/api"
-    } else {
-        cfg.APIPath = "/apis"
-    }
-    cfg.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
-    return rest.RESTClientFor(cfg)
+	cfg := rest.CopyConfig(m.cluster.GetConfig())
+	cfg.GroupVersion = &gv
+	if gv.Group == "" {
+		cfg.APIPath = "/api"
+	} else {
+		cfg.APIPath = "/apis"
+	}
+	cfg.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
+	return rest.RESTClientFor(cfg)
 }
 
 // ListTableByGVR retrieves a server-side Table for the given resource using Accept negotiation.
 // Falls back to a JSON decode of the response into metav1.Table.
 func (m *Manager) ListTableByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*metav1.Table, error) {
-    rc, err := m.restClientForGV(schema.GroupVersion{Group: gvr.Group, Version: gvr.Version})
-    if err != nil {
-        return nil, fmt.Errorf("rest client: %w", err)
-    }
-    req := rc.Get().Resource(gvr.Resource)
-    if namespace != "" {
-        req = req.Namespace(namespace)
-    }
-    // Ask for Table with JSON fallback per K8s API content negotiation.
-    req.SetHeader("Accept", "application/json;as=Table;g=meta.k8s.io;v=v1, application/json")
-    data, err := req.DoRaw(ctx)
-    if err != nil {
-        return nil, fmt.Errorf("list table: %w", err)
-    }
-    var table metav1.Table
-    if err := json.Unmarshal(data, &table); err != nil {
-        return nil, fmt.Errorf("decode table: %w", err)
-    }
-    return &table, nil
+	rc, err := m.restClientForGV(schema.GroupVersion{Group: gvr.Group, Version: gvr.Version})
+	if err != nil {
+		return nil, fmt.Errorf("rest client: %w", err)
+	}
+	req := rc.Get().Resource(gvr.Resource)
+	if namespace != "" {
+		req = req.Namespace(namespace)
+	}
+	// Ask for Table with JSON fallback per K8s API content negotiation.
+	req.SetHeader("Accept", "application/json;as=Table;g=meta.k8s.io;v=v1, application/json")
+	data, err := req.DoRaw(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list table: %w", err)
+	}
+	var table metav1.Table
+	if err := json.Unmarshal(data, &table); err != nil {
+		return nil, fmt.Errorf("decode table: %w", err)
+	}
+	return &table, nil
 }
 
 // isSubresource checks if a resource name indicates a subresource
@@ -357,9 +362,11 @@ func isNonResourceType(kind string) bool {
 
 	return nonResourceTypes[kind]
 }
+
 // ResourceInfo describes a discoverable API resource kind.
 type ResourceInfo struct {
     GVK        schema.GroupVersionKind
     Resource   string // plural resource name (e.g., pods)
     Namespaced bool
+    Verbs      []string
 }

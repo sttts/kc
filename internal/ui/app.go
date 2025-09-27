@@ -1071,6 +1071,9 @@ func (a *App) initData() error {
 	a.genericFactory = factory
 	a.leftPanel.SetViewConfig(a.viewConfig)
 	a.rightPanel.SetViewConfig(a.viewConfig)
+	// Provide contexts count to panels for root display
+	a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
+	a.rightPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	return nil
 }
 
