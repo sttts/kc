@@ -1,24 +1,34 @@
 package ui
 
 import (
-    tea "github.com/charmbracelet/bubbletea/v2"
+    "bytes"
+    "fmt"
     "strings"
+
+    tea "github.com/charmbracelet/bubbletea/v2"
+    chroma "github.com/alecthomas/chroma/v2"
+    "github.com/alecthomas/chroma/v2/lexers"
+    "github.com/alecthomas/chroma/v2/styles"
 )
 
 // YAMLViewer is a simple scrollable text viewer for YAML content.
 // Note: Syntax highlighting to be integrated with a library (e.g., chroma) in a follow-up.
 type YAMLViewer struct {
-    title   string
-    content []string
-    width   int
-    height  int
-    offset  int
-    onEdit  func() tea.Cmd // invoked on F4
+    title      string
+    content    []string // highlighted, ANSI-colored lines
+    raw        string   // original, uncolored content for re-highlight on resize/theme
+    width      int
+    height     int
+    offset     int
+    theme      string
+    onEdit     func() tea.Cmd  // invoked on F4
+    onTheme    func() tea.Cmd  // invoked on 't' to open theme selector
 }
 
-func NewYAMLViewer(title, text string, onEdit func() tea.Cmd) *YAMLViewer {
-    lines := strings.Split(text, "\n")
-    return &YAMLViewer{title: title, content: lines, onEdit: onEdit}
+func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd) *YAMLViewer {
+    v := &YAMLViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme}
+    v.content = v.highlightWithTheme(text, theme)
+    return v
 }
 
 func (v *YAMLViewer) Init() tea.Cmd { return nil }
@@ -43,6 +53,8 @@ func (v *YAMLViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             v.offset = max(0, len(v.content)-v.height)
         case "f4":
             if v.onEdit != nil { return v, v.onEdit() }
+        case "t":
+            if v.onTheme != nil { return v, v.onTheme() }
         }
     }
     return v, nil
@@ -50,14 +62,80 @@ func (v *YAMLViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (v *YAMLViewer) View() string {
     if v.height <= 0 || v.width <= 0 { return "" }
+    // If content somehow empty (e.g., style failed), use raw
+    if len(v.content) == 0 {
+        v.content = strings.Split(v.raw, "\n")
+    }
     end := min(len(v.content), v.offset+v.height)
     lines := v.content[v.offset:end]
-    // Trim each line to width
-    trimmed := make([]string, len(lines))
-    for i, ln := range lines {
-        if len(ln) > v.width { ln = ln[:v.width] }
-        trimmed[i] = ln
+    // Let lipgloss handle width/height; it is ANSI-aware
+    return PanelContentStyle.Width(v.width).Height(v.height).Render(strings.Join(lines, "\n"))
+}
+
+// SetTheme updates the theme and re-highlights content.
+func (v *YAMLViewer) SetTheme(theme string) {
+    if theme == "" { return }
+    v.theme = theme
+    v.content = v.highlightWithTheme(v.raw, v.theme)
+}
+
+// SetOnTheme sets the callback invoked when user requests theme selection.
+func (v *YAMLViewer) SetOnTheme(fn func() tea.Cmd) { v.onTheme = fn }
+
+// highlightWithTheme converts YAML to ANSI-colored lines using chroma with no background so it
+// blends with the panel theme. On failure it returns the plain, uncolored lines.
+func (v *YAMLViewer) highlightWithTheme(text, theme string) []string {
+    // Pick YAML lexer explicitly
+    lexer := lexers.Get("yaml")
+    if lexer == nil { lexer = lexers.Fallback }
+    iterator, err := lexer.Tokenise(nil, text)
+    if err != nil {
+        return strings.Split(text, "\n")
     }
-    // Render using panel content style for consistent look
-    return PanelContentStyle.Width(v.width).Height(v.height).Render(strings.Join(trimmed, "\n"))
+    // Use selected style (predefined) for foregrounds; do not set backgrounds
+    // in the style. We'll keep panel background via a custom formatter that
+    // avoids resetting background between tokens.
+    st := styles.Get(theme)
+    if st == nil { st = styles.Fallback }
+    // Render with custom true-color formatter that preserves background.
+    out := formatTTY16mWithPanelBG(st, iterator)
+    return strings.Split(out, "\n")
+}
+
+// kcChromaStyle returns a style with foreground-only colors optimized for
+// a dark blue background. No background colors are set to allow the panel
+// theme to show through.
+// Note: We intentionally avoid defining a bespoke style; we wrap the
+// predefined Dracula style and clear its background via the style builder.
+
+// formatTTY16mWithPanelBG renders tokens with true-color foregrounds while
+// keeping a persistent background equal to the panel's dark blue.
+// It resets only foreground/bold/italic/underline (not background) between tokens.
+func formatTTY16mWithPanelBG(style *chroma.Style, it chroma.Iterator) string {
+    var buf bytes.Buffer
+    // Emit persistent ANSI dark blue background once (44)
+    buf.WriteString("\033[44m")
+    for token := it(); token != chroma.EOF; token = it() {
+        entry := style.Get(token.Type)
+        // Apply foreground-related attributes
+        if entry.Bold == chroma.Yes {
+            buf.WriteString("\033[1m")
+        }
+        if entry.Underline == chroma.Yes {
+            buf.WriteString("\033[4m")
+        }
+        if entry.Italic == chroma.Yes {
+            buf.WriteString("\033[3m")
+        }
+        if entry.Colour.IsSet() {
+            fmt.Fprintf(&buf, "\033[38;2;%d;%d;%dm", entry.Colour.Red(), entry.Colour.Green(), entry.Colour.Blue())
+        }
+        // Write token value
+        buf.WriteString(token.Value)
+        // Reset only foreground and attributes; keep background
+        buf.WriteString("\033[39m\033[22m\033[24m\033[23m")
+    }
+    // Reset everything at the end to avoid leaking styles
+    buf.WriteString("\033[0m")
+    return buf.String()
 }

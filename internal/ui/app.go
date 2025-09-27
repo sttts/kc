@@ -12,6 +12,7 @@ import (
 
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/charmbracelet/lipgloss/v2"
+    "github.com/sttts/kc/pkg/appconfig"
     "github.com/sttts/kc/pkg/kubeconfig"
     "github.com/sttts/kc/pkg/navigation"
     "github.com/sttts/kc/pkg/resources"
@@ -47,6 +48,7 @@ type App struct {
     viewConfig    *ViewConfig
     resCatalog    map[string]schema.GroupVersionKind
     genericFactory func(schema.GroupVersionKind) *GenericDataSource
+    cfg *appconfig.Config
 }
 
 // NewApp creates a new application instance
@@ -72,12 +74,16 @@ func NewApp() *App {
 
 // Init initializes the application
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(
-		a.leftPanel.Init(),
-		a.rightPanel.Init(),
-		a.terminal.Init(),
-		func() tea.Msg {
-			// Focus the terminal initially since it's the main input area
+    // Load config (best-effort)
+    cfg, err := appconfig.Load()
+    if err != nil { cfg = appconfig.Default() }
+    a.cfg = cfg
+    return tea.Batch(
+        a.leftPanel.Init(),
+        a.rightPanel.Init(),
+        a.terminal.Init(),
+        func() tea.Msg {
+            // Focus the terminal initially since it's the main input area
 			a.terminal.Focus()
 			return nil
 		},
@@ -568,14 +574,19 @@ func (a *App) renderToggleMessage() string {
 
 // setupModals sets up the modal dialogs
 func (a *App) setupModals() {
-	// Resource selector modal
-	resourceSelector := NewResourceSelector(a.allResources)
-	resourceModal := NewModal("Resource Selection", resourceSelector)
-	resourceModal.SetOnClose(func() tea.Cmd {
-		// TODO: Apply selected resources to panels
-		return nil
-	})
-	a.modalManager.Register("resource_selector", resourceModal)
+    // Resource selector modal
+    resourceSelector := NewResourceSelector(a.allResources)
+    resourceModal := NewModal("Resource Selection", resourceSelector)
+    resourceModal.SetOnClose(func() tea.Cmd {
+        // TODO: Apply selected resources to panels
+        return nil
+    })
+    a.modalManager.Register("resource_selector", resourceModal)
+
+    // Theme selector modal; content is set dynamically when opened
+    themeSelector := NewThemeSelector(nil)
+    themeModal := NewModal("YAML Theme", themeSelector)
+    a.modalManager.Register("theme_selector", themeModal)
 }
 
 // Message handlers for function keys
@@ -660,7 +671,10 @@ func (a *App) openYAMLForSelection() tea.Cmd {
     unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
     // Marshal to YAML
     yb, _ := yaml.Marshal(obj.Object)
-    viewer := NewYAMLViewer(name, string(yb), func() tea.Cmd { return a.editSelection() })
+    theme := "dracula"
+    if a.cfg != nil && a.cfg.Viewer.Theme != "" { theme = a.cfg.Viewer.Theme }
+    viewer := NewYAMLViewer(name, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil)
+    viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
     // Title: full breadcrumb of the object
     title := path
     if ok {
@@ -675,6 +689,26 @@ func (a *App) openYAMLForSelection() tea.Cmd {
     modal.SetDimensions(a.width, a.height)
     a.modalManager.Register("yaml_viewer", modal)
     a.modalManager.Show("yaml_viewer")
+    return nil
+}
+
+// showThemeSelector opens the theme selector modal and wires selection to save
+// config and re-highlight the currently open YAML viewer.
+func (a *App) showThemeSelector(v *YAMLViewer) tea.Cmd {
+    modal := a.modalManager.modals["theme_selector"]
+    if modal == nil { return nil }
+    selector := NewThemeSelector(func(name string) tea.Cmd {
+        if name == "" { return nil }
+        if a.cfg == nil { a.cfg = appconfig.Default() }
+        a.cfg.Viewer.Theme = name
+        _ = appconfig.Save(a.cfg)
+        v.SetTheme(name)
+        a.modalManager.Hide()
+        return nil
+    })
+    selector.SetDimensions(a.width-2, a.height-6)
+    modal.SetContent(selector)
+    a.modalManager.Show("theme_selector")
     return nil
 }
 
