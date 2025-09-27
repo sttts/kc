@@ -160,6 +160,25 @@ func (m *Manager) GVKToGVR(gvk schema.GroupVersionKind) (schema.GroupVersionReso
 	return mapping.Resource, nil
 }
 
+// ResourceToGVK resolves a resource plural (e.g., "pods") to a preferred GroupVersionKind
+// using the RESTMapper backed by discovery. The discovery cache is refreshed periodically.
+func (m *Manager) ResourceToGVK(resource string) (schema.GroupVersionKind, error) {
+    if err := m.ensureDiscovery(); err != nil {
+        return schema.GroupVersionKind{}, err
+    }
+    // Resolve resource to concrete GVR (preferred)
+    gvr, err := m.mapper.ResourceFor(schema.GroupVersionResource{Resource: resource})
+    if err != nil {
+        return schema.GroupVersionKind{}, fmt.Errorf("map resource %q: %w", resource, err)
+    }
+    // Then find the preferred kind
+    gvk, err := m.mapper.KindFor(gvr)
+    if err != nil {
+        return schema.GroupVersionKind{}, fmt.Errorf("kind for %s: %w", gvr.String(), err)
+    }
+    return gvk, nil
+}
+
 // ListByGVK lists resources generically using unstructured objects for the given GVK
 func (m *Manager) ListByGVK(gvk schema.GroupVersionKind, namespace string) (*unstructured.UnstructuredList, error) {
 	if err := m.ensureDiscovery(); err != nil {
