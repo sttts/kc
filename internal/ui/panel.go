@@ -50,12 +50,13 @@ type PositionInfo struct {
 
 // Item represents an item in the panel (file, directory, resource, etc.)
 type Item struct {
-	Name     string
-	Type     ItemType
-	Size     string
-	Modified string
-	Selected bool
-	GVK      string // Group-Version-Kind for Kubernetes resources
+    Name     string
+    Type     ItemType
+    Size     string
+    Modified string
+    Selected bool
+    GVK      string // Group-Version-Kind for Kubernetes resources
+    Enterable bool  // Whether Enter is meaningful (folder-like)
 }
 
 // GetFooterInfo returns the display string for this item in the footer
@@ -253,8 +254,8 @@ func (p *Panel) SetDimensions(width, height int) {
 
 // renderHeader renders the panel header
 func (p *Panel) renderHeader() string {
-	// Show current path as breadcrumbs
-	headerText := p.currentPath
+    // Show current path as breadcrumbs
+    headerText := p.ellipsizePath(p.currentPath, p.width)
 
 	headerStyle := PanelHeaderStyle.
 		Width(p.width).
@@ -262,6 +263,31 @@ func (p *Panel) renderHeader() string {
 		Align(lipgloss.Left)
 
 	return headerStyle.Render(headerText)
+}
+
+// ellipsizePath shortens long breadcrumbs from the left by components, prefixing with "...".
+func (p *Panel) ellipsizePath(path string, width int) string {
+    if len(path) <= width { return path }
+    if width <= 3 { return "..." }
+    parts := strings.Split(path, "/")
+    // Ensure leading slash does not create empty segments
+    filtered := make([]string, 0, len(parts))
+    for i, seg := range parts {
+        if i == 0 { continue } // skip leading empty from split
+        if seg != "" { filtered = append(filtered, seg) }
+    }
+    // Rebuild from right until fits
+    acc := ""
+    for i := len(filtered)-1; i >= 0; i-- {
+        candidate := "/" + filtered[i] + acc
+        if len(candidate)+3 <= width {
+            acc = candidate
+        } else {
+            break
+        }
+    }
+    if acc == "" { return "..." }
+    return "..." + acc
 }
 
 // renderContent renders the panel content
@@ -323,8 +349,8 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 		line.WriteString(" ")
 	}
 
-    // Item type indicator: anything enterable should look like a folder ("/")
-    enterable := item.Type != ItemTypeFile
+    // Item type indicator: show '/' only for directories and explicitly enterable items
+    enterable := (item.Type == ItemTypeDirectory) || item.Enterable
     if enterable {
         line.WriteString("/")
     } else {
@@ -392,6 +418,18 @@ func (p *Panel) indexOf(target Item) int {
         }
     }
     return -1
+}
+
+// isObjectEnterable returns whether objects of a given resource type (plural) are enterable.
+func (p *Panel) isObjectEnterable(resource string) bool {
+    switch resource {
+    case "pods":
+        return true // containers/logs subresources
+    case "secrets", "configmaps":
+        return true // keys-as-files view planned
+    default:
+        return false
+    }
 }
 
 // computeColumnWidths determines column widths that fit into the panel width.
@@ -584,24 +622,33 @@ func (p *Panel) enterDirectory(item Item) tea.Cmd {
 }
 
 func (p *Panel) enterResource(item Item) tea.Cmd {
-    // Navigate into a resource within the current namespace path.
+    // Navigate into a resource group within the current namespace path or into an object instance when supported.
     if strings.HasPrefix(p.currentPath, "/namespaces/") {
         newPath := p.currentPath + "/" + item.Name
-        return p.navigateTo(newPath, true)
+        cmd := p.navigateTo(newPath, true)
+        p.selected = 0
+        p.scrollTop = 0
+        return cmd
     }
     return nil
 }
 
 func (p *Panel) enterNamespace(item Item) tea.Cmd {
-	// Navigate into namespace
-	newPath := "/namespaces/" + item.Name
-	return p.navigateTo(newPath, true) // Add to history when going forward
+    // Navigate into namespace
+    newPath := "/namespaces/" + item.Name
+    cmd := p.navigateTo(newPath, true) // Add to history when going forward
+    p.selected = 0
+    p.scrollTop = 0
+    return cmd
 }
 
 func (p *Panel) enterContext(item Item) tea.Cmd {
-	// Switch context
-	newPath := "/contexts/" + item.Name
-	return p.navigateTo(newPath, true) // Add to history when going forward
+    // Switch context
+    newPath := "/contexts/" + item.Name
+    cmd := p.navigateTo(newPath, true) // Add to history when going forward
+    p.selected = 0
+    p.scrollTop = 0
+    return cmd
 }
 
 // goToParent navigates to the parent directory
@@ -797,7 +844,7 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
                         ds := p.genericFactory(gvk)
                         if ds == nil { continue }
                         if items, err := ds.List(ns); err == nil && len(items) > 0 {
-                            p.items = append(p.items, Item{Name: res, Type: ItemTypeResource, Size: fmt.Sprintf("%d", len(items))})
+                            p.items = append(p.items, Item{Name: res, Type: ItemTypeResource, Size: fmt.Sprintf("%d", len(items)), Enterable: true})
                         }
                     }
                     if len(p.items) == 1 && p.items[0].Name == ".." {
@@ -821,9 +868,16 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
                     if headers, rows, items, err := p.resourceData.ListTable(ns); err == nil {
                         p.tableHeaders = headers
                         p.tableRows = rows
+                        // Mark enterable per-resource policy
+                        for i := range items {
+                            items[i].Enterable = p.isObjectEnterable(res)
+                        }
                         p.items = append(p.items, items...)
                     } else if items, err := p.resourceData.List(ns); err == nil {
                         p.tableHeaders, p.tableRows = nil, nil
+                        for i := range items {
+                            items[i].Enterable = p.isObjectEnterable(res)
+                        }
                         p.items = append(p.items, items...)
                     } else {
                         p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
