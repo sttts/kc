@@ -57,7 +57,9 @@ type Item struct {
     Size     string
     Modified string
     Selected bool
-    GVK      string // Group-Version-Kind for Kubernetes resources
+    GVK      string // deprecated display
+    TypedGVK schema.GroupVersionKind
+    TypedGVR schema.GroupVersionResource
     Enterable bool  // Whether Enter is meaningful (folder-like)
 }
 
@@ -825,9 +827,11 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
             if headers, rows, items, err := p.nsData.ListTable(); err == nil {
                 p.tableHeaders = headers
                 p.tableRows = rows
+                for i := range items { items[i].TypedGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"} }
                 p.items = append(p.items, items...)
             } else if items, err := p.nsData.List(); err == nil {
                 p.tableHeaders, p.tableRows = nil, nil
+                for i := range items { items[i].TypedGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"} }
                 p.items = append(p.items, items...)
             } else {
                 p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
@@ -861,22 +865,22 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
         } else if len(path) > 12 && path[:12] == "/namespaces/" {
             // /namespaces/<ns>[/<resource>]
             parts := strings.Split(path, "/")
-            if len(parts) == 3 {
-                // namespace level: list resource groups from discovery, hide empties and show counts
-                if len(p.namespacedCatalog) > 0 && p.genericFactory != nil {
-                    ns := parts[2]
+                if len(parts) == 3 {
+                    // namespace level: list resource groups from discovery, hide empties and show counts
+                    if len(p.namespacedCatalog) > 0 && p.genericFactory != nil {
+                        ns := parts[2]
                     // deterministic order: collect and sort names
                     names := make([]string, 0, len(p.namespacedCatalog))
                     for res := range p.namespacedCatalog { names = append(names, res) }
                     sort.Strings(names)
-                    for _, res := range names {
-                        gvk := p.namespacedCatalog[res]
-                        ds := p.genericFactory(gvk)
-                        if ds == nil { continue }
-                        if items, err := ds.List(ns); err == nil && len(items) > 0 {
-                            p.items = append(p.items, Item{Name: res, Type: ItemTypeResource, Size: fmt.Sprintf("%d", len(items)), Enterable: true})
+                        for _, res := range names {
+                            gvk := p.namespacedCatalog[res]
+                            ds := p.genericFactory(gvk)
+                            if ds == nil { continue }
+                            if items, err := ds.List(ns); err == nil && len(items) > 0 {
+                            p.items = append(p.items, Item{Name: res, Type: ItemTypeResource, Size: fmt.Sprintf("%d", len(items)), Enterable: true, TypedGVK: gvk})
+                            }
                         }
-                    }
                     if len(p.items) == 1 && p.items[0].Name == ".." {
                         // no resources, leave empty indicator
                         p.items = append(p.items, Item{Name: "(no resources)", Type: ItemTypeDirectory})
@@ -951,16 +955,15 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
                     if headers, rows, items, err := p.resourceData.ListTable(ns); err == nil {
                         p.tableHeaders = headers
                         p.tableRows = rows
-                        // Mark enterable per-resource policy
+                        // Mark enterable per-resource policy and set typed GVK
                         for i := range items {
                             items[i].Enterable = p.isObjectEnterable(res)
+                            if p.currentResourceGVK != nil { items[i].TypedGVK = *p.currentResourceGVK }
                         }
                         p.items = append(p.items, items...)
                     } else if items, err := p.resourceData.List(ns); err == nil {
                         p.tableHeaders, p.tableRows = nil, nil
-                        for i := range items {
-                            items[i].Enterable = p.isObjectEnterable(res)
-                        }
+                        for i := range items { items[i].Enterable = p.isObjectEnterable(res); if p.currentResourceGVK != nil { items[i].TypedGVK = *p.currentResourceGVK } }
                         p.items = append(p.items, items...)
                     } else {
                         p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})

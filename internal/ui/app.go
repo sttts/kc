@@ -642,7 +642,14 @@ func (a *App) openYAMLForSelection() tea.Cmd {
             return nil
         }
     } else {
-        if v, exists := a.resCatalog[res]; exists { gvk = v } else { return nil }
+        // Prefer typed GVK carried by item; otherwise resolve via RESTMapper for current cluster
+        if item.TypedGVK.Group != "" || item.TypedGVK.Kind != "" || item.TypedGVK.Version != "" {
+            gvk = item.TypedGVK
+        } else {
+            var err error
+            gvk, err = a.resMgr.ResourceToGVK(res)
+            if err != nil { return nil }
+        }
     }
     // Fetch object via GenericDataSource
     ds := a.genericFactory(gvk)
@@ -883,6 +890,13 @@ func (a *App) initData() error {
     if infos, err := a.resMgr.GetResourceInfos(); err == nil {
         a.leftPanel.SetResourceCatalog(infos)
         a.rightPanel.SetResourceCatalog(infos)
+        // populate app-level resource catalog for lookups
+        a.resCatalog = make(map[string]schema.GroupVersionKind)
+        for _, info := range infos {
+            if info.Namespaced {
+                a.resCatalog[info.Resource] = info.GVK
+            }
+        }
     } else {
         fmt.Printf("Warning: discovery resources: %v\n", err)
     }
@@ -892,6 +906,7 @@ func (a *App) initData() error {
     }
     a.leftPanel.SetGenericDataSourceFactory(factory)
     a.rightPanel.SetGenericDataSourceFactory(factory)
+    a.genericFactory = factory
     a.leftPanel.SetViewConfig(a.viewConfig)
     a.rightPanel.SetViewConfig(a.viewConfig)
     return nil
