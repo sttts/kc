@@ -862,15 +862,50 @@ func (a *App) createFrameWithOverlayTitle(content, title string, width, height i
 
 	topLeft := topBorderStyler(border.TopLeft)
 	topRight := topBorderStyler(border.TopRight)
-	renderedLabel := labelStyle.Render(title)
+	// Ellipsize breadcrumb-style titles from the left (replace leading
+	// components with ".../") until it fits between the top corners.
+	// Measure using the rendered width (accounts for padding).
+	ellipsize := func(text string, maxW int) string {
+		// Fast path: fits
+		if lipgloss.Width(labelStyle.Render(text)) <= maxW {
+			return text
+		}
+		// Minimal fallback
+		if maxW <= lipgloss.Width(labelStyle.Render("...")) {
+			return "..."
+		}
+		parts := strings.Split(text, "/")
+		segs := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if p != "" {
+				segs = append(segs, p)
+			}
+		}
+		acc := ""
+		for i := len(segs) - 1; i >= 0; i-- {
+			candidate := "/" + segs[i] + acc
+			test := "..." + candidate
+			if lipgloss.Width(labelStyle.Render(test)) <= maxW {
+				acc = candidate
+			} else {
+				break
+			}
+		}
+		if acc == "" {
+			return "..."
+		}
+		return "..." + acc
+	}
 
 	// Calculate centered positioning for the title
 	availableSpace := width - lipgloss.Width(topLeft+topRight)
+	title = ellipsize(title, availableSpace)
+	renderedLabel := labelStyle.Render(title)
 	labelWidth := lipgloss.Width(renderedLabel)
 
 	var top string
 	if labelWidth >= availableSpace {
-		// Title too long, just put it at the start
+		// Title exactly fills or equals available space; position flush-left between corners
 		gap := strings.Repeat(border.Top, max(0, availableSpace-labelWidth))
 		top = topLeft + renderedLabel + topBorderStyler(gap) + topRight
 	} else {
