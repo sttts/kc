@@ -111,6 +111,13 @@ func (v *YAMLViewer) SetTheme(theme string) {
 // SetOnTheme sets the callback invoked when user requests theme selection.
 func (v *YAMLViewer) SetOnTheme(fn func() tea.Cmd) { v.onTheme = fn }
 
+// RequestTheme allows external callers (e.g., modal ESC-number mapping)
+// to trigger the theme selector without synthesizing a key event.
+func (v *YAMLViewer) RequestTheme() tea.Cmd {
+    if v.onTheme != nil { return v.onTheme() }
+    return nil
+}
+
 // highlightWithTheme converts YAML to ANSI-colored lines using chroma with no background so it
 // blends with the panel theme. On failure it returns the plain, uncolored lines.
 func (v *YAMLViewer) highlightWithTheme(text, theme string) []string {
@@ -121,7 +128,9 @@ func (v *YAMLViewer) highlightWithTheme(text, theme string) []string {
     if err != nil {
         return strings.Split(text, "\n")
     }
-    // Use selected style (predefined) for foregrounds; do not set backgrounds
+    // Ensure custom styles are registered
+    registerCustomStylesOnce()
+    // Use selected style (predefined or custom) for foregrounds; do not set backgrounds
     // in the style. We'll keep panel background via a custom formatter that
     // avoids resetting background between tokens.
     st := styles.Get(theme)
@@ -129,6 +138,31 @@ func (v *YAMLViewer) highlightWithTheme(text, theme string) []string {
     // Render with custom true-color formatter that preserves background.
     out := formatTTY16mWithPanelBG(st, iterator)
     return strings.Split(out, "\n")
+}
+
+// --- Custom Styles Registration ---
+var customStylesRegistered = false
+
+func registerCustomStylesOnce() {
+    if customStylesRegistered { return }
+    // Register Turbo Pascal inspired style (foreground-only)
+    tp := chroma.MustNewStyle("turbo-pascal", chroma.StyleEntries{
+        chroma.Background:       "",
+        chroma.Text:             "#d7d7d7",    // light gray
+        chroma.Comment:          "#87afff",    // light blue (Pascal comment often blue)
+        chroma.Keyword:          "bold #87afff", // keywords light blue
+        chroma.Name:             "#d7d7d7",
+        chroma.NameAttribute:    "#d7d7d7",
+        chroma.NameTag:          "#d7d7d7",
+        chroma.LiteralString:    "#ffd75f",    // strings yellow
+        chroma.LiteralStringDoc: "#ffd75f",
+        chroma.LiteralNumber:    "#5fff5f",    // numbers green
+        chroma.Operator:         "#ff5fd7",    // magenta-ish operators/punct
+        chroma.Punctuation:      "#ff5fd7",
+        chroma.Error:            "#ff5555",
+    })
+    styles.Register(tp)
+    customStylesRegistered = true
 }
 
 // kcChromaStyle returns a style with foreground-only colors optimized for
