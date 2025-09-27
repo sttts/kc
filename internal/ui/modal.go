@@ -8,12 +8,12 @@ import (
 
 // Modal represents a modal dialog
 type Modal struct {
-	title   string
-	content tea.Model
-	width   int
-	height  int
-	visible bool
-	onClose func() tea.Cmd
+    title   string
+    content tea.Model
+    width   int
+    height  int
+    visible bool
+    onClose func() tea.Cmd
 }
 
 // Init initializes the modal
@@ -29,6 +29,9 @@ func NewModal(title string, content tea.Model) *Modal {
 		visible: false,
 	}
 }
+
+// SetContent replaces the content model inside the modal.
+func (m *Modal) SetContent(content tea.Model) { m.content = content }
 
 // Show shows the modal
 func (m *Modal) Show() {

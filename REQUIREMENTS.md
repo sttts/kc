@@ -61,9 +61,10 @@
 - Preserve cursor stability across updates where possible; when rows shrink, cursor may move up to the last item.
 
 ## Presentation
-- Table columns: use server-provided Table columns where available for each resource type; render a header row and column‑aligned cells; fall back to names/metadata when unavailable.
+- Table columns: use server-provided Table columns where available for each resource type; render a header row and column-aligned cells; fall back to names/metadata when unavailable.
 - Status line in each panel bottom shows key details for the item under the cursor.
 - Path breadcrumb is drawn at the top of the panel overlaying the frame (e.g., `/cluster/namespaces/kube-system/pods`) and is ellipsized from the left (`.../kube-system/pods`) when too long to keep the frame intact.
+- YAML viewer uses Chroma syntax highlighting. Theme is selectable (default: Dracula) and must not override the panel background; background remains the app’s dark blue.
 
 ## Menus & View Options
 - Popdown menu bar (mc-style) planned at the top.
