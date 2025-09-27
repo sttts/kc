@@ -64,6 +64,33 @@ go build -o kc ./cmd/kc
 go run ./cmd/kc
 ```
 
+
+### Configuration
+- Path: `~/.kc/config.yaml`
+- Keys use lower-case only.
+
+Example:
+```yaml
+viewer:
+  theme: dracula
+```
+
+Themes (lower-case)
+- turbo-pascal
+- dracula
+- monokai
+- github-dark
+- nord
+- solarized-dark
+- solarized-light
+- gruvbox-dark
+- friendly
+- borland
+- native
+
+Change theme at runtime: open a YAML (F3), press F9 to open the theme dialog. Moving the cursor previews the theme live; Enter applies and saves it; Esc Esc or F10 cancels and restores the previous theme.
+
+
 ### Key Bindings
 - `F1`: Help
 - `F2`: Resource selector
@@ -133,7 +160,7 @@ kc/
 5. **Create/Delete Operations**: Add F7/F8 operations
 6. **Context Menus**: Build F9 popup menus
 7. **Terminal Integration**: Complete kubectl integration
-8. **Configuration System**: Add `~/.kube/kc.yaml` configuration
+8. **Configuration System**: Add `~/.kc/config.yaml` configuration
 9. **Custom Resources**: Support for CRDs
 10. **Documentation**: Complete user documentation
 

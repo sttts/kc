@@ -1,25 +1,25 @@
 package ui
 
 import (
-    "context"
-    "fmt"
-    "os"
-    "os/signal"
-    "path/filepath"
-    "strings"
-    "syscall"
-    "time"
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
 
-    tea "github.com/charmbracelet/bubbletea/v2"
-    "github.com/charmbracelet/lipgloss/v2"
-    "github.com/sttts/kc/pkg/appconfig"
-    "github.com/sttts/kc/pkg/kubeconfig"
-    "github.com/sttts/kc/pkg/navigation"
-    "github.com/sttts/kc/pkg/resources"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    "k8s.io/apimachinery/pkg/runtime/schema"
-    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-    yaml "sigs.k8s.io/yaml"
+	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/sttts/kc/pkg/appconfig"
+	"github.com/sttts/kc/pkg/kubeconfig"
+	"github.com/sttts/kc/pkg/navigation"
+	"github.com/sttts/kc/pkg/resources"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	yaml "sigs.k8s.io/yaml"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
@@ -27,44 +27,47 @@ type EscTimeoutMsg struct{}
 
 // App represents the main application state
 type App struct {
-    leftPanel    *Panel
-    rightPanel   *Panel
-    terminal     *Terminal
-    modalManager *ModalManager
+	leftPanel    *Panel
+	rightPanel   *Panel
+	terminal     *Terminal
+	modalManager *ModalManager
 	width        int
 	height       int
 	activePanel  int // 0 = left, 1 = right
 	showTerminal bool
-    allResources []schema.GroupVersionKind
-    // Esc sequence tracking
-    escPressed bool
-    // Data providers
-    kubeMgr       *kubeconfig.Manager
-    resMgr        *resources.Manager
-    navMgr        *navigation.Manager
-    storePool     *resources.ClusterPool
-    storeProvider resources.StoreProvider
-    currentCtx    *kubeconfig.Context
-    viewConfig    *ViewConfig
-    resCatalog    map[string]schema.GroupVersionKind
-    genericFactory func(schema.GroupVersionKind) *GenericDataSource
-    cfg *appconfig.Config
+	allResources []schema.GroupVersionKind
+	// Esc sequence tracking
+	escPressed bool
+	// Data providers
+	kubeMgr        *kubeconfig.Manager
+	resMgr         *resources.Manager
+	navMgr         *navigation.Manager
+	storePool      *resources.ClusterPool
+	storeProvider  resources.StoreProvider
+	currentCtx     *kubeconfig.Context
+	viewConfig     *ViewConfig
+	resCatalog     map[string]schema.GroupVersionKind
+	genericFactory func(schema.GroupVersionKind) *GenericDataSource
+	cfg            *appconfig.Config
+	// Theme dialog state
+	prevTheme           string
+	suppressThemeRevert bool
 }
 
 // NewApp creates a new application instance
 func NewApp() *App {
-    app := &App{
-        leftPanel:    NewPanel(""),
-        rightPanel:   NewPanel(""),
-        terminal:     NewTerminal(),
-        modalManager: NewModalManager(),
-        activePanel:  0,
-        showTerminal: false,
-        allResources: make([]schema.GroupVersionKind, 0),
-        escPressed:   false,
-        viewConfig:   NewViewConfig(),
-        resCatalog:   make(map[string]schema.GroupVersionKind),
-    }
+	app := &App{
+		leftPanel:    NewPanel(""),
+		rightPanel:   NewPanel(""),
+		terminal:     NewTerminal(),
+		modalManager: NewModalManager(),
+		activePanel:  0,
+		showTerminal: false,
+		allResources: make([]schema.GroupVersionKind, 0),
+		escPressed:   false,
+		viewConfig:   NewViewConfig(),
+		resCatalog:   make(map[string]schema.GroupVersionKind),
+	}
 
 	// Register modals
 	app.setupModals()
@@ -74,16 +77,18 @@ func NewApp() *App {
 
 // Init initializes the application
 func (a *App) Init() tea.Cmd {
-    // Load config (best-effort)
-    cfg, err := appconfig.Load()
-    if err != nil { cfg = appconfig.Default() }
-    a.cfg = cfg
-    return tea.Batch(
-        a.leftPanel.Init(),
-        a.rightPanel.Init(),
-        a.terminal.Init(),
-        func() tea.Msg {
-            // Focus the terminal initially since it's the main input area
+	// Load config (best-effort)
+	cfg, err := appconfig.Load()
+	if err != nil {
+		cfg = appconfig.Default()
+	}
+	a.cfg = cfg
+	return tea.Batch(
+		a.leftPanel.Init(),
+		a.rightPanel.Init(),
+		a.terminal.Init(),
+		func() tea.Msg {
+			// Focus the terminal initially since it's the main input area
 			a.terminal.Focus()
 			return nil
 		},
@@ -116,20 +121,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-    // Handle modals first
-    if a.modalManager.IsModalVisible() {
-        model, cmd := a.modalManager.Update(msg)
-        a.modalManager = model.(*ModalManager)
-        cmds = append(cmds, cmd)
-        // While a modal is open, still forward non-key messages to the terminal
-        // (process output, window size, timers) so the 2-line terminal stays fresh.
-        if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
-            tmodel, tcmd := a.terminal.Update(msg)
-            a.terminal = tmodel.(*Terminal)
-            cmds = append(cmds, tcmd)
-        }
-        return a, tea.Batch(cmds...)
-    }
+	// Handle modals first
+	if a.modalManager.IsModalVisible() {
+		model, cmd := a.modalManager.Update(msg)
+		a.modalManager = model.(*ModalManager)
+		cmds = append(cmds, cmd)
+		// While a modal is open, still forward non-key messages to the terminal
+		// (process output, window size, timers) so the 2-line terminal stays fresh.
+		if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
+			tmodel, tcmd := a.terminal.Update(msg)
+			a.terminal = tmodel.(*Terminal)
+			cmds = append(cmds, tcmd)
+		}
+		return a, tea.Batch(cmds...)
+	}
 
 	// Check if terminal process has exited (check on every message)
 	if a.terminal.IsProcessExited() {
@@ -142,9 +147,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.escPressed = false
 		return a, nil
 
-    case tea.KeyMsg:
-        // Handle global shortcuts first
-        switch msg.String() {
+	case tea.KeyMsg:
+		// Handle global shortcuts first
+		switch msg.String() {
 		case "ctrl+o":
 			// Toggle terminal mode
 			a.showTerminal = !a.showTerminal
@@ -167,9 +172,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// In fullscreen mode, don't handle F10 here - let it go to terminal
 		case "ctrl+q":
 			return a, tea.Quit
-        }
+		}
 
-        // Handle Esc+number escape sequences (Esc then number)
+		// Handle Esc+number escape sequences (Esc then number)
 		keyStr := msg.String()
 		if keyStr == "esc" {
 			// Esc key pressed - start escape sequence with timeout
@@ -221,8 +226,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-        // In terminal mode, all input goes to terminal except Ctrl-O to return
-        if a.showTerminal {
+		// In terminal mode, all input goes to terminal except Ctrl-O to return
+		if a.showTerminal {
 			// Only handle Ctrl-O to return to panel mode
 			if msg.String() == "ctrl+o" {
 				a.showTerminal = false
@@ -232,24 +237,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			model, cmd := a.terminal.Update(msg)
 			a.terminal = model.(*Terminal)
 			cmds = append(cmds, cmd)
-        } else {
-            // In panel mode, use smart key routing based on terminal state
-            // If user typed in the 2-line terminal, Enter and Ctrl+C must be SENT to the terminal,
-            // then reset typed state to return focus to the panels.
-            if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() {
-                model, cmd := a.terminal.Update(msg) // deliver to terminal
-                a.terminal = model.(*Terminal)
-                a.terminal.ClearTyped()              // reset typed; next keys route to panels
-                return a, cmd
-            }
-            // Intercept F3/F4 to open viewers/editors
-            if msg.String() == "f3" {
-                return a, a.openYAMLForSelection()
-            }
-            if msg.String() == "f4" {
-                return a, a.editSelection()
-            }
-            if a.shouldRouteToPanel(msg.String()) {
+		} else {
+			// In panel mode, use smart key routing based on terminal state
+			// If user typed in the 2-line terminal, Enter and Ctrl+C must be SENT to the terminal,
+			// then reset typed state to return focus to the panels.
+			if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() {
+				model, cmd := a.terminal.Update(msg) // deliver to terminal
+				a.terminal = model.(*Terminal)
+				a.terminal.ClearTyped() // reset typed; next keys route to panels
+				return a, cmd
+			}
+			// Intercept F3/F4 to open viewers/editors
+			if msg.String() == "f3" {
+				return a, a.openYAMLForSelection()
+			}
+			if msg.String() == "f4" {
+				return a, a.editSelection()
+			}
+			if a.shouldRouteToPanel(msg.String()) {
 				// Handle panel-specific keys
 				if a.activePanel == 0 {
 					model, cmd := a.leftPanel.Update(msg)
@@ -350,22 +355,22 @@ func (a *App) shouldRouteToPanel(key string) bool {
 
 // View renders the application
 func (a *App) View() (string, *tea.Cursor) {
-    // In fullscreen terminal mode, only show terminal
-    if a.showTerminal {
-        terminalView, terminalCursor := a.renderTerminalView()
-        return terminalView, terminalCursor
-    }
+	// In fullscreen terminal mode, only show terminal
+	if a.showTerminal {
+		terminalView, terminalCursor := a.renderTerminalView()
+		return terminalView, terminalCursor
+	}
 
-    // In normal mode, show main view
-    mainView, mainCursor := a.renderMainView()
+	// In normal mode, show main view
+	mainView, mainCursor := a.renderMainView()
 
-    // Overlay modal if visible
-    if a.modalManager.IsModalVisible() {
-        // Render modal as an overlay covering the UI for clarity
-        return a.modalManager.View(), nil
-    }
+	// Overlay modal if visible
+	if a.modalManager.IsModalVisible() {
+		// Render modal as an overlay covering the UI for clarity
+		return a.modalManager.View(), nil
+	}
 
-    return mainView, mainCursor
+	return mainView, mainCursor
 }
 
 // renderMainView renders the main two-panel view
@@ -474,60 +479,68 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
 
 // renderFunctionKeys renders the function key bar
 func (a *App) renderFunctionKeys() string {
-    var keys []string
+	var keys []string
 
-    if a.showTerminal {
-        keys = []string{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")}
-    } else {
-        // Determine capabilities from active panel
-        p := a.leftPanel
-        if a.activePanel == 1 { p = a.rightPanel }
-        path := p.GetCurrentPath()
-        cur := p.GetCurrentItem()
-        // Defaults
-        canView, canEdit, canCreateNS, canDelete := false, false, false, false
-        // Location-based rules
-        if path == "/namespaces" {
-            canCreateNS = true
-            // viewing a namespace YAML is allowed when an item selected
-            if cur != nil && cur.Type == ItemTypeNamespace { canView, canEdit, canDelete = true, true, true }
-        } else if strings.HasPrefix(path, "/namespaces/") {
-            parts := strings.Split(path, "/")
-            if len(parts) == 3 { // /namespaces/<ns>
-                // resource folders only; F3/F4/F8 disabled
-            } else if len(parts) == 4 { // /namespaces/<ns>/<resource>
-                // viewing/editing/deleting objects is possible when an object row is selected (not ".." and not a folder)
-                if cur != nil && cur.Name != ".." && !cur.Enterable { canView, canEdit, canDelete = true, true, true }
-            } else if len(parts) >= 5 { // object or deeper
-                if cur != nil && cur.Name != ".." {
-                    canView = true
-                    canEdit = true
-                    canDelete = true
-                }
-            }
-        }
+	if a.showTerminal {
+		keys = []string{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")}
+	} else {
+		// Determine capabilities from active panel
+		p := a.leftPanel
+		if a.activePanel == 1 {
+			p = a.rightPanel
+		}
+		path := p.GetCurrentPath()
+		cur := p.GetCurrentItem()
+		// Defaults
+		canView, canEdit, canCreateNS, canDelete := false, false, false, false
+		// Location-based rules
+		if path == "/namespaces" {
+			canCreateNS = true
+			// viewing a namespace YAML is allowed when an item selected
+			if cur != nil && cur.Type == ItemTypeNamespace {
+				canView, canEdit, canDelete = true, true, true
+			}
+		} else if strings.HasPrefix(path, "/namespaces/") {
+			parts := strings.Split(path, "/")
+			if len(parts) == 3 { // /namespaces/<ns>
+				// resource folders only; F3/F4/F8 disabled
+			} else if len(parts) == 4 { // /namespaces/<ns>/<resource>
+				// viewing/editing/deleting objects is possible when an object row is selected (not ".." and not a folder)
+				if cur != nil && cur.Name != ".." && !cur.Enterable {
+					canView, canEdit, canDelete = true, true, true
+				}
+			} else if len(parts) >= 5 { // object or deeper
+				if cur != nil && cur.Name != ".." {
+					canView = true
+					canEdit = true
+					canDelete = true
+				}
+			}
+		}
 
-        // Helper to render enabled/disabled key
-        renderKey := func(key, label string, enabled bool) string {
-            desc := FunctionKeyDescriptionStyle
-            if !enabled { desc = FunctionKeyDisabledStyle }
-            return FunctionKeyStyle.Render(key) + desc.Render(label)
-        }
+		// Helper to render enabled/disabled key
+		renderKey := func(key, label string, enabled bool) string {
+			desc := FunctionKeyDescriptionStyle
+			if !enabled {
+				desc = FunctionKeyDisabledStyle
+			}
+			return FunctionKeyStyle.Render(key) + desc.Render(label)
+		}
 
-        keys = []string{
-            renderKey("F1", "Help", true),
-            renderKey("F2", "Resources", true),
-            renderKey("F3", "View", canView),
-            renderKey("F4", "Edit", canEdit),
-            renderKey("F5", "Copy", false),
-            renderKey("F6", "Rename/Move", false),
-            renderKey("F7", "Namespace", canCreateNS),
-            renderKey("F8", "Delete", canDelete),
-            renderKey("F9", "Menu", true),
-            FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"),
-            FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"),
-        }
-    }
+		keys = []string{
+			renderKey("F1", "Help", true),
+			renderKey("F2", "Resources", true),
+			renderKey("F3", "View", canView),
+			renderKey("F4", "Edit", canEdit),
+			renderKey("F5", "Copy", false),
+			renderKey("F6", "Rename/Move", false),
+			renderKey("F7", "Namespace", canCreateNS),
+			renderKey("F8", "Delete", canDelete),
+			renderKey("F9", "Menu", true),
+			FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"),
+			FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"),
+		}
+	}
 
 	// Add spaces between keys
 	renderedKeys := make([]string, 0, len(keys)*2-1)
@@ -559,41 +572,41 @@ func (a *App) renderFunctionKeys() string {
 
 // renderToggleMessage renders the toggle message for fullscreen mode
 func (a *App) renderToggleMessage() string {
-    // Create the same layout as function keys
-    key := FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")
-    title := FunctionKeyTitleStyle.Render("Kubernetes Commander")
+	// Create the same layout as function keys
+	key := FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")
+	title := FunctionKeyTitleStyle.Render("Kubernetes Commander")
 
-    // Calculate the exact spacing needed to push title to the right edge
-    spacing := a.width - len(key) - len(title)
-    if spacing < 0 {
-        spacing = 1 // minimum spacing
-    }
+	// Calculate the exact spacing needed to push title to the right edge
+	spacing := a.width - len(key) - len(title)
+	if spacing < 0 {
+		spacing = 1 // minimum spacing
+	}
 
-    content := key + strings.Repeat(" ", spacing) + title
+	content := key + strings.Repeat(" ", spacing) + title
 
-    // Create a full-width container
-    fullWidthStyle := FunctionKeyBarStyle.
-        Width(a.width).
-        Align(lipgloss.Left)
+	// Create a full-width container
+	fullWidthStyle := FunctionKeyBarStyle.
+		Width(a.width).
+		Align(lipgloss.Left)
 
-    return fullWidthStyle.Render(content)
+	return fullWidthStyle.Render(content)
 }
 
 // setupModals sets up the modal dialogs
 func (a *App) setupModals() {
-    // Resource selector modal
-    resourceSelector := NewResourceSelector(a.allResources)
-    resourceModal := NewModal("Resource Selection", resourceSelector)
-    resourceModal.SetOnClose(func() tea.Cmd {
-        // TODO: Apply selected resources to panels
-        return nil
-    })
-    a.modalManager.Register("resource_selector", resourceModal)
+	// Resource selector modal
+	resourceSelector := NewResourceSelector(a.allResources)
+	resourceModal := NewModal("Resource Selection", resourceSelector)
+	resourceModal.SetOnClose(func() tea.Cmd {
+		// TODO: Apply selected resources to panels
+		return nil
+	})
+	a.modalManager.Register("resource_selector", resourceModal)
 
-    // Theme selector modal; content is set dynamically when opened
-    themeSelector := NewThemeSelector(nil)
-    themeModal := NewModal("YAML Theme", themeSelector)
-    a.modalManager.Register("theme_selector", themeModal)
+	// Theme selector modal; content is set dynamically when opened
+	themeSelector := NewThemeSelector(nil)
+	themeModal := NewModal("YAML Theme", themeSelector)
+	a.modalManager.Register("theme_selector", themeModal)
 }
 
 // Message handlers for function keys
@@ -634,121 +647,161 @@ func (a *App) showHelp() tea.Cmd {
 }
 
 func (a *App) viewItem() tea.Cmd {
-    return a.openYAMLForSelection()
+	return a.openYAMLForSelection()
 }
 
 func (a *App) editItem() tea.Cmd {
-    return a.editSelection()
+	return a.editSelection()
 }
 
 // openYAMLForSelection fetches the selected object and opens a YAML viewer modal.
 func (a *App) openYAMLForSelection() tea.Cmd {
-    // Determine active panel and current selection
-    p := a.leftPanel
-    if a.activePanel == 1 { p = a.rightPanel }
-    item := p.GetCurrentItem()
-    if item == nil || item.Name == ".." { return nil }
-    path := p.GetCurrentPath()
-    // Resolve namespace/resource/name
-    ns, res, name, ok := parseNamespacedObjectPath(path, item.Name)
-    var gvk schema.GroupVersionKind
-    if !ok {
-        // Special case: viewing a namespace YAML at /namespaces
-        if path == "/namespaces" && item.Type == ItemTypeNamespace {
-            gvk = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
-            name = item.Name
-        } else {
-            return nil
-        }
-    } else {
-        // Prefer typed GVK carried by item; otherwise resolve via RESTMapper for current cluster
-        if item.TypedGVK.Group != "" || item.TypedGVK.Kind != "" || item.TypedGVK.Version != "" {
-            gvk = item.TypedGVK
-        } else {
-            var err error
-            gvk, err = a.resMgr.ResourceToGVK(res)
-            if err != nil { return nil }
-        }
-    }
-    // Fetch object via GenericDataSource
-    ds := a.genericFactory(gvk)
-    obj, err := ds.Get(ns, name)
-    if err != nil { return nil }
-    // Strip managedFields
-    unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-    // Marshal to YAML
-    yb, _ := yaml.Marshal(obj.Object)
-    theme := "dracula"
-    if a.cfg != nil && a.cfg.Viewer.Theme != "" { theme = a.cfg.Viewer.Theme }
-    viewer := NewYAMLViewer(name, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
-        // Close the topmost modal (the YAML viewer itself)
-        a.modalManager.Hide()
-        return nil
-    })
-    viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-    // Title: full breadcrumb of the object
-    title := path
-    if ok {
-        // If path doesn't already contain the object name (list level), append it
-        if !strings.HasSuffix(path, "/"+name) {
-            title = path + "/" + name
-        }
-    } else if path == "/namespaces" {
-        title = "/namespaces/" + name
-    }
-    modal := NewModal(title, viewer)
-    modal.SetDimensions(a.width, a.height)
-    // In the YAML viewer we disable single-Esc close to avoid breaking Esc+digit
-    modal.SetCloseOnSingleEsc(false)
-    a.modalManager.Register("yaml_viewer", modal)
-    a.modalManager.Show("yaml_viewer")
-    return nil
+	// Determine active panel and current selection
+	p := a.leftPanel
+	if a.activePanel == 1 {
+		p = a.rightPanel
+	}
+	item := p.GetCurrentItem()
+	if item == nil || item.Name == ".." {
+		return nil
+	}
+	path := p.GetCurrentPath()
+	// Resolve namespace/resource/name
+	ns, res, name, ok := parseNamespacedObjectPath(path, item.Name)
+	var gvk schema.GroupVersionKind
+	if !ok {
+		// Special case: viewing a namespace YAML at /namespaces
+		if path == "/namespaces" && item.Type == ItemTypeNamespace {
+			gvk = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+			name = item.Name
+		} else {
+			return nil
+		}
+	} else {
+		// Prefer typed GVK carried by item; otherwise resolve via RESTMapper for current cluster
+		if item.TypedGVK.Group != "" || item.TypedGVK.Kind != "" || item.TypedGVK.Version != "" {
+			gvk = item.TypedGVK
+		} else {
+			var err error
+			gvk, err = a.resMgr.ResourceToGVK(res)
+			if err != nil {
+				return nil
+			}
+		}
+	}
+	// Fetch object via GenericDataSource
+	ds := a.genericFactory(gvk)
+	obj, err := ds.Get(ns, name)
+	if err != nil {
+		return nil
+	}
+	// Strip managedFields
+	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+	// Marshal to YAML
+	yb, _ := yaml.Marshal(obj.Object)
+	theme := "dracula"
+	if a.cfg != nil && a.cfg.Viewer.Theme != "" {
+		theme = a.cfg.Viewer.Theme
+	}
+	viewer := NewYAMLViewer(name, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
+		// Close the topmost modal (the YAML viewer itself)
+		a.modalManager.Hide()
+		return nil
+	})
+	viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
+	// Title: full breadcrumb of the object
+	title := path
+	if ok {
+		// If path doesn't already contain the object name (list level), append it
+		if !strings.HasSuffix(path, "/"+name) {
+			title = path + "/" + name
+		}
+	} else if path == "/namespaces" {
+		title = "/namespaces/" + name
+	}
+	modal := NewModal(title, viewer)
+	modal.SetDimensions(a.width, a.height)
+	// In the YAML viewer we disable single-Esc close to avoid breaking Esc+digit
+	modal.SetCloseOnSingleEsc(false)
+	a.modalManager.Register("yaml_viewer", modal)
+	a.modalManager.Show("yaml_viewer")
+	return nil
 }
 
 // showThemeSelector opens the theme selector modal and wires selection to save
 // config and re-highlight the currently open YAML viewer.
 func (a *App) showThemeSelector(v *YAMLViewer) tea.Cmd {
-    modal := a.modalManager.modals["theme_selector"]
-    if modal == nil { return nil }
-    selector := NewThemeSelector(func(name string) tea.Cmd {
-        if name == "" { return nil }
-        if a.cfg == nil { a.cfg = appconfig.Default() }
-        a.cfg.Viewer.Theme = name
-        _ = appconfig.Save(a.cfg)
-        v.SetTheme(name)
-        // Close the theme selector (pop top); YAML viewer remains underneath
-        a.modalManager.Hide()
-        return nil
-    })
-    selector.SetDimensions(a.width-2, a.height-6)
-    // Preselect current theme if available
-    if a.cfg != nil { selector.SetSelectedByName(a.cfg.Viewer.Theme) }
-    modal.SetContent(selector)
-    modal.SetDimensions(a.width, a.height)
-    // onClose not needed; Esc handling hides the top modal and reveals viewer beneath
-    modal.SetOnClose(nil)
-    a.modalManager.Show("theme_selector")
-    return nil
+	modal := a.modalManager.modals["theme_selector"]
+	if modal == nil {
+		return nil
+	}
+	// Remember previous theme to restore on cancel
+	a.prevTheme = a.cfg.Viewer.Theme
+	a.suppressThemeRevert = false
+
+	selector := NewThemeSelector(func(name string) tea.Cmd {
+		if name == "" {
+			return nil
+		}
+		if a.cfg == nil {
+			a.cfg = appconfig.Default()
+		}
+		a.cfg.Viewer.Theme = name
+		_ = appconfig.Save(a.cfg)
+		v.SetTheme(name)
+		a.suppressThemeRevert = true
+		a.modalManager.Hide()
+		return nil
+	})
+	selector.SetDimensions(a.width-2, a.height-6)
+	// Preselect current theme if available
+	if a.cfg != nil {
+		selector.SetSelectedByName(a.cfg.Viewer.Theme)
+	}
+	// Live preview on selection change
+	selector.SetOnChange(func(name string) tea.Cmd { v.SetTheme(name); return nil })
+	modal.SetContent(selector)
+	modal.SetDimensions(a.width, a.height)
+	// Configure as centered window overlay so YAML viewer remains visible
+	winW := min(max(40, a.width*2/3), a.width-4)
+	winH := min(max(10, a.height*2/3), a.height-4)
+	bg := ""
+	if y := a.modalManager.modals["yaml_viewer"]; y != nil {
+		bg = y.View()
+	}
+	modal.SetWindowed(winW, winH, bg)
+	// onClose not needed; Esc handling hides the top modal and reveals viewer beneath
+	modal.SetOnClose(func() tea.Cmd {
+		if !a.suppressThemeRevert {
+			if a.prevTheme != "" {
+				v.SetTheme(a.prevTheme)
+			}
+		}
+		a.suppressThemeRevert = false
+		return nil
+	})
+	a.modalManager.Show("theme_selector")
+	return nil
 }
 
 // editSelection triggers kubectl edit for the selected object (stub wiring; full logic in later step).
 func (a *App) editSelection() tea.Cmd {
-    // Placeholder: actual kubectl edit integration will be added in the Edit task.
-    return nil
+	// Placeholder: actual kubectl edit integration will be added in the Edit task.
+	return nil
 }
 
 func parseNamespacedObjectPath(path, currentName string) (ns, res, name string, ok bool) {
-    // /namespaces/<ns>/<res>[/<name>]
-    if strings.HasPrefix(path, "/namespaces/") {
-        parts := strings.Split(path, "/")
-        if len(parts) == 4 { // object list level
-            return parts[2], parts[3], currentName, true
-        }
-        if len(parts) >= 5 { // object level
-            return parts[2], parts[3], parts[4], true
-        }
-    }
-    return "", "", "", false
+	// /namespaces/<ns>/<res>[/<name>]
+	if strings.HasPrefix(path, "/namespaces/") {
+		parts := strings.Split(path, "/")
+		if len(parts) == 4 { // object list level
+			return parts[2], parts[3], currentName, true
+		}
+		if len(parts) >= 5 { // object level
+			return parts[2], parts[3], parts[4], true
+		}
+	}
+	return "", "", "", false
 }
 
 func (a *App) copyItem() tea.Cmd {
@@ -867,12 +920,12 @@ func (a *App) createFramedFooter(content string, width int) string {
 
 // Run starts the application
 func Run() error {
-    app := NewApp()
+	app := NewApp()
 
-    // Initialize data model (best-effort; UI can still run without it)
-    if err := app.initData(); err != nil {
-        fmt.Printf("Data init warning: %v\n", err)
-    }
+	// Initialize data model (best-effort; UI can still run without it)
+	if err := app.initData(); err != nil {
+		fmt.Printf("Data init warning: %v\n", err)
+	}
 
 	// Create program with proper options
 	p := tea.NewProgram(
@@ -892,16 +945,20 @@ func Run() error {
 		p.Quit()
 	}()
 
-    // Ensure terminal is reset on exit
-    defer func() {
-        // Reset terminal to normal state
-        fmt.Print("\033[?1049l") // Exit alternate screen
-        fmt.Print("\033[?25h")   // Show cursor
-        fmt.Print("\033[0m")     // Reset all attributes
-        // Stop background resources
-        if app.storePool != nil { app.storePool.Stop() }
-        if app.resMgr != nil { app.resMgr.Stop() }
-    }()
+	// Ensure terminal is reset on exit
+	defer func() {
+		// Reset terminal to normal state
+		fmt.Print("\033[?1049l") // Exit alternate screen
+		fmt.Print("\033[?25h")   // Show cursor
+		fmt.Print("\033[0m")     // Reset all attributes
+		// Stop background resources
+		if app.storePool != nil {
+			app.storePool.Stop()
+		}
+		if app.resMgr != nil {
+			app.resMgr.Stop()
+		}
+	}()
 
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running application: %v\n", err)
@@ -913,93 +970,109 @@ func Run() error {
 
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
 func (a *App) initData() error {
-    // Kubeconfig manager and discovery
-    a.kubeMgr = kubeconfig.NewManager()
-    if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
-        return fmt.Errorf("discover kubeconfigs: %w", err)
-    }
-    // Select current context (prefer env KUBECONFIG first path)
-    a.currentCtx = a.selectCurrentContext()
-    if a.currentCtx == nil {
-        return fmt.Errorf("no current context found")
-    }
-    // Build resources manager and start cluster/cache
-    cfg, err := a.kubeMgr.CreateClientConfig(a.currentCtx)
-    if err != nil { return fmt.Errorf("client config: %w", err) }
-    a.resMgr, err = resources.NewManager(cfg)
-    if err != nil { return fmt.Errorf("resources manager: %w", err) }
-    if err := a.resMgr.Start(); err != nil {
-        // Non-fatal; continue without cache warm
-        fmt.Printf("Warning: start resources manager: %v\n", err)
-    }
-    // Store provider and pool (2m TTL)
-    a.storeProvider, a.storePool = resources.NewStoreProviderForContext(a.currentCtx, 2*time.Minute)
-    // Navigation manager and store wiring
-    a.navMgr = navigation.NewManager(a.kubeMgr, a.resMgr)
-    a.navMgr.SetStoreProvider(a.storeProvider)
-    // Build hierarchy and load context resources
-    if err := a.navMgr.BuildHierarchy(); err != nil { return fmt.Errorf("build hierarchy: %w", err) }
-    if err := a.navMgr.LoadContextResources(a.currentCtx); err != nil {
-        // Non-fatal; still allow UI
-        fmt.Printf("Warning: load context resources: %v\n", err)
-    }
-    // Wire panel data sources
-    tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
-        return a.resMgr.ListTableByGVR(ctx, gvr, ns)
-    }
-    nsDS := NewNamespacesDataSource(a.storeProvider, a.resMgr.GVKToGVR, tableFn)
-    a.leftPanel.SetNamespacesDataSource(nsDS)
-    a.rightPanel.SetNamespacesDataSource(nsDS)
-    // Discovery-backed catalog
-    if infos, err := a.resMgr.GetResourceInfos(); err == nil {
-        a.leftPanel.SetResourceCatalog(infos)
-        a.rightPanel.SetResourceCatalog(infos)
-        // populate app-level resource catalog for lookups
-        a.resCatalog = make(map[string]schema.GroupVersionKind)
-        for _, info := range infos {
-            if info.Namespaced {
-                a.resCatalog[info.Resource] = info.GVK
-            }
-        }
-    } else {
-        fmt.Printf("Warning: discovery resources: %v\n", err)
-    }
-    // Generic data source factory (per-GVK)
-    factory := func(gvk schema.GroupVersionKind) *GenericDataSource {
-        return NewGenericDataSource(a.storeProvider, a.resMgr.GVKToGVR, tableFn, gvk)
-    }
-    a.leftPanel.SetGenericDataSourceFactory(factory)
-    a.rightPanel.SetGenericDataSourceFactory(factory)
-    a.genericFactory = factory
-    a.leftPanel.SetViewConfig(a.viewConfig)
-    a.rightPanel.SetViewConfig(a.viewConfig)
-    return nil
+	// Kubeconfig manager and discovery
+	a.kubeMgr = kubeconfig.NewManager()
+	if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
+		return fmt.Errorf("discover kubeconfigs: %w", err)
+	}
+	// Select current context (prefer env KUBECONFIG first path)
+	a.currentCtx = a.selectCurrentContext()
+	if a.currentCtx == nil {
+		return fmt.Errorf("no current context found")
+	}
+	// Build resources manager and start cluster/cache
+	cfg, err := a.kubeMgr.CreateClientConfig(a.currentCtx)
+	if err != nil {
+		return fmt.Errorf("client config: %w", err)
+	}
+	a.resMgr, err = resources.NewManager(cfg)
+	if err != nil {
+		return fmt.Errorf("resources manager: %w", err)
+	}
+	if err := a.resMgr.Start(); err != nil {
+		// Non-fatal; continue without cache warm
+		fmt.Printf("Warning: start resources manager: %v\n", err)
+	}
+	// Store provider and pool (2m TTL)
+	a.storeProvider, a.storePool = resources.NewStoreProviderForContext(a.currentCtx, 2*time.Minute)
+	// Navigation manager and store wiring
+	a.navMgr = navigation.NewManager(a.kubeMgr, a.resMgr)
+	a.navMgr.SetStoreProvider(a.storeProvider)
+	// Build hierarchy and load context resources
+	if err := a.navMgr.BuildHierarchy(); err != nil {
+		return fmt.Errorf("build hierarchy: %w", err)
+	}
+	if err := a.navMgr.LoadContextResources(a.currentCtx); err != nil {
+		// Non-fatal; still allow UI
+		fmt.Printf("Warning: load context resources: %v\n", err)
+	}
+	// Wire panel data sources
+	tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
+		return a.resMgr.ListTableByGVR(ctx, gvr, ns)
+	}
+	nsDS := NewNamespacesDataSource(a.storeProvider, a.resMgr.GVKToGVR, tableFn)
+	a.leftPanel.SetNamespacesDataSource(nsDS)
+	a.rightPanel.SetNamespacesDataSource(nsDS)
+	// Discovery-backed catalog
+	if infos, err := a.resMgr.GetResourceInfos(); err == nil {
+		a.leftPanel.SetResourceCatalog(infos)
+		a.rightPanel.SetResourceCatalog(infos)
+		// populate app-level resource catalog for lookups
+		a.resCatalog = make(map[string]schema.GroupVersionKind)
+		for _, info := range infos {
+			if info.Namespaced {
+				a.resCatalog[info.Resource] = info.GVK
+			}
+		}
+	} else {
+		fmt.Printf("Warning: discovery resources: %v\n", err)
+	}
+	// Generic data source factory (per-GVK)
+	factory := func(gvk schema.GroupVersionKind) *GenericDataSource {
+		return NewGenericDataSource(a.storeProvider, a.resMgr.GVKToGVR, tableFn, gvk)
+	}
+	a.leftPanel.SetGenericDataSourceFactory(factory)
+	a.rightPanel.SetGenericDataSourceFactory(factory)
+	a.genericFactory = factory
+	a.leftPanel.SetViewConfig(a.viewConfig)
+	a.rightPanel.SetViewConfig(a.viewConfig)
+	return nil
 }
 
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.
 func (a *App) selectCurrentContext() *kubeconfig.Context {
-    if env := os.Getenv("KUBECONFIG"); env != "" {
-        for _, p := range strings.Split(env, string(os.PathListSeparator)) {
-            p = strings.TrimSpace(p)
-            if p == "" { continue }
-            for _, kc := range a.kubeMgr.GetKubeconfigs() {
-                if sameFilepath(kc.Path, p) {
-                    if ctx := a.kubeMgr.GetCurrentContext(kc); ctx != nil { return ctx }
-                }
-            }
-        }
-    }
-    for _, kc := range a.kubeMgr.GetKubeconfigs() {
-        if ctx := a.kubeMgr.GetCurrentContext(kc); ctx != nil { return ctx }
-    }
-    cs := a.kubeMgr.GetContexts()
-    if len(cs) > 0 { return cs[0] }
-    return nil
+	if env := os.Getenv("KUBECONFIG"); env != "" {
+		for _, p := range strings.Split(env, string(os.PathListSeparator)) {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			for _, kc := range a.kubeMgr.GetKubeconfigs() {
+				if sameFilepath(kc.Path, p) {
+					if ctx := a.kubeMgr.GetCurrentContext(kc); ctx != nil {
+						return ctx
+					}
+				}
+			}
+		}
+	}
+	for _, kc := range a.kubeMgr.GetKubeconfigs() {
+		if ctx := a.kubeMgr.GetCurrentContext(kc); ctx != nil {
+			return ctx
+		}
+	}
+	cs := a.kubeMgr.GetContexts()
+	if len(cs) > 0 {
+		return cs[0]
+	}
+	return nil
 }
 
 func sameFilepath(a, b string) bool {
-    ap, err1 := filepath.Abs(a)
-    bp, err2 := filepath.Abs(b)
-    if err1 != nil || err2 != nil { return a == b }
-    return ap == bp
+	ap, err1 := filepath.Abs(a)
+	bp, err2 := filepath.Abs(b)
+	if err1 != nil || err2 != nil {
+		return a == b
+	}
+	return ap == bp
 }
