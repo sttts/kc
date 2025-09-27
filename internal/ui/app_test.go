@@ -1,7 +1,8 @@
 package ui
 
 import (
-	"testing"
+    "testing"
+    tea "github.com/charmbracelet/bubbletea/v2"
 )
 
 func TestNewApp(t *testing.T) {
@@ -53,23 +54,21 @@ func TestNewPanel(t *testing.T) {
 }
 
 func TestNewTerminal(t *testing.T) {
-	terminal := NewTerminal()
+    terminal := NewTerminal()
 
-	if terminal == nil {
-		t.Fatal("NewTerminal() returned nil")
-	}
-
-	if len(terminal.history) != 0 {
-		t.Errorf("Expected empty history, got length %d", len(terminal.history))
-	}
-
-	if terminal.currentCmd != "" {
-		t.Errorf("Expected empty current command, got '%s'", terminal.currentCmd)
-	}
-
-	if terminal.cursor != 0 {
-		t.Errorf("Expected cursor to be 0, got %d", terminal.cursor)
-	}
+    if terminal == nil {
+        t.Fatal("NewTerminal() returned nil")
+    }
+    // Defaults
+    if terminal.showPanels != true {
+        t.Errorf("Expected showPanels to be true, got %v", terminal.showPanels)
+    }
+    if terminal.hasTyped != false {
+        t.Errorf("Expected hasTyped to be false, got %v", terminal.hasTyped)
+    }
+    if terminal.shellExited != false {
+        t.Errorf("Expected shellExited to be false, got %v", terminal.shellExited)
+    }
 }
 
 func TestPanelSetDimensions(t *testing.T) {
@@ -85,15 +84,15 @@ func TestPanelSetDimensions(t *testing.T) {
 	}
 }
 
-func TestTerminalSetDimensions(t *testing.T) {
-	terminal := NewTerminal()
-	terminal.SetDimensions(100, 50)
-
-	if terminal.width != 100 {
-		t.Errorf("Expected width to be 100, got %d", terminal.width)
-	}
-
-	if terminal.height != 50 {
-		t.Errorf("Expected height to be 50, got %d", terminal.height)
-	}
+func TestTerminalResizeViaWindowSize(t *testing.T) {
+    terminal := NewTerminal()
+    // Simulate a window size message to update dimensions
+    model, _ := terminal.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
+    term := model.(*Terminal)
+    if term.width != 100 {
+        t.Errorf("Expected width to be 100, got %d", term.width)
+    }
+    if term.height != 50 {
+        t.Errorf("Expected height to be 50, got %d", term.height)
+    }
 }
