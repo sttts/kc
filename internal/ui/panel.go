@@ -353,8 +353,8 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 		line.WriteString(" ")
 	}
 
-    // Item type indicator: show '/' only for directories and explicitly enterable items
-    enterable := (item.Type == ItemTypeDirectory) || item.Enterable
+    // Item type indicator: show '/' for directories, namespaces, contexts, and explicitly enterable items
+    enterable := (item.Type == ItemTypeDirectory) || (item.Type == ItemTypeNamespace) || (item.Type == ItemTypeContext) || item.Enterable
     if enterable {
         line.WriteString("/")
     } else {
