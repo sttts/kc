@@ -4,11 +4,12 @@ import "github.com/charmbracelet/lipgloss/v2"
 
 // Color constants
 const (
-	ColorBlack      = "0"
-	ColorDarkerBlue = "4"
-	ColorCyan       = "6"
-	ColorGrey       = "7"
-	ColorWhite      = "15"
+    ColorBlack      = "0"
+    ColorDarkerBlue = "4"
+    ColorCyan       = "6"
+    ColorGrey       = "7"
+    ColorDarkGrey   = "8"
+    ColorWhite      = "15"
 )
 
 // Common styles
@@ -66,7 +67,7 @@ var (
         Padding(0, 1, 0, 0)
 
     FunctionKeyDisabledStyle = lipgloss.NewStyle().
-        Background(lipgloss.Color(ColorDarkerBlue)).
+        Background(lipgloss.Color(ColorDarkGrey)).
         Foreground(lipgloss.Color(ColorGrey)).
         Padding(0, 1, 0, 0)
 
