@@ -26,6 +26,10 @@
 - Errors: wrap with `%w` (e.g., `fmt.Errorf("reading config: %w", err)`).
 - Files: group closely related types; avoid large god files.
 
+## Abstraction Guidelines
+- Prefer composition over wrapping: do not re-invent controller-runtime/client-go abstractions. Embed or compose original types instead of creating near-duplicates.
+- Use Kubernetes/client-go types and `controller-runtime` primitives directly (clients, caches, informers, RESTMapper). Add small adapters only where strictly needed.
+
 ## Testing Guidelines
 - Framework: standard `testing` with table-driven tests and `t.Run` subtests.
 - Location: `*_test.go` alongside sources (e.g., `pkg/handlers/handler_test.go`).
