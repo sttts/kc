@@ -4,6 +4,7 @@ import (
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/charmbracelet/lipgloss/v2"
     "strings"
+    "time"
 )
 
 // Modal represents a modal dialog
@@ -14,6 +15,7 @@ type Modal struct {
     height  int
     visible bool
     onClose func() tea.Cmd
+    escPressed bool
 }
 
 // ModalFooterHints allows content to contribute footer key hints
@@ -76,18 +78,39 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	// Handle modal-specific keys
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			m.Hide()
-			if m.onClose != nil {
-				cmd = m.onClose()
-				cmds = append(cmds, cmd)
-			}
-			return m, tea.Batch(cmds...)
-		}
-	}
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        switch msg.String() {
+        case "esc":
+            // Support ESC+number sequences inside modals (like app-level behavior)
+            m.escPressed = true
+            return m, tea.Tick(time.Second, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
+        case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
+            if m.escPressed {
+                // Handle F9 for theme (ESC 9)
+                if msg.String() == "9" {
+                    if themable, ok := m.content.(interface{ RequestTheme() tea.Cmd }); ok {
+                        m.escPressed = false
+                        return m, themable.RequestTheme()
+                    }
+                }
+                // Unhandled number: cancel esc sequence
+                m.escPressed = false
+                return m, nil
+            }
+        }
+    case EscTimeoutMsg:
+        if m.escPressed {
+            // Treat as standalone ESC: close modal
+            m.escPressed = false
+            m.Hide()
+            if m.onClose != nil {
+                cmd = m.onClose()
+                cmds = append(cmds, cmd)
+            }
+            return m, tea.Batch(cmds...)
+        }
+    }
 
 	// Update the content
 	model, cmd := m.content.Update(msg)
@@ -172,7 +195,7 @@ func (m *Modal) View() string {
 // ModalManager manages multiple modals
 type ModalManager struct {
     modals map[string]*Modal
-    active string
+    stack  []string // modal name stack; top-most is last
 }
 
 // Init initializes the modal manager
@@ -182,9 +205,10 @@ func (mm *ModalManager) Init() tea.Cmd {
 
 // NewModalManager creates a new modal manager
 func NewModalManager() *ModalManager {
-	return &ModalManager{
-		modals: make(map[string]*Modal),
-	}
+    return &ModalManager{
+        modals: make(map[string]*Modal),
+        stack:  []string{},
+    }
 }
 
 // Register registers a modal
@@ -194,59 +218,61 @@ func (mm *ModalManager) Register(name string, modal *Modal) {
 
 // Show shows a modal by name
 func (mm *ModalManager) Show(name string) {
-	if modal, exists := mm.modals[name]; exists {
-		modal.Show()
-		mm.active = name
-	}
+    if modal, exists := mm.modals[name]; exists {
+        modal.Show()
+        mm.stack = append(mm.stack, name)
+    }
 }
 
 // Hide hides the active modal
 func (mm *ModalManager) Hide() {
-	if mm.active != "" {
-		if modal, exists := mm.modals[mm.active]; exists {
-			modal.Hide()
-		}
-		mm.active = ""
-	}
+    if len(mm.stack) > 0 {
+        top := mm.stack[len(mm.stack)-1]
+        if modal, exists := mm.modals[top]; exists {
+            modal.Hide()
+        }
+        mm.stack = mm.stack[:len(mm.stack)-1]
+    }
 }
 
 // IsModalVisible returns true if any modal is visible
 func (mm *ModalManager) IsModalVisible() bool {
-	return mm.active != ""
+    return len(mm.stack) > 0
 }
 
 // GetActiveModal returns the active modal
 func (mm *ModalManager) GetActiveModal() *Modal {
-	if mm.active != "" {
-		return mm.modals[mm.active]
-	}
-	return nil
+    if len(mm.stack) > 0 {
+        name := mm.stack[len(mm.stack)-1]
+        return mm.modals[name]
+    }
+    return nil
 }
 
 // Update handles messages and updates the modal manager
 func (mm *ModalManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if mm.active != "" {
-		if modal, exists := mm.modals[mm.active]; exists {
-			model, cmd := modal.Update(msg)
-			mm.modals[mm.active] = model.(*Modal)
-
-			// Check if modal was closed
-			if !modal.IsVisible() {
-				mm.active = ""
-			}
-
-			return mm, cmd
-		}
-	}
-	return mm, nil
+    if len(mm.stack) > 0 {
+        name := mm.stack[len(mm.stack)-1]
+        if modal, exists := mm.modals[name]; exists {
+            model, cmd := modal.Update(msg)
+            mm.modals[name] = model.(*Modal)
+            // If the modal was closed externally, pop it
+            if !modal.IsVisible() {
+                mm.stack = mm.stack[:len(mm.stack)-1]
+            }
+            return mm, cmd
+        }
+    }
+    return mm, nil
 }
 
 // View renders the modal manager
 func (mm *ModalManager) View() string {
-	if mm.active != "" {
-		if modal, exists := mm.modals[mm.active]; exists {
-			return modal.View()
-		}
-	}
-	return ""
+    if len(mm.stack) > 0 {
+        name := mm.stack[len(mm.stack)-1]
+        if modal, exists := mm.modals[name]; exists {
+            return modal.View()
+        }
+    }
+    return ""
 }
