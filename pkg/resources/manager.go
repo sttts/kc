@@ -1,10 +1,11 @@
 package resources
 
 import (
-	"context"
-	"fmt"
-	"strings"
-	"sync"
+    "context"
+    "fmt"
+    "strings"
+    "sync"
+    "time"
 
 	"github.com/sschimanski/kc/pkg/handlers"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -60,22 +61,54 @@ func NewManager(config *rest.Config) (*Manager, error) {
 
 // Start starts the manager
 func (m *Manager) Start() error {
-	// Start the cluster
-	if err := m.cluster.Start(m.ctx); err != nil {
-		return fmt.Errorf("failed to start cluster: %w", err)
-	}
+    // Start the cluster asynchronously; Start blocks until stop.
+    go func() {
+        // Error is captured only for logging; callers should operate even if cache isn't fully warm yet.
+        _ = m.cluster.Start(m.ctx)
+    }()
 
-	// Wait for cache to sync
-	if !m.cache.WaitForCacheSync(m.ctx) {
-		return fmt.Errorf("failed to sync cache")
-	}
+    // Best-effort: wait briefly for cache sync. If no informers are registered yet, this will return immediately.
+    synced := make(chan struct{})
+    go func() {
+        m.cache.WaitForCacheSync(m.ctx)
+        close(synced)
+    }()
+    select {
+    case <-synced:
+    case <-time.After(2 * time.Second):
+        // Proceed without blocking; cache will continue warming in background.
+    }
 
-	return nil
+    // Start discovery refresh loop (invalidate cached discovery and reset RESTMapper periodically)
+    go m.discoveryRefresher(30 * time.Second)
+    return nil
 }
 
 // Stop stops the manager
 func (m *Manager) Stop() {
-	m.cancel()
+    m.cancel()
+}
+
+// discoveryRefresher periodically invalidates discovery and resets the RESTMapper to pick up CRDs and API changes.
+func (m *Manager) discoveryRefresher(interval time.Duration) {
+    ticker := time.NewTicker(interval)
+    defer ticker.Stop()
+    for {
+        select {
+        case <-m.ctx.Done():
+            return
+        case <-ticker.C:
+            // Lazily initialize discovery if needed, then invalidate caches.
+            if err := m.ensureDiscovery(); err == nil {
+                if m.disco != nil {
+                    m.disco.Invalidate()
+                }
+                if m.mapper != nil {
+                    m.mapper.Reset()
+                }
+            }
+        }
+    }
 }
 
 // Client returns the client
