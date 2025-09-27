@@ -764,6 +764,10 @@ func (a *App) initData() error {
         // Non-fatal; still allow UI
         fmt.Printf("Warning: load context resources: %v\n", err)
     }
+    // Wire panel data sources
+    nsDS := NewNamespacesDataSource(a.storeProvider, a.resMgr.GVKToGVR)
+    a.leftPanel.SetNamespacesDataSource(nsDS)
+    a.rightPanel.SetNamespacesDataSource(nsDS)
     return nil
 }
 
