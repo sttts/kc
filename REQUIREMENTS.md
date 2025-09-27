@@ -51,6 +51,18 @@
 - "View" menu toggles panel settings per side: sort order (by name, creationTimestamp, last change time derived from `metadata.managedFields`), sort direction, column visibility, and optional grouping.
 - Menu navigation via keyboard shortcuts and F-keys; persists per panel and path kind.
 
+## Panel Menus & Modes
+- Each panel has a dedicated menu ("Left" / "Right") controlling its view mode:
+  - API Surface (default): hierarchical browser as specified above.
+  - Describe: `kubectl describe`-like view for the current object.
+  - YAML: syntax-highlighted YAML for the current object; read-only for View, editable via `F4`.
+  - Logs (pin): follow pod/container logs in the panel; selection chooses container when applicable.
+  - Top (metrics): `kubectl top`-like table for pods/nodes (requires metrics API); gracefully degrade if unavailable.
+- Modes are per-panel and persist across navigation within the same path kind; reset on context/kubeconfig switch unless pinned.
+
+## Panel Swap
+- `Ctrl+U` swaps the two panels' locations, cursor/scroll positions, selections, and active view modes.
+
 ## Panels & Focus
 - Two symmetrical panels; only one focused. `Tab` switches focus.
 - Up/Down moves cursor; `Enter` follows into folders/resources; `..` moves up one level.
