@@ -44,6 +44,8 @@
 - PRs must include: concise summary, rationale, test plan/commands, linked issues, and screenshots/GIFs for TUI changes.
 - Keep changes focused; include or update tests and docs relevant to your change.
 
+See `TODO.md` for the active development plan and current tasks.
+
 ## Security & Configuration Tips
 - Never commit kubeconfigs, cluster credentials, or secrets.
 - Use `KUBECONFIG` or default `~/.kube/config`; prefer non-production contexts when developing.
