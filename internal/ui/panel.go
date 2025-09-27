@@ -521,33 +521,36 @@ func (p *Panel) formatRow(cells []string, widths []int) string {
 
 // renderFooter renders the panel footer
 func (p *Panel) renderFooter() string {
-	var footerText string
+    var footerText string
 
-	// Get current item info
-	currentItem := p.GetCurrentItem()
-	if currentItem != nil {
-		footerText = currentItem.GetFooterInfo()
+    // Get current item info
+    currentItem := p.GetCurrentItem()
+    if currentItem != nil {
+        footerText = currentItem.GetFooterInfo()
+    } else {
+        // Fallback to item count
+        selectedCount := 0
+        for _, item := range p.items {
+            if item.Selected {
+                selectedCount++
+            }
+        }
+        footerText = fmt.Sprintf("%d/%d items", selectedCount, len(p.items))
+    }
 
-		// Add path context if not at root
-		if p.currentPath != "/" {
-			footerText += fmt.Sprintf(" | %s", p.currentPath)
-		}
-	} else {
-		// Fallback to item count
-		selectedCount := 0
-		for _, item := range p.items {
-			if item.Selected {
-				selectedCount++
-			}
-		}
-		footerText = fmt.Sprintf("%d/%d items", selectedCount, len(p.items))
-	}
+    // Do not wrap: hard‑cut to available width
+    if lipgloss.Width(footerText) > p.width {
+        // naive cut; acceptable for ASCII content
+        if p.width >= 0 && p.width < len(footerText) {
+            footerText = footerText[:p.width]
+        }
+    }
 
-	return PanelFooterStyle.
-		Width(p.width).
-		Height(1).
-		Align(lipgloss.Left).
-		Render(footerText)
+    return PanelFooterStyle.
+        Width(p.width).
+        Height(1).
+        Align(lipgloss.Left).
+        Render(footerText)
 }
 
 // Navigation methods
