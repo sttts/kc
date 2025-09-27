@@ -65,10 +65,18 @@ type Item struct {
 
 // GetFooterInfo returns the display string for this item in the footer
 func (i *Item) GetFooterInfo() string {
-	if i.GVK != "" {
-		return fmt.Sprintf("%s (%s)", i.Name, i.GVK)
-	}
-	return i.Name
+    // Prefer precise identity: Group/Version/Resource
+    if i.TypedGVR.Resource != "" || i.TypedGVR.Version != "" || i.TypedGVR.Group != "" {
+        if i.TypedGVR.Group == "" {
+            // core
+            return fmt.Sprintf("%s (%s/%s)", i.Name, i.TypedGVR.Version, i.TypedGVR.Resource)
+        }
+        return fmt.Sprintf("%s (%s/%s/%s)", i.Name, i.TypedGVR.Group, i.TypedGVR.Version, i.TypedGVR.Resource)
+    }
+    if i.GVK != "" {
+        return fmt.Sprintf("%s (%s)", i.Name, i.GVK)
+    }
+    return i.Name
 }
 
 // ItemType represents the type of an item
@@ -830,11 +838,17 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
             if headers, rows, items, err := p.nsData.ListTable(); err == nil {
                 p.tableHeaders = headers
                 p.tableRows = rows
-                for i := range items { items[i].TypedGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"} }
+                for i := range items {
+                    items[i].TypedGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+                    items[i].TypedGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
+                }
                 p.items = append(p.items, items...)
             } else if items, err := p.nsData.List(); err == nil {
                 p.tableHeaders, p.tableRows = nil, nil
-                for i := range items { items[i].TypedGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"} }
+                for i := range items {
+                    items[i].TypedGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+                    items[i].TypedGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
+                }
                 p.items = append(p.items, items...)
             } else {
                 p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
@@ -849,11 +863,11 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
         }
 
     case "/cluster-resources":
-        // Cluster resources level - show cluster-wide resources
+        // Cluster resources level - show cluster-wide resources with typed identity
         p.items = append(p.items, []Item{
-            {Name: "nodes", Type: ItemTypeResource, GVK: "v1 Node", Enterable: true},
-            {Name: "persistentvolumes", Type: ItemTypeResource, GVK: "v1 PersistentVolume", Enterable: true},
-            {Name: "storageclasses", Type: ItemTypeResource, GVK: "storage.k8s.io/v1 StorageClass", Enterable: true},
+            {Name: "nodes", Type: ItemTypeResource, Enterable: true, TypedGVK: schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Node"}, TypedGVR: schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}},
+            {Name: "persistentvolumes", Type: ItemTypeResource, Enterable: true, TypedGVK: schema.GroupVersionKind{Group: "", Version: "v1", Kind: "PersistentVolume"}, TypedGVR: schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumes"}},
+            {Name: "storageclasses", Type: ItemTypeResource, Enterable: true, TypedGVK: schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "StorageClass"}, TypedGVR: schema.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}},
         }...)
 
 	default:
@@ -881,7 +895,9 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
                             ds := p.genericFactory(gvk)
                             if ds == nil { continue }
                             if items, err := ds.List(ns); err == nil && len(items) > 0 {
-                            p.items = append(p.items, Item{Name: res, Type: ItemTypeResource, Size: fmt.Sprintf("%d", len(items)), Enterable: true, TypedGVK: gvk})
+                            item := Item{Name: res, Type: ItemTypeResource, Size: fmt.Sprintf("%d", len(items)), Enterable: true, TypedGVK: gvk}
+                            item.TypedGVR = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
+                            p.items = append(p.items, item)
                             }
                         }
                     if len(p.items) == 1 && p.items[0].Name == ".." {
@@ -961,12 +977,21 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
                         // Mark enterable per-resource policy and set typed GVK
                         for i := range items {
                             items[i].Enterable = p.isObjectEnterable(res)
-                            if p.currentResourceGVK != nil { items[i].TypedGVK = *p.currentResourceGVK }
+                            if p.currentResourceGVK != nil {
+                                items[i].TypedGVK = *p.currentResourceGVK
+                                items[i].TypedGVR = schema.GroupVersionResource{Group: p.currentResourceGVK.Group, Version: p.currentResourceGVK.Version, Resource: res}
+                            }
                         }
                         p.items = append(p.items, items...)
                     } else if items, err := p.resourceData.List(ns); err == nil {
                         p.tableHeaders, p.tableRows = nil, nil
-                        for i := range items { items[i].Enterable = p.isObjectEnterable(res); if p.currentResourceGVK != nil { items[i].TypedGVK = *p.currentResourceGVK } }
+                        for i := range items {
+                            items[i].Enterable = p.isObjectEnterable(res)
+                            if p.currentResourceGVK != nil {
+                                items[i].TypedGVK = *p.currentResourceGVK
+                                items[i].TypedGVR = schema.GroupVersionResource{Group: p.currentResourceGVK.Group, Version: p.currentResourceGVK.Version, Resource: res}
+                            }
+                        }
                         p.items = append(p.items, items...)
                     } else {
                         p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
