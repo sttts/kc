@@ -10,7 +10,8 @@
 
 Current tasks
 - [ ] Router: add unit tests for `pkg/navigation/router.go` (Parse/Build/Parent cases incl. groups mode).
-- [ ] Store: implement a `ReadOnlyStore` backed by controller-runtime cache/dynamic informers.
+- [ ] Store: implement `ReadOnlyStore` on top of controller-runtime `cluster.Cache` (one `cluster.Cluster` per kubeconfig+context), start/stop informers on demand.
+- [ ] Store: register GVKs dynamically in the cluster's scheme (unstructured or PartialObjectMetadata) and resolve GVK↔GVR via RESTMapper.
 - [ ] Store: expose a `StoreProvider` from `resources.Manager` without wrapping existing types.
 - [ ] Navigation: refactor to consume Router + Store (lazy child loading, no fragile string matching).
 

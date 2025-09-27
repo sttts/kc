@@ -31,7 +31,8 @@ type Event struct {
 }
 
 // ReadOnlyStore exposes informer-backed access without re-wrapping client-go/controller-runtime.
-// Implementations should be thin adapters over informers or dynamic clients.
+// Implementations MUST be thin adapters over controller-runtime Cluster/Cache informers
+// (start/stop on demand), one Cluster per kubeconfig+context. Avoid custom informer factories.
 type ReadOnlyStore interface {
     // List returns the latest snapshot from cache.
     List(ctx context.Context, key StoreKey) (*unstructured.UnstructuredList, error)
@@ -45,4 +46,3 @@ type ReadOnlyStore interface {
 type StoreProvider interface {
     Store() ReadOnlyStore
 }
-
