@@ -101,13 +101,18 @@ func (m *Modal) View() string {
     if m.content != nil {
         if viewable, ok := m.content.(interface{ View() string }); ok { inner = viewable.View() }
     }
-    // Build frame with overlay title (similar to app frame)
+    // Build frame with overlay title (match focused panel style)
     boxStyle := lipgloss.NewStyle().
         Border(lipgloss.NormalBorder()).
         BorderForeground(lipgloss.Color(ColorGrey)).
+        BorderBackground(lipgloss.Color(ColorDarkerBlue)).
         Background(lipgloss.Color(ColorDarkerBlue))
 
-    labelStyle := PanelHeaderStyle
+    // Focused panel title chip style
+    labelStyle := lipgloss.NewStyle().
+        Foreground(lipgloss.Color(ColorBlack)).
+        Background(lipgloss.Color(ColorGrey)).
+        Padding(0, 1)
     label := labelStyle.Render(m.title)
     border := boxStyle.GetBorderStyle()
     topBorderStyler := lipgloss.NewStyle().
