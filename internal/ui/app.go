@@ -221,10 +221,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
         } else {
             // In panel mode, use smart key routing based on terminal state
-            // Special: if user typed in the 2-line terminal, Enter or Ctrl+C should return focus to panel without sending to terminal
+            // If user typed in the 2-line terminal, Enter and Ctrl+C must be SENT to the terminal,
+            // then reset typed state to return focus to the panels.
             if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() {
-                a.terminal.ClearTyped()
-                return a, nil
+                model, cmd := a.terminal.Update(msg) // deliver to terminal
+                a.terminal = model.(*Terminal)
+                a.terminal.ClearTyped()              // reset typed; next keys route to panels
+                return a, cmd
             }
             // Intercept F3/F4 to open viewers/editors
             if msg.String() == "f3" {
@@ -543,25 +546,24 @@ func (a *App) renderFunctionKeys() string {
 
 // renderToggleMessage renders the toggle message for fullscreen mode
 func (a *App) renderToggleMessage() string {
-	// Create the same layout as function keys
-	key := FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")
-	title := FunctionKeyTitleStyle.Render("Kubernetes Commander")
+    // Create the same layout as function keys
+    key := FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")
+    title := FunctionKeyTitleStyle.Render("Kubernetes Commander")
 
-	// Calculate the exact spacing needed to push title to the right edge
-	spacing := a.width - len(key) - len(title)
-	if spacing < 0 {
-		spacing = 1 // minimum spacing
-	}
+    // Calculate the exact spacing needed to push title to the right edge
+    spacing := a.width - len(key) - len(title)
+    if spacing < 0 {
+        spacing = 1 // minimum spacing
+    }
 
-	content := key + strings.Repeat(" ", spacing) + title
+    content := key + strings.Repeat(" ", spacing) + title
 
-	// Create a full-width container
-	fullWidthStyle := FunctionKeyBarStyle.
-		Width(a.width).
-		Align(lipgloss.Center).
-		Width(a.width - lipgloss.Width(content))
+    // Create a full-width container
+    fullWidthStyle := FunctionKeyBarStyle.
+        Width(a.width).
+        Align(lipgloss.Left)
 
-	return fullWidthStyle.Render(content)
+    return fullWidthStyle.Render(content)
 }
 
 // setupModals sets up the modal dialogs
