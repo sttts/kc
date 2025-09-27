@@ -321,7 +321,7 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 	// Render visible items
     var lines []string
     // Render table header first when applicable
-    if p.shouldRenderTable() && p.tableRows != nil && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
+    if p.shouldRenderTable() && p.tableRows != nil && ((strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4) || p.currentPath == "/namespaces") {
         p.columnWidths = p.computeColumnWidths(p.tableHeaders, p.tableRows, p.width-2)
         header := p.formatRow(p.tableHeaders, p.columnWidths)
         // Add two-char prefix to align with selection + type column in rows
@@ -366,7 +366,7 @@ func (p *Panel) renderItem(item Item, selected bool) string {
     }
 
     // Item name or table row
-    if p.shouldRenderTable() && p.tableRows != nil && item.Name != ".." && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
+    if p.shouldRenderTable() && p.tableRows != nil && item.Name != ".." && ((strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4) || p.currentPath == "/namespaces") {
         // Determine row index, accounting for optional ".." at top
         idx := p.indexOf(item)
         if idx >= 0 {
@@ -840,13 +840,13 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
             }...)
         }
 
-	case "/cluster-resources":
-		// Cluster resources level - show cluster-wide resources
-		p.items = append(p.items, []Item{
-			{Name: "nodes", Type: ItemTypeResource, Size: "3", Modified: "5m", GVK: "v1 Node"},
-			{Name: "persistentvolumes", Type: ItemTypeResource, Size: "1", Modified: "10m", GVK: "v1 PersistentVolume"},
-			{Name: "storageclasses", Type: ItemTypeResource, Size: "2", Modified: "15m", GVK: "storage.k8s.io/v1 StorageClass"},
-		}...)
+    case "/cluster-resources":
+        // Cluster resources level - show cluster-wide resources
+        p.items = append(p.items, []Item{
+            {Name: "nodes", Type: ItemTypeResource, GVK: "v1 Node", Enterable: true},
+            {Name: "persistentvolumes", Type: ItemTypeResource, GVK: "v1 PersistentVolume", Enterable: true},
+            {Name: "storageclasses", Type: ItemTypeResource, GVK: "storage.k8s.io/v1 StorageClass", Enterable: true},
+        }...)
 
 	default:
 		// Check if it's a context path
