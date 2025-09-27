@@ -5,10 +5,9 @@ package overlay
 type Position int
 
 const (
-    Top Position = iota + 1
-    Right
-    Bottom
-    Left
-    Center
+	Top Position = iota + 1
+	Right
+	Bottom
+	Left
+	Center
 )
-
