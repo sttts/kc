@@ -48,8 +48,19 @@
 
 ## Menus & View Options
 - Popdown menu bar (mc-style) planned at the top.
-- "View" menu toggles panel settings per side: sort order (by name, creationTimestamp, last change time derived from `metadata.managedFields`), sort direction, column visibility, and optional grouping.
+- "View" menu toggles panel settings per side: sort order (by name, creationTimestamp, last change time from `metadata.managedFields`), sort direction, column visibility, and optional grouping.
+- Additional sort keys:
+  - Nodes: by Capacity (CPU/memory), by Resource Consumption (from metrics API), by Status health.
+  - Pods: by Resource Consumption (CPU/memory), by Status health, by Ready containers.
+- Inverse ordering supported orthogonally to sort key (Asc/Desc toggle).
 - Menu navigation via keyboard shortcuts and F-keys; persists per panel and path kind.
+
+### Sorting Rules
+- Status health order (most broken first):
+  - Nodes: NotReady > Unknown > Ready=False (with critical conditions) > Ready=True.
+  - Pods: Failed > CrashLoopBackOff/ImagePullBackOff > Pending/Unschedulable > Running (not Ready) > Running (Ready) > Succeeded.
+- Resource consumption: prefer metrics.k8s.io if available; degrade to recent usage samples if cached; otherwise omit and fall back to name.
+- Capacity: compute from `status.capacity` (nodes) and requested/limits from pod spec; tie-break by name.
 
 ## Panel Menus & Modes
 - Each panel has a dedicated menu ("Left" / "Right") controlling its view mode:
