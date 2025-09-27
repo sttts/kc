@@ -135,17 +135,12 @@ func (m *Modal) View() string {
         top = topLeft + topBorderStyler(strings.Repeat(border.Top, left)) + label + topBorderStyler(strings.Repeat(border.Top, right)) + topRight
     }
 
-    // Compose content + footer bar to fit inside the box (under the header)
-    footer := FunctionKeyStyle.Render("Esc") + FunctionKeyDescriptionStyle.Render("Close")
-    footerRendered := FunctionKeyBarStyle.Width(contentW).Render(footer)
-    framedContent := lipgloss.JoinVertical(lipgloss.Left, inner, footerRendered)
-
-    // Box content under header
+    // Box content under header (no footer inside the frame)
     bottom := boxStyle.Copy().
         BorderTop(false).
         Width(m.width).
         Height(m.height-1).
-        Render(framedContent)
+        Render(inner)
 
     // Replace bottom corners to T junction at the top border of bottom
     lines := strings.Split(bottom, "\n")
@@ -156,7 +151,11 @@ func (m *Modal) View() string {
         last = strings.Replace(last, "┘", "┤", 1)
         lines[len(lines)-1] = last
     }
-    return top + "\n" + strings.Join(lines, "\n")
+    frame := top + "\n" + strings.Join(lines, "\n")
+    // Function key bar outside the frame
+    footer := FunctionKeyStyle.Render("Esc") + FunctionKeyDescriptionStyle.Render("Close")
+    footerLine := FunctionKeyBarStyle.Width(m.width).Render(footer)
+    return lipgloss.JoinVertical(lipgloss.Left, frame, footerLine)
 }
 
 // ModalManager manages multiple modals
