@@ -8,7 +8,6 @@ import (
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/charmbracelet/lipgloss/v2"
     "github.com/sschimanski/kc/pkg/resources"
-    "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Panel represents a file/resource panel
@@ -28,13 +27,9 @@ type Panel struct {
     nsData *NamespacesDataSource
     nsWatchCh <-chan resources.Event
     nsWatchCancel context.CancelFunc
-    resourceData *GenericDataSource // generic per-GVK data source
+    resourceData *PodsDataSource // currently pods; will generalize to any resource
     resourceWatchCh <-chan resources.Event
     resourceWatchCancel context.CancelFunc
-    // Discovery-backed catalog of namespaced resources (plural -> GVK)
-    namespacedCatalog map[string]schema.GroupVersionKind
-    genericFactory func(schema.GroupVersionKind) *GenericDataSource
-    currentResourceGVK *schema.GroupVersionKind
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -92,21 +87,6 @@ func (p *Panel) SetNamespacesDataSource(ds *NamespacesDataSource) {
 
 // SetPodsDataSource wires a pods data source for live listings.
 func (p *Panel) SetPodsDataSource(ds *PodsDataSource) { p.resourceData = ds }
-
-// SetResourceCatalog injects the namespaced resource catalog (plural -> GVK).
-func (p *Panel) SetResourceCatalog(infos []resources.ResourceInfo) {
-    p.namespacedCatalog = make(map[string]schema.GroupVersionKind)
-    for _, info := range infos {
-        if info.Namespaced {
-            p.namespacedCatalog[info.Resource] = info.GVK
-        }
-    }
-}
-
-// SetGenericDataSourceFactory sets a factory for creating per-GVK data sources.
-func (p *Panel) SetGenericDataSourceFactory(factory func(schema.GroupVersionKind) *GenericDataSource) {
-    p.genericFactory = factory
-}
 
 // Init initializes the panel
 func (p *Panel) Init() tea.Cmd {
@@ -307,13 +287,19 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 		line.WriteString(" ")
 	}
 
-    // Item type indicator: anything enterable should look like a folder ("/")
-    enterable := item.Type != ItemTypeFile
-    if enterable {
-        line.WriteString("/")
-    } else {
-        line.WriteString(" ")
-    }
+	// Item type indicator
+	switch item.Type {
+	case ItemTypeDirectory:
+		line.WriteString("/")
+	case ItemTypeFile:
+		line.WriteString(" ")
+	case ItemTypeResource:
+		line.WriteString(" ")
+	case ItemTypeNamespace:
+		line.WriteString(" ")
+	case ItemTypeContext:
+		line.WriteString(" ")
+	}
 
 	// Item name
 	line.WriteString(item.Name)
@@ -671,25 +657,12 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
             parts := strings.Split(path, "/")
             if len(parts) == 3 {
                 // namespace level: list resource groups
-                if len(p.namespacedCatalog) > 0 {
-                    // Render resources from discovery
-                    for res := range p.namespacedCatalog {
-                        p.items = append(p.items, Item{Name: res, Type: ItemTypeResource})
-                    }
-                } else {
-                    // Fallback for now
-                    p.items = append(p.items, []Item{{Name: "pods", Type: ItemTypeResource}}...)
-                }
-            } else if len(parts) >= 4 {
+                p.items = append(p.items, []Item{
+                    {Name: "pods", Type: ItemTypeResource, GVK: "v1 Pod"},
+                    // TODO: add generic resources via discovery
+                }...)
+            } else if len(parts) >= 4 && parts[3] == "pods" {
                 ns := parts[2]
-                res := parts[3]
-                // Resolve GVK from catalog and (re)create generic data source when needed
-                if gvk, ok := p.namespacedCatalog[res]; ok && p.genericFactory != nil {
-                    if p.currentResourceGVK == nil || *p.currentResourceGVK != gvk {
-                        p.resourceData = p.genericFactory(gvk)
-                        p.currentResourceGVK = &gvk
-                    }
-                }
                 if p.resourceData != nil {
                     if items, err := p.resourceData.List(ns); err == nil {
                         p.items = append(p.items, items...)
