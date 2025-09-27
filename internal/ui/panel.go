@@ -40,6 +40,7 @@ type Panel struct {
     tableRows    [][]string
     columnWidths []int
     tableViewEnabled bool
+    viewConfig *ViewConfig
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -113,6 +114,9 @@ func (p *Panel) SetResourceCatalog(infos []resources.ResourceInfo) {
 func (p *Panel) SetGenericDataSourceFactory(factory func(schema.GroupVersionKind) *GenericDataSource) {
     p.genericFactory = factory
 }
+
+// SetViewConfig injects the view configuration (global + per resource overrides).
+func (p *Panel) SetViewConfig(cfg *ViewConfig) { p.viewConfig = cfg }
 
 // Init initializes the panel
 func (p *Panel) Init() tea.Cmd {
@@ -316,7 +320,7 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 	// Render visible items
     var lines []string
     // Render table header first when applicable
-    if p.tableViewEnabled && p.tableRows != nil && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
+    if p.shouldRenderTable() && p.tableRows != nil && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
         p.columnWidths = p.computeColumnWidths(p.tableHeaders, p.tableRows, p.width)
         header := p.formatRow(p.tableHeaders, p.columnWidths)
         lines = append(lines, PanelTableHeaderStyle.Width(p.width).Render(header))
@@ -358,7 +362,7 @@ func (p *Panel) renderItem(item Item, selected bool) string {
     }
 
     // Item name or table row
-    if p.tableViewEnabled && p.tableRows != nil && item.Name != ".." && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
+    if p.shouldRenderTable() && p.tableRows != nil && item.Name != ".." && strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4 {
         // Determine row index, accounting for optional ".." at top
         idx := p.indexOf(item)
         if idx >= 0 {
@@ -408,6 +412,24 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 	}
 
     return style.Render(lineStr)
+}
+
+// shouldRenderTable returns whether table view is effective considering overrides.
+func (p *Panel) shouldRenderTable() bool {
+    if p.tableRows == nil { return false }
+    parts := strings.Split(p.currentPath, "/")
+    var res string
+    if len(parts) >= 4 { res = parts[3] }
+    if p.viewConfig != nil {
+        eff := p.viewConfig.Resolve(res)
+        switch eff.Table {
+        case Yes:
+            return true
+        case No:
+            return false
+        }
+    }
+    return p.tableViewEnabled
 }
 
 // indexOf returns the index of the given item by name match.
