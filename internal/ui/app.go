@@ -703,11 +703,18 @@ func (a *App) showThemeSelector(v *YAMLViewer) tea.Cmd {
         a.cfg.Viewer.Theme = name
         _ = appconfig.Save(a.cfg)
         v.SetTheme(name)
-        a.modalManager.Hide()
+        // Return to YAML viewer
+        a.modalManager.Show("yaml_viewer")
         return nil
     })
     selector.SetDimensions(a.width-2, a.height-6)
     modal.SetContent(selector)
+    modal.SetDimensions(a.width, a.height)
+    modal.SetOnClose(func() tea.Cmd {
+        // When closing the theme selector (Esc), return to YAML viewer
+        a.modalManager.Show("yaml_viewer")
+        return nil
+    })
     a.modalManager.Show("theme_selector")
     return nil
 }
