@@ -1,4 +1,4 @@
-# Kubernetes Commander (kc)
+# WIP: Kubernetes Commander (kc)
 
 A TUI (Terminal User Interface) for Kubernetes inspired by Midnight Commander, built with Go and BubbleTea.
 
