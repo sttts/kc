@@ -30,9 +30,9 @@ var (
 		Background(lipgloss.Color(ColorDarkerBlue)).
 		Foreground(lipgloss.Color(ColorGrey))
 
-    PanelItemSelectedStyle = lipgloss.NewStyle().
-        Background(lipgloss.Color(ColorCyan)).
-        Foreground(lipgloss.Color(ColorBlack))
+	PanelItemSelectedStyle = lipgloss.NewStyle().
+		Background(lipgloss.Color(ColorCyan)).
+		Foreground(lipgloss.Color(ColorGrey))
 
 	// Border and frame styles
 	BorderStyle = lipgloss.NewStyle().
