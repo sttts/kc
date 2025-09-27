@@ -46,6 +46,11 @@
 
 See `TODO.md` for the active development plan and current tasks.
 
+### AI Disclosure
+- Add an explicit co-author trailer to every commit as the last line, using the AI’s name and the maker’s noreply domain, e.g.:
+  `Co-Authored-By: Codex CLI Agent <noreply@openai.com>`
+- Use the exact format `Co-Authored-By: <name> <noreply@maker-domain>`.
+
 ## Security & Configuration Tips
 - Never commit kubeconfigs, cluster credentials, or secrets.
 - Use `KUBECONFIG` or default `~/.kube/config`; prefer non-production contexts when developing.
