@@ -14,6 +14,7 @@ type ThemeSelector struct {
     width    int
     height   int
     onApply  func(name string) tea.Cmd
+    onChange func(name string) tea.Cmd
 }
 
 func NewThemeSelector(onApply func(name string) tea.Cmd) *ThemeSelector {
@@ -60,8 +61,10 @@ func (s *ThemeSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         switch m.String() {
         case "up":
             if s.selected > 0 { s.selected-- }
+            if s.onChange != nil { return s, s.onChange(s.names[s.selected]) }
         case "down":
             if s.selected < len(s.names)-1 { s.selected++ }
+            if s.onChange != nil { return s, s.onChange(s.names[s.selected]) }
         case "enter":
             if s.onApply != nil { return s, s.onApply(s.names[s.selected]) }
         case "esc":
@@ -97,3 +100,6 @@ func (s *ThemeSelector) View() string {
     }
     return PanelContentStyle.Width(s.width).Height(s.height).Render(b.String())
 }
+
+// SetOnChange sets a callback invoked when selection changes via navigation.
+func (s *ThemeSelector) SetOnChange(fn func(name string) tea.Cmd) { s.onChange = fn }
