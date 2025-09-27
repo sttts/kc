@@ -38,6 +38,18 @@ func NewThemeSelector(onApply func(name string) tea.Cmd) *ThemeSelector {
     return &ThemeSelector{names: names, selected: 0, onApply: onApply}
 }
 
+// SetSelectedByName moves the selection to the first occurrence of name
+// if present; otherwise it leaves the current selection unchanged.
+func (s *ThemeSelector) SetSelectedByName(name string) {
+    if name == "" { return }
+    for i, n := range s.names {
+        if n == name {
+            s.selected = i
+            return
+        }
+    }
+}
+
 func (s *ThemeSelector) Init() tea.Cmd { return nil }
 
 func (s *ThemeSelector) SetDimensions(w, h int) { s.width, s.height = w, h }

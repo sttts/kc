@@ -116,13 +116,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Handle modals first
-	if a.modalManager.IsModalVisible() {
-		model, cmd := a.modalManager.Update(msg)
-		a.modalManager = model.(*ModalManager)
-		cmds = append(cmds, cmd)
-		return a, tea.Batch(cmds...)
-	}
+    // Handle modals first
+    if a.modalManager.IsModalVisible() {
+        model, cmd := a.modalManager.Update(msg)
+        a.modalManager = model.(*ModalManager)
+        cmds = append(cmds, cmd)
+        // While a modal is open, still forward non-key messages to the terminal
+        // (process output, window size, timers) so the 2-line terminal stays fresh.
+        if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
+            tmodel, tcmd := a.terminal.Update(msg)
+            a.terminal = tmodel.(*Terminal)
+            cmds = append(cmds, tcmd)
+        }
+        return a, tea.Batch(cmds...)
+    }
 
 	// Check if terminal process has exited (check on every message)
 	if a.terminal.IsProcessExited() {
@@ -673,7 +680,11 @@ func (a *App) openYAMLForSelection() tea.Cmd {
     yb, _ := yaml.Marshal(obj.Object)
     theme := "dracula"
     if a.cfg != nil && a.cfg.Viewer.Theme != "" { theme = a.cfg.Viewer.Theme }
-    viewer := NewYAMLViewer(name, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil)
+    viewer := NewYAMLViewer(name, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
+        // Close the topmost modal (the YAML viewer itself)
+        a.modalManager.Hide()
+        return nil
+    })
     viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
     // Title: full breadcrumb of the object
     title := path
@@ -687,6 +698,8 @@ func (a *App) openYAMLForSelection() tea.Cmd {
     }
     modal := NewModal(title, viewer)
     modal.SetDimensions(a.width, a.height)
+    // In the YAML viewer we disable single-Esc close to avoid breaking Esc+digit
+    modal.SetCloseOnSingleEsc(false)
     a.modalManager.Register("yaml_viewer", modal)
     a.modalManager.Show("yaml_viewer")
     return nil
@@ -703,18 +716,17 @@ func (a *App) showThemeSelector(v *YAMLViewer) tea.Cmd {
         a.cfg.Viewer.Theme = name
         _ = appconfig.Save(a.cfg)
         v.SetTheme(name)
-        // Return to YAML viewer
-        a.modalManager.Show("yaml_viewer")
+        // Close the theme selector (pop top); YAML viewer remains underneath
+        a.modalManager.Hide()
         return nil
     })
     selector.SetDimensions(a.width-2, a.height-6)
+    // Preselect current theme if available
+    if a.cfg != nil { selector.SetSelectedByName(a.cfg.Viewer.Theme) }
     modal.SetContent(selector)
     modal.SetDimensions(a.width, a.height)
-    modal.SetOnClose(func() tea.Cmd {
-        // When closing the theme selector (Esc), return to YAML viewer
-        a.modalManager.Show("yaml_viewer")
-        return nil
-    })
+    // onClose not needed; Esc handling hides the top modal and reveals viewer beneath
+    modal.SetOnClose(nil)
     a.modalManager.Show("theme_selector")
     return nil
 }
