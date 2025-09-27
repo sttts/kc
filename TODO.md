@@ -12,7 +12,7 @@
 - Panel adapter reads model nodes; implements `Enter`, `Back(..)`, breadcrumbs, and `..` entries.
 - Live updates: diff -> list model -> minimal reflow; preserve scroll and cursor when possible.
 - Function bar: dynamic enable/disable based on node capabilities (view/edit/delete/create).
-- F-keys: F3 view YAML, F4 edit apply, F7 context-aware create (namespace at `/cluster/namespaces`), F8 delete with confirm.
+- F-keys (initial scope): implement F3 (View YAML) and F8 (Delete). Leave scaffolds/hooks for F4/F7 and menu-driven options to prioritize extensibility over completeness.
 - Sorting: per-panel sort (name, created, last change; nodes/pods capacity/consumption/status) with Asc/Desc toggle.
 - Tests: panel navigation logic, sorting and enablement state, selection behavior.
 
@@ -30,6 +30,7 @@
 - Left/Right panel modes: API, Describe, YAML, Logs (pin), Top (metrics), and Ctrl+U panel swap.
 - API group hierarchy mode under `/groups/...`.
 - Metrics integration for Top and consumption sorts; graceful degradation.
+- Extensible actions system: per-resource action registry and external tool integration with context/env passing.
 
 ## Definition of Done
 - Non-trivial logic unit-tested per AGENTS.md.

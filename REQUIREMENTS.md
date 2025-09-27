@@ -33,6 +33,11 @@
 - `F8` Delete: delete selected/current objects with confirmation.
 - `Ctrl+O` Terminal toggle: hide UI to show full-screen terminal; when not full-screen, show last two terminal lines above cursor.
 
+## Extensible Actions (Per Resource Type)
+- Allow adding extra actions that can call external tools based on current location and selection.
+- Pass context via env/args: `KUBECONFIG`, `CONTEXT`, `NAMESPACE`, `GROUP`, `VERSION`, `KIND`, `NAME`, and serialized object (path or stdin).
+- Actions may be contributed by handlers or configured by users; operate on multi-selection when present.
+
 ## Terminal Integration
 - Terminal follows kubeconfig, context, and namespace changes to keep `kubectl` in sync.
 - Enter-only navigation when the terminal did not already consume typed keys.
