@@ -53,7 +53,9 @@
 - Keep changes focused; include or update tests and docs relevant to your change.
 
 ### Build & Test Before Commit
-- Always compile and run tests before committing. At minimum: `go build ./...` and `go test ./...` (or the impacted packages when the full suite is costly). Do not commit if build or tests fail.
+- Build and test when you changed code or tests. At minimum: `go build ./...` and `go test ./...` (or the impacted packages when the full suite is costly). Do not commit if build or tests fail.
+- Repeated/fixup commits without new code changes don’t need another build/test cycle.
+- Docs-only commits do not require build/test.
 - Before committing, run `git status` to ensure there are no unintended or forgotten changes; stage only what belongs in the focused commit.
 
 See `TODO.md` for the active development plan and current tasks.
