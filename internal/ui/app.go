@@ -1,16 +1,20 @@
 package ui
 
 import (
-	"fmt"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
+    "fmt"
+    "os"
+    "os/signal"
+    "path/filepath"
+    "strings"
+    "syscall"
+    "time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+    tea "github.com/charmbracelet/bubbletea/v2"
+    "github.com/charmbracelet/lipgloss/v2"
+    "github.com/sschimanski/kc/pkg/kubeconfig"
+    "github.com/sschimanski/kc/pkg/navigation"
+    "github.com/sschimanski/kc/pkg/resources"
+    "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
@@ -18,31 +22,38 @@ type EscTimeoutMsg struct{}
 
 // App represents the main application state
 type App struct {
-	leftPanel    *Panel
-	rightPanel   *Panel
-	terminal     *Terminal
-	modalManager *ModalManager
+    leftPanel    *Panel
+    rightPanel   *Panel
+    terminal     *Terminal
+    modalManager *ModalManager
 	width        int
 	height       int
 	activePanel  int // 0 = left, 1 = right
 	showTerminal bool
-	allResources []schema.GroupVersionKind
-	// Esc sequence tracking
-	escPressed bool
+    allResources []schema.GroupVersionKind
+    // Esc sequence tracking
+    escPressed bool
+    // Data providers
+    kubeMgr       *kubeconfig.Manager
+    resMgr        *resources.Manager
+    navMgr        *navigation.Manager
+    storePool     *resources.ClusterPool
+    storeProvider resources.StoreProvider
+    currentCtx    *kubeconfig.Context
 }
 
 // NewApp creates a new application instance
 func NewApp() *App {
-	app := &App{
-		leftPanel:    NewPanel(""),
-		rightPanel:   NewPanel(""),
-		terminal:     NewTerminal(),
-		modalManager: NewModalManager(),
-		activePanel:  0,
-		showTerminal: false,
-		allResources: make([]schema.GroupVersionKind, 0),
-		escPressed:   false,
-	}
+    app := &App{
+        leftPanel:    NewPanel(""),
+        rightPanel:   NewPanel(""),
+        terminal:     NewTerminal(),
+        modalManager: NewModalManager(),
+        activePanel:  0,
+        showTerminal: false,
+        allResources: make([]schema.GroupVersionKind, 0),
+        escPressed:   false,
+    }
 
 	// Register modals
 	app.setupModals()
@@ -677,7 +688,12 @@ func (a *App) createFramedFooter(content string, width int) string {
 
 // Run starts the application
 func Run() error {
-	app := NewApp()
+    app := NewApp()
+
+    // Initialize data model (best-effort; UI can still run without it)
+    if err := app.initData(); err != nil {
+        fmt.Printf("Data init warning: %v\n", err)
+    }
 
 	// Create program with proper options
 	p := tea.NewProgram(
@@ -697,13 +713,16 @@ func Run() error {
 		p.Quit()
 	}()
 
-	// Ensure terminal is reset on exit
-	defer func() {
-		// Reset terminal to normal state
-		fmt.Print("\033[?1049l") // Exit alternate screen
-		fmt.Print("\033[?25h")   // Show cursor
-		fmt.Print("\033[0m")     // Reset all attributes
-	}()
+    // Ensure terminal is reset on exit
+    defer func() {
+        // Reset terminal to normal state
+        fmt.Print("\033[?1049l") // Exit alternate screen
+        fmt.Print("\033[?25h")   // Show cursor
+        fmt.Print("\033[0m")     // Reset all attributes
+        // Stop background resources
+        if app.storePool != nil { app.storePool.Stop() }
+        if app.resMgr != nil { app.resMgr.Stop() }
+    }()
 
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running application: %v\n", err)
@@ -711,4 +730,67 @@ func Run() error {
 	}
 
 	return nil
+}
+
+// initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
+func (a *App) initData() error {
+    // Kubeconfig manager and discovery
+    a.kubeMgr = kubeconfig.NewManager()
+    if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
+        return fmt.Errorf("discover kubeconfigs: %w", err)
+    }
+    // Select current context (prefer env KUBECONFIG first path)
+    a.currentCtx = a.selectCurrentContext()
+    if a.currentCtx == nil {
+        return fmt.Errorf("no current context found")
+    }
+    // Build resources manager and start cluster/cache
+    cfg, err := a.kubeMgr.CreateClientConfig(a.currentCtx)
+    if err != nil { return fmt.Errorf("client config: %w", err) }
+    a.resMgr, err = resources.NewManager(cfg)
+    if err != nil { return fmt.Errorf("resources manager: %w", err) }
+    if err := a.resMgr.Start(); err != nil {
+        // Non-fatal; continue without cache warm
+        fmt.Printf("Warning: start resources manager: %v\n", err)
+    }
+    // Store provider and pool (2m TTL)
+    a.storeProvider, a.storePool = resources.NewStoreProviderForContext(a.currentCtx, 2*time.Minute)
+    // Navigation manager and store wiring
+    a.navMgr = navigation.NewManager(a.kubeMgr, a.resMgr)
+    a.navMgr.SetStoreProvider(a.storeProvider)
+    // Build hierarchy and load context resources
+    if err := a.navMgr.BuildHierarchy(); err != nil { return fmt.Errorf("build hierarchy: %w", err) }
+    if err := a.navMgr.LoadContextResources(a.currentCtx); err != nil {
+        // Non-fatal; still allow UI
+        fmt.Printf("Warning: load context resources: %v\n", err)
+    }
+    return nil
+}
+
+// selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.
+func (a *App) selectCurrentContext() *kubeconfig.Context {
+    if env := os.Getenv("KUBECONFIG"); env != "" {
+        for _, p := range strings.Split(env, string(os.PathListSeparator)) {
+            p = strings.TrimSpace(p)
+            if p == "" { continue }
+            for _, kc := range a.kubeMgr.GetKubeconfigs() {
+                if sameFilepath(kc.Path, p) {
+                    if ctx := a.kubeMgr.GetCurrentContext(kc); ctx != nil { return ctx }
+                }
+            }
+        }
+    }
+    for _, kc := range a.kubeMgr.GetKubeconfigs() {
+        if ctx := a.kubeMgr.GetCurrentContext(kc); ctx != nil { return ctx }
+    }
+    cs := a.kubeMgr.GetContexts()
+    if len(cs) > 0 { return cs[0] }
+    return nil
+}
+
+func sameFilepath(a, b string) bool {
+    ap, err1 := filepath.Abs(a)
+    bp, err2 := filepath.Abs(b)
+    if err1 != nil || err2 != nil { return a == b }
+    return ap == bp
 }
