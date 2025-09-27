@@ -27,6 +27,11 @@ type Modal struct {
     backgroundFunc func() string // dynamic background provider
 }
 
+// RedrawTickMsg is emitted periodically to force a re-render while a
+// windowed modal with a dynamic background is visible (e.g., for live
+// preview beneath the dialog).
+type RedrawTickMsg struct{}
+
 // ModalFooterHints allows content to contribute footer key hints
 // rendered next to the default "Esc Close".
 type ModalFooterHints interface {
@@ -162,12 +167,18 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Update the content
-	model, cmd := m.content.Update(msg)
-	m.content = model
-	cmds = append(cmds, cmd)
+    // Update the content
+    model, cmd := m.content.Update(msg)
+    m.content = model
+    cmds = append(cmds, cmd)
 
-	return m, tea.Batch(cmds...)
+    // If we have a dynamic background provider, schedule a redraw tick so
+    // the composed background stays fresh even when only the selection moves.
+    if m.windowed && m.backgroundFunc != nil {
+        cmds = append(cmds, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return RedrawTickMsg{} }))
+    }
+
+    return m, tea.Batch(cmds...)
 }
 
 // View renders the modal
@@ -212,15 +223,15 @@ func (m *Modal) View() string {
 		// - Border: double, white
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.DoubleBorder()).
-			BorderForeground(lipgloss.Black).
-			BorderBackground(lipgloss.Cyan).
-			Background(lipgloss.Cyan).
+			BorderForeground(lipgloss.Color(ColorBlack)).
+			BorderBackground(lipgloss.Color(ColorGrey)).
+			Background(lipgloss.Color(ColorGrey)).
 			Width(winW).
 			Height(winH)
 
 		labelStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color(ColorBlack)).
-			Background(lipgloss.Color(ColorWhite)).
+			Background(lipgloss.Color(ColorGrey)).
 			Padding(0, 1)
 		label := labelStyle.Render(m.title)
 		border := boxStyle.GetBorderStyle()
@@ -244,7 +255,7 @@ func (m *Modal) View() string {
 		}
 		// Render inner content with dialog colors (white on dark cyan)
 		inner = lipgloss.NewStyle().
-			Background(lipgloss.Cyan).
+			Background(lipgloss.Color(ColorGrey)).
 			Foreground(lipgloss.Black).
 			Width(innerW).
 			Height(innerH).
@@ -286,7 +297,7 @@ func (m *Modal) View() string {
 		composed = strings.Join(bgLines, "\n")
 		// Ensure full-width/height with blue background to avoid artifacts.
 		return lipgloss.NewStyle().
-			Background(lipgloss.Cyan).
+			Background(lipgloss.Color(ColorGrey)).
 			Width(m.width).
 			Height(m.height).
 			Render(composed)

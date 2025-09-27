@@ -707,6 +707,12 @@ func (p *Panel) goToParent() tea.Cmd {
 		}
 	}
 
+	// Child name we are returning from, to reselect in parent
+	childName := p.currentPath
+	if lastSlash >= 0 && lastSlash+1 < len(p.currentPath) {
+		childName = p.currentPath[lastSlash+1:]
+	}
+
 	var newPath string
 	if lastSlash <= 0 {
 		newPath = "/"
@@ -714,7 +720,25 @@ func (p *Panel) goToParent() tea.Cmd {
 		newPath = p.currentPath[:lastSlash]
 	}
 
-	return p.navigateTo(newPath, false) // Don't add to history when going back
+	cmd := p.navigateTo(newPath, false) // Don't add to history when going back
+
+	// Reselect the child we came from in the parent view
+	for i, it := range p.items {
+		if it.Name == childName {
+			p.selected = i
+			// ensure selection is visible
+			visibleHeight := max(1, p.height-2)
+			if p.selected < p.scrollTop {
+				p.scrollTop = p.selected
+			} else if p.selected >= p.scrollTop+visibleHeight {
+				p.scrollTop = p.selected - visibleHeight + 1
+				if p.scrollTop < 0 { p.scrollTop = 0 }
+			}
+			break
+		}
+	}
+
+	return cmd
 }
 
 // navigateTo navigates to a specific path

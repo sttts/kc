@@ -10,6 +10,8 @@ const (
     ColorGrey       = "7"
     ColorDarkGrey   = "8"
     ColorWhite      = "15"
+    // Approximate dark cyan background (ANSI 46 equivalent) using hex for lipgloss
+    ColorDarkCyanHex = "#005f5f"
 )
 
 // Common styles
