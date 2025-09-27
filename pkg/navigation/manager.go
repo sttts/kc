@@ -1,31 +1,37 @@
 package navigation
 
 import (
-	"fmt"
-	"path/filepath"
-	"sort"
-	"strings"
+    "context"
+    "fmt"
+    "path/filepath"
+    "sort"
+    "strings"
 
-	"github.com/sschimanski/kc/pkg/kubeconfig"
-	"github.com/sschimanski/kc/pkg/resources"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+    "github.com/sschimanski/kc/pkg/kubeconfig"
+    "github.com/sschimanski/kc/pkg/resources"
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Manager manages the navigation hierarchy
 type Manager struct {
-	kubeconfigManager *kubeconfig.Manager
-	resourceManager   *resources.Manager
-	state             *NavigationState
+    kubeconfigManager *kubeconfig.Manager
+    resourceManager   *resources.Manager
+    state             *NavigationState
+    storeProvider     resources.StoreProvider
 }
 
 // NewManager creates a new navigation manager
 func NewManager(kubeMgr *kubeconfig.Manager, resourceMgr *resources.Manager) *Manager {
-	return &Manager{
-		kubeconfigManager: kubeMgr,
-		resourceManager:   resourceMgr,
-		state:             NewNavigationState(),
-	}
+    return &Manager{
+        kubeconfigManager: kubeMgr,
+        resourceManager:   resourceMgr,
+        state:             NewNavigationState(),
+    }
 }
+
+// SetStoreProvider injects a resources.StoreProvider bound to the active kubeconfig+context.
+func (m *Manager) SetStoreProvider(p resources.StoreProvider) { m.storeProvider = p }
 
 // BuildHierarchy builds the complete navigation hierarchy
 func (m *Manager) BuildHierarchy() error {
@@ -156,14 +162,27 @@ func (m *Manager) findNodeByPath(node *Node, path string) *Node {
 
 // loadNamespaces loads namespace nodes
 func (m *Manager) loadNamespaces(contextNode *Node) error {
-	if m.resourceManager == nil {
-		return fmt.Errorf("no resource manager configured")
-	}
-	// Generic namespace listing via resources.Manager
-	list, err := m.resourceManager.ListNamespaces()
-	if err != nil {
-		return fmt.Errorf("failed to list namespaces: %w", err)
-	}
+    if m.resourceManager == nil {
+        return fmt.Errorf("no resource manager configured")
+    }
+    // Prefer store provider (informer-backed); fall back to manager.ListNamespaces.
+    var list *unstructured.UnstructuredList
+    var err error
+    if m.storeProvider != nil {
+        gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+        gvr, mapErr := m.resourceManager.GVKToGVR(gvk)
+        if mapErr == nil {
+            list, err = m.storeProvider.Store().List(context.TODO(), resources.StoreKey{GVR: gvr, Namespace: ""})
+        } else {
+            err = mapErr
+        }
+    } else {
+        // Generic namespace listing via resources.Manager
+        list, err = m.resourceManager.ListNamespaces()
+    }
+    if err != nil {
+        return fmt.Errorf("failed to list namespaces: %w", err)
+    }
 
 	// Sort by name
 	sort.Slice(list.Items, func(i, j int) bool {
@@ -244,8 +263,19 @@ func (m *Manager) findNodeByName(node *Node, name string, nodeType NodeType) *No
 
 // loadResourcesForType loads resources of a specific type
 func (m *Manager) loadResourcesForType(parentNode *Node, gvk schema.GroupVersionKind, namespace string) error {
-	// Use generic dynamic listing through resources manager
-	list, err := m.resourceManager.ListByGVK(gvk, namespace)
+    var list *unstructured.UnstructuredList
+    var err error
+    if m.storeProvider != nil {
+        gvr, mapErr := m.resourceManager.GVKToGVR(gvk)
+        if mapErr == nil {
+            list, err = m.storeProvider.Store().List(context.TODO(), resources.StoreKey{GVR: gvr, Namespace: namespace})
+        } else {
+            err = mapErr
+        }
+    } else {
+        // Use generic dynamic listing through resources manager
+        list, err = m.resourceManager.ListByGVK(gvk, namespace)
+    }
 	if err != nil {
 		return err
 	}

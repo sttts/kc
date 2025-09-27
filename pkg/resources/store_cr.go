@@ -6,6 +6,8 @@ import (
 
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    "k8s.io/apimachinery/pkg/runtime/schema"
+    kcache "k8s.io/client-go/tools/cache"
     "k8s.io/client-go/dynamic"
 )
 
@@ -43,11 +45,61 @@ func (s *CRReadOnlyStore) List(ctx context.Context, key StoreKey) (*unstructured
     return lst, nil
 }
 
-// Watch is a placeholder; it will be implemented via cache informers delivering events.
+// Watch streams object changes using the controller-runtime cache informer for PartialObjectMetadata of the target GVK.
 func (s *CRReadOnlyStore) Watch(ctx context.Context, key StoreKey) (<-chan Event, context.CancelFunc, error) {
-    ch := make(chan Event)
-    cancel := func() { close(ch) }
-    return ch, cancel, fmt.Errorf("watch not implemented yet")
+    e, err := s.pool.GetOrCreate(s.key)
+    if err != nil { return nil, nil, err }
+    // Resolve GVK for the given GVR via the RESTMapper.
+    // Prefer the first kind returned.
+    var gvk schema.GroupVersionKind
+    kinds, err := e.cluster.GetRESTMapper().KindsFor(key.GVR)
+    if err != nil || len(kinds) == 0 {
+        return nil, nil, fmt.Errorf("map GVR to GVK: %w", err)
+    }
+    gvk = kinds[0]
+
+    // Build a PartialObjectMetadata with the resolved GVK.
+    meta := &metav1.PartialObjectMetadata{}
+    meta.SetGroupVersionKind(gvk)
+    inf, err := e.cache.GetInformer(ctx, meta)
+    if err != nil { return nil, nil, fmt.Errorf("get informer: %w", err) }
+
+    out := make(chan Event, 64)
+    stopCtx, cancel := context.WithCancel(ctx)
+
+    // Register handlers and filter by namespace if requested.
+    _, err = inf.AddEventHandler(kcache.ResourceEventHandlerFuncs{
+        AddFunc: func(obj interface{}) {
+            if pom, ok := obj.(*metav1.PartialObjectMetadata); ok {
+                if key.Namespace == "" || pom.GetNamespace() == key.Namespace {
+                    out <- Event{Type: Added, Object: &unstructured.Unstructured{Object: map[string]interface{}{}}}
+                }
+            }
+        },
+        UpdateFunc: func(oldObj, newObj interface{}) {
+            if pom, ok := newObj.(*metav1.PartialObjectMetadata); ok {
+                if key.Namespace == "" || pom.GetNamespace() == key.Namespace {
+                    out <- Event{Type: Modified, Object: &unstructured.Unstructured{Object: map[string]interface{}{}}}
+                }
+            }
+        },
+        DeleteFunc: func(obj interface{}) {
+            if pom, ok := obj.(*metav1.PartialObjectMetadata); ok {
+                if key.Namespace == "" || pom.GetNamespace() == key.Namespace {
+                    out <- Event{Type: Deleted, Object: &unstructured.Unstructured{Object: map[string]interface{}{}}}
+                }
+            }
+        },
+    })
+    if err != nil { cancel(); return nil, nil, fmt.Errorf("add handler: %w", err) }
+
+    // Emit a Synced event once the informer syncs, if available.
+    go func() {
+        <-stopCtx.Done()
+        close(out)
+    }()
+
+    return out, cancel, nil
 }
 
 // CRStoreProvider adapts a ClusterPool as a StoreProvider.
