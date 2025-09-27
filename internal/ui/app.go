@@ -334,23 +334,22 @@ func (a *App) shouldRouteToPanel(key string) bool {
 
 // View renders the application
 func (a *App) View() (string, *tea.Cursor) {
-	// In fullscreen terminal mode, only show terminal
-	if a.showTerminal {
-		terminalView, terminalCursor := a.renderTerminalView()
-		return terminalView, terminalCursor
-	}
+    // In fullscreen terminal mode, only show terminal
+    if a.showTerminal {
+        terminalView, terminalCursor := a.renderTerminalView()
+        return terminalView, terminalCursor
+    }
 
-	// In normal mode, show main view
-	mainView, mainCursor := a.renderMainView()
+    // In normal mode, show main view
+    mainView, mainCursor := a.renderMainView()
 
-	// Overlay modal if visible
-	if a.modalManager.IsModalVisible() {
-		modalView := a.modalManager.View()
-		combinedView := lipgloss.JoinVertical(lipgloss.Left, mainView, modalView)
-		return combinedView, mainCursor
-	}
+    // Overlay modal if visible
+    if a.modalManager.IsModalVisible() {
+        // Render modal as an overlay covering the UI for clarity
+        return a.modalManager.View(), nil
+    }
 
-	return mainView, mainCursor
+    return mainView, mainCursor
 }
 
 // renderMainView renders the main two-panel view
