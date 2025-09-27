@@ -560,27 +560,37 @@ func (p *Panel) saveCurrentPosition() {
 
 // restorePosition restores the cursor position and scroll state for a path
 func (p *Panel) restorePosition(path string) {
-	if pos, exists := p.positionMemory[path]; exists {
-		p.selected = pos.Selected
-		p.scrollTop = pos.ScrollTop
+    if pos, exists := p.positionMemory[path]; exists {
+        p.selected = pos.Selected
+        p.scrollTop = pos.ScrollTop
 
-		// Ensure position is within bounds
-		if p.selected >= len(p.items) {
-			p.selected = len(p.items) - 1
-		}
-		if p.selected < 0 {
-			p.selected = 0
-		}
-
-		// Ensure scroll position is valid
-		if p.scrollTop < 0 {
-			p.scrollTop = 0
-		}
-	} else {
-		// No saved position, reset to top
-		p.selected = 0
-		p.scrollTop = 0
-	}
+        // Ensure position is within bounds
+        if p.selected >= len(p.items) {
+            p.selected = len(p.items) - 1
+        }
+        if p.selected < 0 {
+            p.selected = 0
+        }
+        // Ensure scroll position keeps selection visible and within bounds
+        visibleHeight := max(1, p.height-2)
+        maxScroll := 0
+        if len(p.items) > visibleHeight {
+            maxScroll = len(p.items) - visibleHeight
+        }
+        if p.scrollTop < 0 { p.scrollTop = 0 }
+        if p.scrollTop > maxScroll { p.scrollTop = maxScroll }
+        // Bring selection into view if needed
+        if p.selected < p.scrollTop {
+            p.scrollTop = p.selected
+        } else if p.selected >= p.scrollTop+visibleHeight {
+            p.scrollTop = p.selected - visibleHeight + 1
+            if p.scrollTop < 0 { p.scrollTop = 0 }
+        }
+    } else {
+        // No saved position, reset to top
+        p.selected = 0
+        p.scrollTop = 0
+    }
 }
 
 // clearPositionMemory clears all saved positions (useful for refresh)
