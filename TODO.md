@@ -8,6 +8,12 @@
 - Selection model: multi-select list, clears on path change; bulk ops act on selection.
 - Tests: unit tests for router resolution, store lifecycles, and table adapters.
 
+Current tasks
+- [ ] Router: add unit tests for `pkg/navigation/router.go` (Parse/Build/Parent cases incl. groups mode).
+- [ ] Store: implement a `ReadOnlyStore` backed by controller-runtime cache/dynamic informers.
+- [ ] Store: expose a `StoreProvider` from `resources.Manager` without wrapping existing types.
+- [ ] Navigation: refactor to consume Router + Store (lazy child loading, no fragile string matching).
+
 ## Milestone 2 — UI Navigation on the Model
 - Panel adapter reads model nodes; implements `Enter`, `Back(..)`, breadcrumbs, and `..` entries.
 - Live updates: diff -> list model -> minimal reflow; preserve scroll and cursor when possible.
@@ -15,6 +21,11 @@
 - F-keys (initial scope): implement F3 (View YAML) and F8 (Delete). Leave scaffolds/hooks for F4/F7 and menu-driven options to prioritize extensibility over completeness.
 - Sorting: per-panel sort (name, created, last change; nodes/pods capacity/consumption/status) with Asc/Desc toggle.
 - Tests: panel navigation logic, sorting and enablement state, selection behavior.
+
+Current tasks
+- [ ] Wire panel to Router/Store; implement `Enter`, `..`, breadcrumbs.
+- [ ] Implement F3 using server YAML (kubectl or client-go) and F8 delete with confirm; add hooks for F4/F7.
+- [ ] Implement per-panel sorting toggle UI and apply to list model.
 
 ## Milestone 3 — Terminal Follows Navigation
 - Terminal context manager for the integrated PTY session.
@@ -25,12 +36,21 @@
 - Sync triggers: on path changes that imply kubeconfig/context/namespace changes.
 - Tests: unit tests for context manager state transitions and command string generation.
 
+Current tasks
+- [ ] Prototype env-based sync (KUBECONFIG, --context, --namespace) for the PTY.
+- [ ] Optional: implement kubeconfig-copy approach; guard with a setting.
+- [ ] Add small unit tests for command construction and state.
+
 ## Backlog (Post M3)
 - Menu bar (mc-style) with View options: sort keys, direction, column toggles, grouping.
 - Left/Right panel modes: API, Describe, YAML, Logs (pin), Top (metrics), and Ctrl+U panel swap.
 - API group hierarchy mode under `/groups/...`.
 - Metrics integration for Top and consumption sorts; graceful degradation.
 - Extensible actions system: per-resource action registry and external tool integration with context/env passing.
+
+Tracking
+- Non-trivial logic MUST be unit-tested (see AGENTS.md).
+- Keep commits focused; use partial staging; reference TODO items in commit bodies when helpful.
 
 ## Definition of Done
 - Non-trivial logic unit-tested per AGENTS.md.
