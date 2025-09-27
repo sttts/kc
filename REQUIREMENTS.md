@@ -9,6 +9,7 @@
 - Navigate with arrows; `Enter` opens item; `..` goes up.
 - Function-key bar always visible; actions greyed when not applicable.
 - Selected items are bold yellow; selection clears when changing location.
+- `Alt+I` makes the inactive panel jump to the same location as the active panel (synchronize locations), mirroring mc behavior.
 
 ## Navigation Model (Paths)
 - Root hierarchies are browsable as path-like locations:
@@ -32,6 +33,7 @@
 - `F7` Create: context-sensitive create. At `/cluster/namespaces` creates a namespace via dialog. Future: OpenAPI v3–driven forms.
 - `F8` Delete: delete selected/current objects with confirmation.
 - `Ctrl+O` Terminal toggle: hide UI to show full-screen terminal; when not full-screen, show last two terminal lines above cursor.
+- `Alt+I` Sync other panel location: when pressed, the non-focused panel navigates to the current path of the focused panel.
 
 ## Extensible Actions (Per Resource Type)
 - Allow adding extra actions that can call external tools based on current location and selection.
