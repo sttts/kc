@@ -36,6 +36,8 @@ type Event struct {
 type ReadOnlyStore interface {
     // List returns the latest snapshot from cache.
     List(ctx context.Context, key StoreKey) (*unstructured.UnstructuredList, error)
+    // Get returns a single object by name.
+    Get(ctx context.Context, key StoreKey, name string) (*unstructured.Unstructured, error)
     // Watch streams object-level changes for the given key.
     // The cancel function must stop delivery and release resources.
     Watch(ctx context.Context, key StoreKey) (<-chan Event, context.CancelFunc, error)

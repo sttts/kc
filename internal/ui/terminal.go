@@ -27,7 +27,7 @@ type Terminal struct {
 	// Display state
 	showPanels bool // Whether panels are visible
 	// Input tracking
-	hasTyped bool // Whether user has typed since last command
+    hasTyped bool // Whether user has typed since last command
 	// Exit handling
 	shellExited bool
 }
@@ -282,5 +282,8 @@ func (t *Terminal) IsProcessExited() bool {
 
 // HasInput returns whether the terminal has non-empty input
 func (t *Terminal) HasInput() bool {
-	return t.hasTyped
+    return t.hasTyped
 }
+
+// ClearTyped resets the typed flag (used to return focus to panels).
+func (t *Terminal) ClearTyped() { t.hasTyped = false }

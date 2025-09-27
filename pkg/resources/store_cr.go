@@ -46,6 +46,16 @@ func (s *CRReadOnlyStore) List(ctx context.Context, key StoreKey) (*unstructured
     return lst, nil
 }
 
+func (s *CRReadOnlyStore) Get(ctx context.Context, key StoreKey, name string) (*unstructured.Unstructured, error) {
+    dc, err := s.dyn()
+    if err != nil { return nil, err }
+    var ri dynamic.ResourceInterface
+    if key.Namespace != "" { ri = dc.Resource(key.GVR).Namespace(key.Namespace) } else { ri = dc.Resource(key.GVR) }
+    obj, err := ri.Get(ctx, name, metav1.GetOptions{})
+    if err != nil { return nil, err }
+    return obj, nil
+}
+
 // Watch streams object changes using the controller-runtime cache informer for PartialObjectMetadata of the target GVK.
 func (s *CRReadOnlyStore) Watch(ctx context.Context, key StoreKey) (<-chan Event, context.CancelFunc, error) {
     e, err := s.pool.GetOrCreate(s.key)

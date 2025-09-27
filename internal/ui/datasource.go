@@ -7,6 +7,7 @@ import (
     "github.com/sttts/kc/pkg/resources"
     "k8s.io/apimachinery/pkg/runtime/schema"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // NamespacesDataSource provides live listings for namespaces using a StoreProvider.
@@ -177,6 +178,13 @@ func (d *GenericDataSource) Watch(ctx context.Context, namespace string) (<-chan
     gvr, err := d.mapper(d.gvk)
     if err != nil { return nil, func(){}, err }
     return d.store.Store().Watch(ctx, resources.StoreKey{GVR: gvr, Namespace: namespace})
+}
+
+func (d *GenericDataSource) Get(namespace, name string) (*unstructured.Unstructured, error) {
+    if d.store == nil || d.mapper == nil { return nil, fmt.Errorf("data source not initialized") }
+    gvr, err := d.mapper(d.gvk)
+    if err != nil { return nil, err }
+    return d.store.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}, name)
 }
 
 // ListTable returns server-side table headers/rows and items for selection when available.
