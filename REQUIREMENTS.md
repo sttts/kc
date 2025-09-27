@@ -83,6 +83,12 @@
 ## Table Behavior
 - Namespaces and resource lists prefer server‑side Tables with headers and aligned columns when available; fall back to metadata otherwise.
 - When a Table exceeds the panel width, implement column‑wise horizontal scrolling with Left/Right keys (only when the terminal has no typed input).
+- Provide two modes:
+  - Condensed: aggressively trim columns to fit the available width.
+  - Full width: allocate the space columns need and enable horizontal scrolling.
+
+## Internal Identity
+- Internal navigation and selection must carry precise Kubernetes identity, not just display names. Each location item should include its `GroupVersionResource` and/or `GroupVersionKind` as resolved via the RESTMapper for the current cluster/context. Avoid ambiguous plain strings like "pods" for internal logic.
 - Additional sort keys:
   - Nodes: by Capacity (CPU/memory), by Resource Consumption (from metrics API), by Status health.
   - Pods: by Resource Consumption (CPU/memory), by Status health, by Ready containers.
