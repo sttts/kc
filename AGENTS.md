@@ -46,6 +46,9 @@
 
 See `TODO.md` for the active development plan and current tasks.
 
+### Git Hygiene
+- If `index.lock` exists or a commit fails due to a lock, do not delete the lock; simply retry the operation later. Avoid forceful lock removal.
+
 ### AI Disclosure
 - Add an explicit co-author trailer to every commit as the last line, using the AI’s name and the maker’s noreply domain, e.g.:
   `Co-Authored-By: Codex CLI Agent <noreply@openai.com>`
