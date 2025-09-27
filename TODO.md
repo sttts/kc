@@ -39,7 +39,8 @@ Current tasks
 
 ## Object Views (Core UX)
 - [x] YAML syntax highlighting for `F3` viewer with Chroma; use predefined styles (default: Dracula) and keep panel background (no style bg). Preserve managedFields stripping.
-- [ ] Add style selector dialog to pick a Chroma theme at runtime; persist preference. Ensure background remains disabled regardless of theme.
+- [x] Style selector dialog to pick a Chroma theme at runtime; persist preference in `~/.kc/config.yaml` under `viewer.theme`.
+- [ ] YAML viewer search: start with `F7`/`Ctrl+F`/`/` (documented as `F7`+`F` in function bar); `F2` to continue to next match; highlight matches.
 - [ ] Pods detail: entering a pod shows container list (containers + initContainers). Under each container, add a `logs` subresource. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + watch). `Esc` closes.
 - [ ] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal; `F4` edits the field in an editor modal. Handle binary secret data gracefully.
 - [ ] `F4` Edit: launch `kubectl edit` for the current object; refresh on successful apply.
@@ -84,3 +85,6 @@ Tracking
 - Non-trivial logic unit-tested per AGENTS.md.
 - Docs updated (README, REQUIREMENTS) as features land.
 - Basic performance sanity: UI remains responsive under list updates and watches.
+- Panel filtering & find
+  - [ ] Add object-list filtering (menu item) in panels; apply to current listing.
+  - [ ] Implement `Ctrl+F` find in panels with highlighted match and `F2` next.
