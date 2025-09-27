@@ -148,3 +148,29 @@ func (d *GenericDataSource) Watch(ctx context.Context, namespace string) (<-chan
     if err != nil { return nil, func(){}, err }
     return d.store.Store().Watch(ctx, resources.StoreKey{GVR: gvr, Namespace: namespace})
 }
+
+// ListTable returns server-side table headers/rows and items for selection when available.
+func (d *GenericDataSource) ListTable(namespace string) ([]string, [][]string, []Item, error) {
+    if d.store == nil || d.mapper == nil || d.table == nil { return nil, nil, nil, fmt.Errorf("table not available") }
+    gvr, err := d.mapper(d.gvk)
+    if err != nil { return nil, nil, nil, err }
+    tbl, err := d.table(context.Background(), gvr, namespace)
+    if err != nil || tbl == nil { return nil, nil, nil, fmt.Errorf("no table") }
+    headers := make([]string, len(tbl.ColumnDefinitions))
+    nameIdx := 0
+    for i, col := range tbl.ColumnDefinitions {
+        headers[i] = col.Name
+        if col.Name == "Name" || col.Name == "NAME" || col.Name == "name" { nameIdx = i }
+    }
+    rows := make([][]string, 0, len(tbl.Rows))
+    items := make([]Item, 0, len(tbl.Rows))
+    for _, r := range tbl.Rows {
+        cells := make([]string, len(r.Cells))
+        for i := range r.Cells { cells[i] = fmt.Sprint(r.Cells[i]) }
+        rows = append(rows, cells)
+        name := ""
+        if nameIdx < len(cells) { name = cells[nameIdx] } else if len(cells) > 0 { name = cells[0] }
+        items = append(items, Item{Name: name, Type: ItemTypeResource, GVK: d.gvk.String()})
+    }
+    return headers, rows, items, nil
+}
