@@ -9,11 +9,12 @@
 - Tests: unit tests for router resolution, store lifecycles, and table adapters.
 
 Current tasks
-- [ ] Router: add unit tests for `pkg/navigation/router.go` (Parse/Build/Parent cases incl. groups mode).
-- [ ] Store: implement `ReadOnlyStore` on top of controller-runtime `cluster.Cache` (one `cluster.Cluster` per kubeconfig+context), start/stop informers on demand.
-- [ ] Store: register GVKs dynamically in the cluster's scheme (unstructured or PartialObjectMetadata) and resolve GVK↔GVR via RESTMapper.
-- [ ] Store: expose a `StoreProvider` from `resources.Manager` without wrapping existing types.
-- [ ] Navigation: refactor to consume Router + Store (lazy child loading, no fragile string matching).
+- [x] Router: add unit tests for `pkg/navigation/router.go` (Parse/Build/Parent cases incl. groups mode).
+- [x] Store: scaffold `ReadOnlyStore` on controller-runtime clusters (one `cluster.Cluster` per kubeconfig+context) and wire into navigation for List.
+- [ ] Store: implement Watch via cache informers with payload (PartialObjectMetadata fields) and emit a `Synced` event after informer sync.
+- [ ] Store: make ClusterPool TTL configurable and add an eviction unit test.
+- [ ] Integration: provide a small helper to construct and inject a `CRStoreProvider` from kubeconfig+context in app startup.
+- [ ] Navigation: refactor to consume Router + Store incrementally (namespaces → pods first; lazy child loading, no fragile string matching).
 
 ## Milestone 2 — UI Navigation on the Model
 - Panel adapter reads model nodes; implements `Enter`, `Back(..)`, breadcrumbs, and `..` entries.
@@ -27,6 +28,7 @@ Current tasks
 - [ ] Wire panel to Router/Store; implement `Enter`, `..`, breadcrumbs.
 - [ ] Implement F3 using server YAML (kubectl or client-go) and F8 delete with confirm; add hooks for F4/F7.
 - [ ] Implement per-panel sorting toggle UI and apply to list model.
+ - [ ] Use Watch events to drive live updates; keep cursor stable as much as possible.
 
 ## Milestone 3 — Terminal Follows Navigation
 - Terminal context manager for the integrated PTY session.
@@ -41,6 +43,9 @@ Current tasks
 - [ ] Prototype env-based sync (KUBECONFIG, --context, --namespace) for the PTY.
 - [ ] Optional: implement kubeconfig-copy approach; guard with a setting.
 - [ ] Add small unit tests for command construction and state.
+
+## Demos & Examples
+- [x] StoreProvider demo using `ClusterPool` (2m TTL) and navigation injection (`examples/storeprovider`).
 
 ## Backlog (Post M3)
 - Menu bar (mc-style) with View options: sort keys, direction, column toggles, grouping.
