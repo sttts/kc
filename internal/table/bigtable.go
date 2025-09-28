@@ -54,18 +54,18 @@ type BigTable struct {
 	header *lgtable.Table
 	body   *lgtable.Table
 
-    // Minimal flags needed for layout decisions (height, spacing)
-    bTop    bool // header top border
-    bBottom bool // body bottom border
-    bLeft   bool
-    bRight  bool
-    bColumn bool
-    bHeader bool // header underline
-    bRow    bool // body row separators
+	// Minimal flags needed for layout decisions (height, spacing)
+	bTop    bool // header top border
+	bBottom bool // body bottom border
+	bLeft   bool
+	bRight  bool
+	bColumn bool
+	bHeader bool // header underline
+	bRow    bool // body row separators
 
-    // Border glyph set and style to reapply on rebuild
-    borderGlyph lipgloss.Border
-    borderStyle lipgloss.Style
+	// Border glyph set and style to reapply on rebuild
+	borderGlyph lipgloss.Border
+	borderStyle lipgloss.Style
 }
 
 // Styles groups all externally configurable styles.
@@ -105,34 +105,34 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 	}
 
 	bt := BigTable{
-		mode:       ModeScroll,
-		w:          max(20, w),
-		h:          max(6, h),
-		cols:       append([]Column(nil), cols...),
-		list:       list,
-		desired:    desired,
-		selected:   make(map[string]struct{}),
-		selStyle:   lipgloss.NewStyle().Background(lipgloss.Color("12")).Foreground(lipgloss.Color("0")),
-		top:        0,
-		cursor:     0,
-		focusedID:  "",
-		widthCache: initWidthCache(cols),
-		xOff:       0,
-		hStep:      8,
-		styles:     DefaultStyles(),
-		truncTail:  "",
-        header:     lgtable.New().Wrap(false),
-        body:       lgtable.New().Wrap(false),
-        bTop:       false,
-        bBottom:    false,
-        bLeft:      false,
-        bRight:     false,
-        bColumn:    false,
-        bHeader:    false,
-        bRow:       false,
-        borderGlyph: lipgloss.NormalBorder(),
-        borderStyle: lipgloss.NewStyle(),
-    }
+		mode:        ModeScroll,
+		w:           max(20, w),
+		h:           max(6, h),
+		cols:        append([]Column(nil), cols...),
+		list:        list,
+		desired:     desired,
+		selected:    make(map[string]struct{}),
+		selStyle:    lipgloss.NewStyle().Background(lipgloss.Color("12")).Foreground(lipgloss.Color("0")),
+		top:         0,
+		cursor:      0,
+		focusedID:   "",
+		widthCache:  initWidthCache(cols),
+		xOff:        0,
+		hStep:       8,
+		styles:      DefaultStyles(),
+		truncTail:   "",
+		header:      lgtable.New().Wrap(false),
+		body:        lgtable.New().Wrap(false),
+		bTop:        false,
+		bBottom:     false,
+		bLeft:       false,
+		bRight:      false,
+		bColumn:     false,
+		bHeader:     false,
+		bRow:        false,
+		borderGlyph: lipgloss.NormalBorder(),
+		borderStyle: lipgloss.NewStyle(),
+	}
 	bt.applyMode()
 	return bt
 }
@@ -153,52 +153,56 @@ func (m *BigTable) SetSize(w, h int) {
 // --- Border configuration (1:1 with lipgloss/table) ---
 
 func (m *BigTable) Border(b lipgloss.Border) *BigTable {
-    m.borderGlyph = b
-    m.rebuildWindow()
-    return m
+	m.borderGlyph = b
+	m.rebuildWindow()
+	return m
 }
 
 // BorderTop applies above the header only.
 func (m *BigTable) BorderTop(v bool) *BigTable {
-    m.bTop = v
-    m.rebuildWindow()
-    return m
+	m.bTop = v
+	m.rebuildWindow()
+	return m
 }
 
 // BorderBottom applies to body only (footer line).
 func (m *BigTable) BorderBottom(v bool) *BigTable {
-    m.bBottom = v
-    m.rebuildWindow()
-    return m
+	m.bBottom = v
+	m.rebuildWindow()
+	return m
 }
 
 func (m *BigTable) BorderLeft(v bool) *BigTable {
-    m.bLeft = v
-    m.rebuildWindow()
-    return m
+	m.bLeft = v
+	m.rebuildWindow()
+	return m
 }
 
 func (m *BigTable) BorderRight(v bool) *BigTable {
-    m.bRight = v
-    m.rebuildWindow()
-    return m
+	m.bRight = v
+	m.rebuildWindow()
+	return m
 }
 
 func (m *BigTable) BorderRow(v bool) *BigTable { m.bRow = v; m.rebuildWindow(); return m }
 
 func (m *BigTable) BorderColumn(v bool) *BigTable {
-    m.bColumn = v
-    m.rebuildWindow()
-    return m
+	m.bColumn = v
+	m.rebuildWindow()
+	return m
 }
 
 func (m *BigTable) BorderHeader(v bool) *BigTable {
-    m.bHeader = v
-    m.rebuildWindow()
-    return m
+	m.bHeader = v
+	m.rebuildWindow()
+	return m
 }
 
-func (m *BigTable) BorderStyle(s lipgloss.Style) *BigTable { m.borderStyle = s; m.rebuildWindow(); return m }
+func (m *BigTable) BorderStyle(s lipgloss.Style) *BigTable {
+	m.borderStyle = s
+	m.rebuildWindow()
+	return m
+}
 
 // SetMode switches between ModeScroll and ModeFit and refreshes the view.
 func (m *BigTable) SetMode(md GridMode) {
@@ -253,44 +257,44 @@ func (m *BigTable) CurrentID() (string, bool) {
 // Select moves the focus to the row with the given ID, if present, and
 // adjusts the window so the focused row is visible. Returns true if found.
 func (m *BigTable) Select(id string) bool {
-    n := m.list.Len()
-    if n <= 0 {
-        return false
-    }
-    // Find absolute index of the row with the given ID by scanning in chunks.
-    step := 256
-    found := -1
-    for off := 0; off < n; {
-        take := step
-        if off+take > n {
-            take = n - off
-        }
-        rows := m.list.Lines(off, take)
-        for i, r := range rows {
-            rid, _, _, ok := r.Columns()
-            if ok && rid == id {
-                found = off + i
-                break
-            }
-        }
-        if found >= 0 {
-            break
-        }
-        off += take
-    }
-    if found < 0 {
-        return false
-    }
-    m.cursor = found
-    // Ensure the focused row is visible within the current window height.
-    vis := m.bodyRowsHeight()
-    if m.cursor < m.top {
-        m.top = m.cursor
-    } else if m.cursor >= m.top+vis {
-        m.top = max(0, m.cursor-(vis-1))
-    }
-    m.rebuildWindow()
-    return true
+	n := m.list.Len()
+	if n <= 0 {
+		return false
+	}
+	// Find absolute index of the row with the given ID by scanning in chunks.
+	step := 256
+	found := -1
+	for off := 0; off < n; {
+		take := step
+		if off+take > n {
+			take = n - off
+		}
+		rows := m.list.Lines(off, take)
+		for i, r := range rows {
+			rid, _, _, ok := r.Columns()
+			if ok && rid == id {
+				found = off + i
+				break
+			}
+		}
+		if found >= 0 {
+			break
+		}
+		off += take
+	}
+	if found < 0 {
+		return false
+	}
+	m.cursor = found
+	// Ensure the focused row is visible within the current window height.
+	vis := m.bodyRowsHeight()
+	if m.cursor < m.top {
+		m.top = m.cursor
+	} else if m.cursor >= m.top+vis {
+		m.top = max(0, m.cursor-(vis-1))
+	}
+	m.rebuildWindow()
+	return true
 }
 
 // Update handles key navigation and selection toggling; it also forwards other
@@ -446,38 +450,38 @@ func (m *BigTable) rebuildWindow() {
 			}
 		}
 	}
-    // Recreate and configure fresh tables each rebuild to avoid accumulation.
-    m.header = lgtable.New().Wrap(false)
-    m.body = lgtable.New().Wrap(false)
-    // Configure borders
-    m.header = m.header.Border(m.borderGlyph).BorderStyle(m.borderStyle)
-    m.header = m.header.BorderTop(m.bTop).BorderBottom(false).BorderLeft(m.bLeft).BorderRight(m.bRight)
-    m.header = m.header.BorderColumn(m.bColumn).BorderRow(false).BorderHeader(m.bHeader)
-    m.body = m.body.Border(m.borderGlyph).BorderStyle(m.borderStyle)
-    m.body = m.body.BorderTop(false).BorderBottom(m.bBottom).BorderLeft(m.bLeft).BorderRight(m.bRight)
-    m.body = m.body.BorderColumn(m.bColumn).BorderRow(m.bRow).BorderHeader(false)
-    t := m.body
+	// Recreate and configure fresh tables each rebuild to avoid accumulation.
+	m.header = lgtable.New().Wrap(false)
+	m.body = lgtable.New().Wrap(false)
+	// Configure borders
+	m.header = m.header.Border(m.borderGlyph).BorderStyle(m.borderStyle)
+	m.header = m.header.BorderTop(m.bTop).BorderBottom(false).BorderLeft(m.bLeft).BorderRight(m.bRight)
+	m.header = m.header.BorderColumn(m.bColumn).BorderRow(false).BorderHeader(m.bHeader)
+	m.body = m.body.Border(m.borderGlyph).BorderStyle(m.borderStyle)
+	m.body = m.body.BorderTop(false).BorderBottom(m.bBottom).BorderLeft(m.bLeft).BorderRight(m.bRight)
+	m.body = m.body.BorderColumn(m.bColumn).BorderRow(m.bRow).BorderHeader(false)
+	t := m.body
 	if m.mode == ModeFit {
 		desired := make([]int, len(m.cols))
 		for i := range desired {
 			desired[i] = max(m.widthCache[i], m.desired[i])
 		}
 		target := computeFitWidths(m.w, desired, 3)
-        ht := m.header
+		ht := m.header
 		headers := make([]string, len(m.cols))
-        vcol := m.bColumn
-        tt := append([]int(nil), target...)
-        for i, c := range m.cols {
-            // No padding for headers; avoid implicit spacing when no verticals.
-            headers[i] = asciiTruncateNoPad(c.Title, tt[i], "")
-        }
-        // No extra spaces between headers when no verticals.
+		vcol := m.bColumn
+		tt := append([]int(nil), target...)
+		for i, c := range m.cols {
+			// No padding for headers; avoid implicit spacing when no verticals.
+			headers[i] = asciiTruncateNoPad(c.Title, tt[i], "")
+		}
+		// No extra spaces between headers when no verticals.
 		ht.Headers(headers...)
 		ht.Width(m.w)
 		ht.StyleFunc(func(row, col int) lipgloss.Style { return m.styles.Header })
 		m.headerRow = strings.TrimRight(ht.Render(), "\n")
-        // Do not pad or add extra spacing between columns when no verticals.
-        trRows := truncateRowsWithTailOpt(m.window, tt, m.truncTail, vcol)
+		// Do not pad or add extra spacing between columns when no verticals.
+		trRows := truncateRowsWithTailOpt(m.window, tt, m.truncTail, vcol)
 		t = t.Rows(rowsToStringRows(trRows)...)
 		t.Width(m.w)
 	} else {
@@ -486,19 +490,19 @@ func (m *BigTable) rebuildWindow() {
 			full[i] = max(m.widthCache[i], m.desired[i])
 		}
 		offs, target := computeScrollWindowFrozen(full, 2, m.xOff, m.w)
-        ht := m.header
-        headers := make([]string, len(m.cols))
-        tt := append([]int(nil), target...)
-        for i, c := range m.cols {
-            headers[i] = asciiTruncateNoPad(c.Title, tt[i], "")
-        }
-        // No extra spaces between headers when no verticals.
+		ht := m.header
+		headers := make([]string, len(m.cols))
+		tt := append([]int(nil), target...)
+		for i, c := range m.cols {
+			headers[i] = asciiTruncateNoPad(c.Title, tt[i], "")
+		}
+		// No extra spaces between headers when no verticals.
 		ht.Headers(headers...)
 		ht.Width(m.w)
 		ht.StyleFunc(func(row, col int) lipgloss.Style { return m.styles.Header })
 		m.headerRow = strings.TrimRight(ht.Render(), "\n")
 		sliced := sliceRowsWindow(m.window, offs, tt)
-        // No extra spacing between columns when no verticals.
+		// No extra spacing between columns when no verticals.
 		t = t.Rows(rowsToStringRows(sliced)...)
 		t.Width(m.w)
 	}
@@ -543,22 +547,22 @@ func (m *BigTable) applyMode() { m.rebuildWindow() }
 // bodyRowsHeight returns the number of data rows visible within the viewport
 // after subtracting sticky header lines and any body border lines.
 func (m *BigTable) bodyRowsHeight() int {
-    // Reserve lines: sticky header, optional top border, optional header underline, optional bottom border.
-    reserved := 1
-    if m.bTop {
-        reserved++
-    }
-    if m.bHeader {
-        reserved++
-    }
-    if m.bBottom {
-        reserved++
-    }
-    rows := m.h - reserved
-    if rows < 1 {
-        rows = 1
-    }
-    return rows
+	// Reserve lines: sticky header, optional top border, optional header underline, optional bottom border.
+	reserved := 1
+	if m.bTop {
+		reserved++
+	}
+	if m.bHeader {
+		reserved++
+	}
+	if m.bBottom {
+		reserved++
+	}
+	rows := m.h - reserved
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
 }
 
 func computeFitWidths(total int, desired []int, minCol int) []int {
@@ -721,20 +725,16 @@ func asciiTruncatePadTail(s string, w int, tail string) string {
 
 // asciiTruncateNoPad truncates to width w using the provided tail, without right padding.
 func asciiTruncateNoPad(s string, w int, tail string) string {
-    if w <= 0 {
-        return ""
-    }
-    if lipgloss.Width(s) <= w {
-        return s
-    }
-    return truncate.StringWithTail(s, uint(w), tail)
+	if w <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= w {
+		return s
+	}
+	return truncate.StringWithTail(s, uint(w), tail)
 }
 
-// Backwards-compatible helper used in tests.
-func asciiTruncatePad(s string, w int) string { return asciiTruncatePadTail(s, w, "...") }
-
-// instance-aware helper for FIT mode
-func (m *BigTable) truncPad(s string, w int) string { return asciiTruncatePadTail(s, w, m.truncTail) }
+// (legacy padding helpers removed)
 
 // asciiSlicePad returns a substring of s that begins at start and extends for
 // width cells, padding with spaces if necessary. s is expected to be ASCII.
@@ -780,23 +780,8 @@ func captureStyles(rows []Row) [][]*lipgloss.Style {
 	return out
 }
 
-// addSpacing appends a trailing space to all but the last column cells to act
-// as a column separator when no vertical border is drawn.
-func addSpacing(rows []Row) []Row {
-	out := make([]Row, len(rows))
-	for r := range rows {
-		id, cells, styles, _ := rows[r].Columns()
-		cc := make([]string, len(cells))
-		copy(cc, cells)
-		for i := 0; i < len(cc)-1; i++ {
-			cc[i] += " "
-		}
-		out[r] = SimpleRow{ID: id, Cells: cc, Styles: styles}
-	}
-	return out
-}
-
-func truncateRowsWithTail(rows []Row, target []int, tail string) []Row {
+// truncateRowsWithTailOpt behaves like truncateRowsWithTail, but allows disabling right padding.
+func truncateRowsWithTailOpt(rows []Row, target []int, tail string, pad bool) []Row {
 	tr := make([]Row, len(rows))
 	for r := range rows {
 		id, cells, styles, _ := rows[r].Columns()
@@ -806,33 +791,15 @@ func truncateRowsWithTail(rows []Row, target []int, tail string) []Row {
 			if c < len(cells) {
 				s = cells[c]
 			}
-			truncated[c] = asciiTruncatePadTail(s, target[c], tail)
+			if pad {
+				truncated[c] = asciiTruncatePadTail(s, target[c], tail)
+			} else {
+				truncated[c] = asciiTruncateNoPad(s, target[c], tail)
+			}
 		}
 		tr[r] = SimpleRow{ID: id, Cells: truncated, Styles: styles}
 	}
 	return tr
-}
-
-// truncateRowsWithTailOpt behaves like truncateRowsWithTail, but allows disabling right padding.
-func truncateRowsWithTailOpt(rows []Row, target []int, tail string, pad bool) []Row {
-    tr := make([]Row, len(rows))
-    for r := range rows {
-        id, cells, styles, _ := rows[r].Columns()
-        truncated := make([]string, len(target))
-        for c := range target {
-            s := ""
-            if c < len(cells) {
-                s = cells[c]
-            }
-            if pad {
-                truncated[c] = asciiTruncatePadTail(s, target[c], tail)
-            } else {
-                truncated[c] = asciiTruncateNoPad(s, target[c], tail)
-            }
-        }
-        tr[r] = SimpleRow{ID: id, Cells: truncated, Styles: styles}
-    }
-    return tr
 }
 
 // sliceRowsWindow slices each cell horizontally according to the provided
