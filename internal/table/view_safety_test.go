@@ -1,4 +1,4 @@
-package main
+package table
 
 import (
     "strings"
@@ -33,4 +33,3 @@ func TestViewNoReplacementRune_Fit(t *testing.T) {
         t.Fatalf("view contains replacement rune in Fit mode: %q", s)
     }
 }
-

@@ -1,4 +1,4 @@
-package main
+package table
 
 import (
     "strings"
@@ -439,4 +439,3 @@ func initWidthCache(cols []table.Column) []int {
     for i := range cols { out[i] = lipgloss.Width(cols[i].Title) }
     return out
 }
-

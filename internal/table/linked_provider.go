@@ -1,4 +1,4 @@
-package main
+package table
 
 // Doubly linked list data source implementing List.
 
