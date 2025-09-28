@@ -16,7 +16,9 @@ A self-contained, high-performance table component built on Bubble Tea v2. It su
 - `List`: `Lines(top, num int) []Row`, `Above(rowID, num int) []Row`, `Below(rowID, num int) []Row`, `Len() int`, `Find(rowID string) (int, Row, bool)`
 
 ## Usage
-- Run demo: `go run ./internal/table`
+- Run demo with provider:
+  - Slice (default): `go run ./internal/table slice`
+  - Linked list: `go run ./internal/table linked`
 - Keys: `m` toggle mode, `↑/↓/PgUp/PgDn/Home/End` navigate, `i` insert after, `d`/`Del` delete, `t` toggle provider, `ctrl+t`/`Insert` toggle selection, `q` quit.
 - Construct a list:
   - Slice: `list := NewSliceList([]Row{ SimpleRow{ID: "id-1"}, SimpleRow{ID: "id-2"} })`
