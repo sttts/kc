@@ -1213,11 +1213,60 @@ func (a *App) buildNamespacesFolder() navui.Folder {
     for i := range lst.Items {
         ns := &lst.Items[i]
         name := ns.GetName()
-        // Placeholder: namespaces are not yet enterable here.
-        it := navui.NewSimpleItem(name, []string{name}, sty)
+        enter := func(nsName string) func() (navui.Folder, error) {
+            return func() (navui.Folder, error) { return a.buildNamespacedGroupsFolder(nsName), nil }
+        }(name)
+        it := navui.NewEnterableItem(name, []string{name}, enter, sty)
         rows = append(rows, it)
     }
     return navui.NewNamespacesFolder(a.currentCtx.Name, rows)
+}
+
+// buildNamespacedGroupsFolder builds a folder of namespaced resource groups for the given namespace.
+func (a *App) buildNamespacedGroupsFolder(namespace string) navui.Folder {
+    // Columns: Name, Group, Count
+    cols := []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}
+    nameSty := navui.WhiteStyle()
+    dimSty := navui.DimStyle()
+    rows := make([]table.Row, 0, 64)
+    infos, err := a.resMgr.GetResourceInfos()
+    if err != nil { return navui.NewSliceFolder("namespaces/"+namespace, a.currentCtx.Name+"/namespaces/"+namespace, cols, rows) }
+    for _, info := range infos {
+        if !info.Namespaced { continue }
+        // must support list
+        hasList := false
+        for _, v := range info.Verbs { if v == "list" { hasList = true; break } }
+        if !hasList { continue }
+        gvr, err := a.resMgr.GVKToGVR(info.GVK)
+        if err != nil { continue }
+        // Count namespaced objects
+        n := 0
+        if lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}); err == nil { n = len(lst.Items) }
+        gv := info.GVK.Group
+        if gv == "" { gv = "core" }
+        gv = gv + "/" + info.GVK.Version
+        g := gvr // capture
+        ns := namespace
+        enter := func() (navui.Folder, error) { return a.buildNamespacedObjectsFolder(g, ns), nil }
+        rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{info.Resource, gv, fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, dimSty, nil}, enter))
+    }
+    title := "namespaces/" + namespace
+    key := a.currentCtx.Name + "/namespaces/" + namespace
+    return navui.NewSliceFolder(title, key, cols, rows)
+}
+
+// buildNamespacedObjectsFolder lists namespaced objects for a given GVR and namespace.
+func (a *App) buildNamespacedObjectsFolder(gvr schema.GroupVersionResource, namespace string) navui.Folder {
+    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace})
+    if err != nil { return navui.NewObjectsFolder(a.currentCtx.Name, gvr, namespace, nil) }
+    rows := make([]table.Row, 0, len(lst.Items))
+    sty := navui.WhiteStyle()
+    for i := range lst.Items {
+        o := &lst.Items[i]
+        name := o.GetName()
+        rows = append(rows, navui.NewSimpleItem(name, []string{name}, sty))
+    }
+    return navui.NewObjectsFolder(a.currentCtx.Name, gvr, namespace, rows)
 }
 
 // buildContextsFolder creates a Folder listing all known contexts.
