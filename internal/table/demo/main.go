@@ -138,6 +138,13 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a app) View() string { return a.bt.View() }
+// Add a small help header above the table body (demo only)
+//func (a app) View() string {
+//    help := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A8FF60")).Render(
+//        "Left/Right horizontal | Up/Down | PgUp/PgDn | Home/End | m: FIT | b: border | i: insert | d/Del: delete | t: toggle provider",
+//    )
+//    return strings.Join([]string{help, a.bt.View()}, "\n")
+//}
 
 func main() {
 	rand.Seed(time.Now().UnixNano())

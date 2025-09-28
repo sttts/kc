@@ -47,8 +47,8 @@ type BigTable struct {
 	xOff       int                 // horizontal offset (scroll) in cells across all columns
 	hStep      int                 // horizontal step for left/right
 
-	headerRow  string // sticky header row (rendered outside viewport)
-	footerInfo string // sticky footer info (rendered outside viewport)
+    headerRow  string // sticky header row (rendered outside viewport)
+    footerInfo string // optional extra line above footer
 
 	styles     Styles // external styles
 	borderMode int    // current border variant
@@ -308,35 +308,16 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 
 // View renders the component.
 func (m *BigTable) View() string {
-	header := headerStyle.Render(m.header())
-	sticky := m.styles.Header.Render(strings.TrimRight(m.headerRow, "\n"))
-	body := strings.TrimRight(m.vp.View(), "\n")
-	bottom := strings.TrimRight(m.footerInfo, "\n")
-	footer := footerStyle.Render(m.footer())
-	parts := []string{header}
-	if sticky != "" {
-		parts = append(parts, sticky)
-	}
-	parts = append(parts, body)
-	if bottom != "" {
-		parts = append(parts, bottom)
-	}
-	parts = append(parts, footer)
-	return strings.Join(parts, "\n")
+    sticky := m.styles.Header.Render(strings.TrimRight(m.headerRow, "\n"))
+    body := strings.TrimRight(m.vp.View(), "\n")
+    if sticky != "" {
+        return strings.Join([]string{sticky, body}, "\n")
+    }
+    return body
 }
 
-func (m *BigTable) header() string {
-	if m.mode == ModeScroll {
-		return "Left/Right horizontal | Up/Down | PgUp/PgDn | Home/End | m: FIT | b: border | i: insert | d/Del: delete | t: toggle provider"
-	}
-	return "FIT MODE (no horizontal scroll) | Up/Down | PgUp/PgDn | Home/End | m: SCROLL | b: border | i: insert | d/Del: delete | t: toggle provider"
-}
-func (m *BigTable) footer() string {
-	if m.mode == ModeScroll {
-		return "Columns sized to full plain content; use Left/Right to pan"
-	}
-	return "Columns truncated (ASCII ...) to fit; then styled"
-}
+// no app header/help line inside BigTable; outer app should render it
+// no BigTable footer; outer app should render any footers/help lines
 
 func (m *BigTable) sync() {}
 
@@ -346,10 +327,8 @@ func (m *BigTable) refreshRowsOnly() { m.rebuildWindow() }
 // rebuildWindow sets the table rows to the current window [top:top+height)
 // and positions the table cursor at (cursor-top), updating the width cache.
 func (m *BigTable) rebuildWindow() {
-	// Reserve lines above/below body. Sticky header uses 1 line; app header
-	// and app footer are outside sizing. Keep this 2 if you add a sticky
-	// bottom overlay.
-	reserved := 2
+    // Sticky header uses 1 line; app chrome should be outside the component.
+    reserved := 1
 	h := m.h - reserved
 	if h < 1 {
 		h = 1
@@ -382,9 +361,8 @@ func (m *BigTable) rebuildWindow() {
 			}
 		}
 	}
-	// Build lipgloss table content (no borders). Give it one extra line so
-	// the internal overflow ("…") row, if any, stays below the viewport.
-	t := lgtable.New().Wrap(false).Height(h + 1)
+    // Build lipgloss table content sized to body height.
+    t := lgtable.New().Wrap(false).Height(h)
 	m.configureBodyBorders(t)
 	if m.mode == ModeFit {
 		desired := make([]int, len(m.cols))
@@ -392,7 +370,7 @@ func (m *BigTable) rebuildWindow() {
 			desired[i] = max(m.widthCache[i], m.desired[i])
 		}
 		target := computeFitWidths(m.w, desired, 3)
-		ht := lgtable.New().Wrap(false)
+        ht := lgtable.New().Wrap(false)
 		m.configureHeaderBorders(ht)
 		headers := make([]string, len(m.cols))
 		// spacing only when no outside and no inner verticals
@@ -413,23 +391,23 @@ func (m *BigTable) rebuildWindow() {
 				headers[i] += " "
 			}
 		}
-		ht.Headers(headers...)
-		ht.Width(m.w)
+        ht.Headers(headers...)
+        ht.Width(m.w)
 		ht.StyleFunc(func(row, col int) lipgloss.Style { return m.styles.Header })
 		m.headerRow = strings.TrimRight(ht.Render(), "\n")
 		trRows := truncateRows(m.window, tt)
 		if !outside && !vcol {
 			trRows = addSpacing(trRows)
 		}
-		t = t.Rows(rowsToStringRows(trRows)...)
-		t.Width(m.w)
+        t = t.Rows(rowsToStringRows(trRows)...)
+        t.Width(m.w)
 	} else {
 		full := make([]int, len(m.cols))
 		for i := range full {
 			full[i] = max(m.widthCache[i], m.desired[i])
 		}
 		offs, target := computeScrollWindowFrozen(full, 2, m.xOff, m.w)
-		ht := lgtable.New().Wrap(false)
+        ht := lgtable.New().Wrap(false)
 		m.configureHeaderBorders(ht)
 		headers := make([]string, len(m.cols))
 		outside, vcol, _, _ := m.borderFlags()
@@ -449,16 +427,16 @@ func (m *BigTable) rebuildWindow() {
 				headers[i] += " "
 			}
 		}
-		ht.Headers(headers...)
-		ht.Width(m.w)
+        ht.Headers(headers...)
+        ht.Width(m.w)
 		ht.StyleFunc(func(row, col int) lipgloss.Style { return m.styles.Header })
 		m.headerRow = strings.TrimRight(ht.Render(), "\n")
 		sliced := sliceRowsWindow(m.window, offs, tt)
 		if !outside && !vcol {
 			sliced = addSpacing(sliced)
 		}
-		t = t.Rows(rowsToStringRows(sliced)...)
-		t.Width(m.w)
+        t = t.Rows(rowsToStringRows(sliced)...)
+        t.Width(m.w)
 	}
 	stylesPerRow := captureStyles(m.window)
 	selected := m.selected
