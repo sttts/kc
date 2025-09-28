@@ -126,7 +126,6 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 		bHeader:    false,
 	}
 	bt.applyMode()
-	bt.sync()
 	return bt
 }
 
@@ -141,7 +140,6 @@ func (m *BigTable) SetSize(w, h int) {
 	}
 	m.w, m.h = w, h
 	m.applyMode()
-	m.sync()
 }
 
 // --- Border configuration (1:1 with lipgloss/table) ---
@@ -220,7 +218,6 @@ func (m *BigTable) SetMode(md GridMode) {
 	if m.mode != md {
 		m.mode = md
 		m.applyMode()
-		m.sync()
 	}
 }
 
@@ -364,7 +361,6 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 			}
 		}
 	}
-	m.sync()
 	return c1, c2
 }
 
@@ -380,8 +376,6 @@ func (m *BigTable) View() string {
 
 // no app header/help line inside BigTable; outer app should render it
 // no BigTable footer; outer app should render any footers/help lines
-
-func (m *BigTable) sync() {}
 
 // refreshRowsOnly re-renders rows for the current mode without recomputing widths.
 func (m *BigTable) refreshRowsOnly() { m.rebuildWindow() }
