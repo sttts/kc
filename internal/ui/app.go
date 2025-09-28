@@ -23,7 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	yaml "sigs.k8s.io/yaml"
+    yaml "sigs.k8s.io/yaml"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
@@ -53,9 +53,11 @@ type App struct {
 	resCatalog     map[string]schema.GroupVersionKind
 	genericFactory func(schema.GroupVersionKind) *GenericDataSource
 	cfg            *appconfig.Config
-	// Theme dialog state
-	prevTheme           string
-	suppressThemeRevert bool
+    // Theme dialog state
+    prevTheme           string
+    suppressThemeRevert bool
+    // New navigation (folder-backed) stack
+    _navStack           []navui.Folder
 }
 
 // NewApp creates a new application instance
@@ -1182,22 +1184,80 @@ func (a *App) initData() error {
 	a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	a.rightPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	// Preview: Use folder-backed rendering for root contexts using internal/navigation
-	{
-		cs := a.kubeMgr.GetContexts()
-		rows := make([]table.Row, 0, len(cs))
-		sty := navui.GreenStyle()
-		for _, c := range cs {
-			row := table.SimpleRow{ID: c.Name}
-			row.SetColumn(0, c.Name, sty)
-			rows = append(rows, row)
-		}
-		folder := navui.NewContextsFolder(rows)
-		a.leftPanel.SetFolder(folder, false)
-		a.rightPanel.SetFolder(folder, false)
-		a.leftPanel.UseFolder(true)
-		a.rightPanel.UseFolder(true)
-	}
-	return nil
+    {
+        // Build a contexts folder with enterable rows that open namespaces for the active context.
+        cs := a.kubeMgr.GetContexts()
+        rows := make([]table.Row, 0, len(cs))
+        sty := navui.GreenStyle()
+        for _, c := range cs {
+            name := c.Name
+            enter := func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }
+            it := navui.NewEnterableItem(name, []string{name}, enter, sty)
+            rows = append(rows, it)
+        }
+        folder := navui.NewContextsFolder(rows)
+        a.leftPanel.SetFolder(folder, false)
+        a.rightPanel.SetFolder(folder, false)
+        a.leftPanel.UseFolder(true)
+        a.rightPanel.UseFolder(true)
+        // Wire folder navigation handlers to manage back/forward stack and update panels.
+        handler := func(back bool, next navui.Folder) {
+            a.handleFolderNav(back, next)
+        }
+        a.leftPanel.SetFolderNavHandler(handler)
+        a.rightPanel.SetFolderNavHandler(handler)
+    }
+    return nil
+}
+
+// buildNamespacesFolder creates a Folder listing namespaces for the current context.
+func (a *App) buildNamespacesFolder() navui.Folder {
+    // Discover Namespace GVR
+    gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+    gvr, err := a.resMgr.GVKToGVR(gvk)
+    if err != nil { return navui.NewNamespacesFolder(a.currentCtx.Name, nil) }
+    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
+    if err != nil { return navui.NewNamespacesFolder(a.currentCtx.Name, nil) }
+    rows := make([]table.Row, 0, len(lst.Items))
+    sty := navui.GreenStyle()
+    for i := range lst.Items {
+        ns := &lst.Items[i]
+        name := ns.GetName()
+        // Placeholder: namespaces are not yet enterable here.
+        it := navui.NewSimpleItem(name, []string{name}, sty)
+        rows = append(rows, it)
+    }
+    return navui.NewNamespacesFolder(a.currentCtx.Name, rows)
+}
+
+// handleFolderNav processes back/forward navigation from panels and updates both panels.
+func (a *App) handleFolderNav(back bool, next navui.Folder) {
+    if a._navStack == nil { a._navStack = make([]navui.Folder, 0, 4) }
+    if back {
+        if len(a._navStack) > 1 { a._navStack = a._navStack[:len(a._navStack)-1] }
+    } else if next != nil {
+        a._navStack = append(a._navStack, next)
+    }
+    var cur navui.Folder
+    if len(a._navStack) == 0 {
+        // Seed with contexts folder if empty
+        cs := a.kubeMgr.GetContexts()
+        rows := make([]table.Row, 0, len(cs))
+        sty := navui.GreenStyle()
+        for _, c := range cs {
+            name := c.Name
+            enter := func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }
+            it := navui.NewEnterableItem(name, []string{name}, enter, sty)
+            rows = append(rows, it)
+        }
+        cur = navui.NewContextsFolder(rows)
+        a._navStack = append(a._navStack, cur)
+    } else {
+        cur = a._navStack[len(a._navStack)-1]
+    }
+    hasBack := len(a._navStack) > 1
+    a.leftPanel.SetFolder(cur, hasBack)
+    a.rightPanel.SetFolder(cur, hasBack)
 }
 
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.

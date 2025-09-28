@@ -52,6 +52,7 @@ type Panel struct {
 	useFolder     bool
 	folder        nav.Folder
 	folderHasBack bool
+	folderHandler func(back bool, next nav.Folder)
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -153,6 +154,11 @@ func (p *Panel) syncFromFolder() {
     }
     p.items = items
 }
+
+// SetFolderNavHandler installs a callback invoked when Enter is pressed while
+// folder-backed rendering is active. The callback receives whether a back
+// navigation was requested and, if not back, the next Folder (may be nil).
+func (p *Panel) SetFolderNavHandler(h func(back bool, next nav.Folder)) { p.folderHandler = h }
 
 // SetNamespacesDataSource wires a namespaces data source for live listings.
 func (p *Panel) SetNamespacesDataSource(ds *NamespacesDataSource) {
@@ -904,11 +910,34 @@ func (p *Panel) invertSelection() {
 
 // Item interaction
 func (p *Panel) enterItem() tea.Cmd {
-	if p.selected < len(p.items) {
-		item := p.items[p.selected]
-		return p.handleItemEnter(item)
-	}
-	return nil
+    // Folder-backed navigation: delegate to handler
+    if p.useFolder && p.folder != nil {
+        if p.folderHandler != nil {
+            // Determine if back selected
+            if p.folderHasBack && p.selected == 0 {
+                p.folderHandler(true, nil)
+                return nil
+            }
+            idx := p.selected
+            if p.folderHasBack { idx-- }
+            if idx < 0 || idx >= p.folder.Len() { return nil }
+            rows := p.folder.Lines(0, p.folder.Len())
+            if idx < len(rows) {
+                if e, ok := rows[idx].(nav.Enterable); ok {
+                    next, err := e.Enter()
+                    if err == nil {
+                        p.folderHandler(false, next)
+                    }
+                }
+            }
+        }
+        return nil
+    }
+    if p.selected < len(p.items) {
+        item := p.items[p.selected]
+        return p.handleItemEnter(item)
+    }
+    return nil
 }
 
 func (p *Panel) handleItemEnter(item Item) tea.Cmd {
