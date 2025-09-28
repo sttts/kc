@@ -176,12 +176,12 @@ id-0008 val-0008`
 func TestView_25x6_VerticalsAndUnderline(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-	want := `A       B
-─────────────────────────
-id-0005 val-0005
-id-0006 val-0006
-id-0007 val-0007
-id-0008 val-0008`
+    want := `A          │B
+───────────┼───────────
+id-0005    │val-0005
+id-0006    │val-0006
+id-0007    │val-0007
+id-0008    │val-0008`
 	for _, tc := range []struct {
 		name string
 		mode GridMode
@@ -210,12 +210,12 @@ id-0008 val-0008`
 func TestView_25x6_Outside_Verticals_Header(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-	want := `┌───────────────────────┐
-│A       B              │
-├───────────────────────┤
-│id-0007 val-0007       │
-│id-0008 val-0008       │
-└───────────────────────┘`
+    want := `┌───────────┬───────────┐
+│A          │B          │
+├───────────┼───────────┤
+│id-0007    │val-0007   │
+│id-0008    │val-0008   │
+└───────────┴───────────┘`
 	for _, tc := range []struct {
 		name string
 		mode GridMode
@@ -244,12 +244,12 @@ func TestView_25x6_Outside_Verticals_Header(t *testing.T) {
 func TestView_25x6_DoubleOutside_Verticals_Header(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-	want := `╔═══════════════════════╗
-║A       B              ║
-╠═══════════════════════╣
-║id-0007 val-0007       ║
-║id-0008 val-0008       ║
-╚═══════════════════════╝`
+    want := `╔═══════════╦═══════════╗
+║A          ║B          ║
+╠═══════════╬═══════════╣
+║id-0007    ║val-0007   ║
+║id-0008    ║val-0008   ║
+╚═══════════╩═══════════╝`
 	for _, tc := range []struct {
 		name string
 		mode GridMode
