@@ -45,6 +45,7 @@ type BigTable struct {
     top      int                   // absolute index of top row in provider
     cursor   int                   // absolute cursor index in provider
     focusedID string               // ID of the currently focused row (for stability across updates)
+    widthCache []int               // incremental max width cache for columns
 }
 
 func NewBigTable(cols []table.Column, list List, w, h int) BigTable {
@@ -82,6 +83,7 @@ func NewBigTable(cols []table.Column, list List, w, h int) BigTable {
         top:     0,
         cursor:  0,
         focusedID: "",
+        widthCache: initWidthCache(cols),
     }
     bt.applyMode()
     bt.sync()
@@ -225,6 +227,13 @@ func (m *BigTable) rebuildWindow() {
     if m.cursor >= m.top+h { m.top = max(0, m.cursor-(h-1)) }
 
     m.window = m.list.Lines(m.top, h)
+    // Update width cache from visible rows (plain ASCII cells)
+    for _, row := range m.window {
+        _, cells, _, _ := row.Columns()
+        for i := 0; i < len(m.cols) && i < len(cells); i++ {
+            if w := lipgloss.Width(cells[i]); w > m.widthCache[i] { m.widthCache[i] = w }
+        }
+    }
     var rows []table.Row
     if m.mode == ModeFit {
         // Use current column widths to truncate.
@@ -247,9 +256,9 @@ func (m *BigTable) rebuildWindow() {
 func (m *BigTable) applyMode() {
     switch m.mode {
     case ModeScroll:
-        // Measure from plain ASCII titles + plain cells from provider
-        widths := measurePlainWidthsFromProvider(m.cols, m.list)
-        for i := range widths { widths[i] = max(widths[i], m.desired[i]) }
+        // Use incremental width cache seeded by header titles
+        widths := make([]int, len(m.cols))
+        for i := range widths { widths[i] = max(m.widthCache[i], m.desired[i]) }
 
         cols := make([]table.Column, len(m.cols))
         for i, c := range m.cols { c.Width = widths[i]; cols[i] = c }
@@ -260,8 +269,8 @@ func (m *BigTable) applyMode() {
         m.rebuildWindow()
 
     case ModeFit:
-        desired := measurePlainWidthsFromProvider(m.cols, m.list)
-        for i := range desired { desired[i] = max(desired[i], m.desired[i]) }
+        desired := make([]int, len(m.cols))
+        for i := range desired { desired[i] = max(m.widthCache[i], m.desired[i]) }
         target := computeFitWidths(m.w, desired, 3)
 
         // Truncate titles (plain) first; rows are truncated per-window in rebuild.
@@ -283,7 +292,11 @@ func measurePlainWidthsFromProvider(cols []table.Column, list List) []int {
     n := len(cols)
     w := make([]int, n)
     for i := 0; i < n; i++ { w[i] = lipgloss.Width(cols[i].Title) }
-    // Scan up to a cap to avoid O(N) on very large lists.
+    // Prefer cache if present; otherwise do a limited scan to seed.
+    if bt, ok := any(list).(*SliceList); ok {
+        // no direct access to table; handled in BigTable via widthCache
+        _ = bt
+    }
     capScan := 2000
     remaining := list.Len()
     if remaining > capScan { remaining = capScan }
@@ -587,3 +600,9 @@ func collectAll(list List) []Row { return list.Lines(0, list.Len()) }
 
 func sum(xs []int) int { s := 0; for _, v := range xs { s += v }; return s }
 func max(a, b int) int { if a > b { return a }; return b }
+
+func initWidthCache(cols []table.Column) []int {
+    out := make([]int, len(cols))
+    for i := range cols { out[i] = lipgloss.Width(cols[i].Title) }
+    return out
+}
