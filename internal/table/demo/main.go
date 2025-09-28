@@ -15,8 +15,8 @@ import (
 type app struct{ bt table.BigTable }
 
 func newApp(provider string) app {
-	cols := make([]table.Column, 20)
-	for c := 0; c < 20; c++ {
+	cols := make([]table.Column, 10)
+	for c := 0; c < 10; c++ {
 		cols[c] = table.Column{Title: fmt.Sprintf("Col%02d", c+1), Width: 18}
 	}
 	// Build a demo List provider with ASCII cells and per-cell styles.
