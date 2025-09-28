@@ -18,3 +18,12 @@ A minimal Bubble Tea app showcasing the `table` package.
 ## Notes
 - The demo generates ASCII-only cell content and applies per-cell `lipgloss` styles.
 - The underlying component lives at `github.com/sttts/kc/internal/table`.
+
+## Styling the Demo
+- You can customize the look by calling `SetStyles` on the `BigTable` instance. Example:
+  ```go
+  st := table.DefaultStyles()
+  st.Selector = st.Selector.Background(lipgloss.Color("#4444FF")).Foreground(lipgloss.Color("#000000"))
+  st.Header = st.Header.Foreground(lipgloss.Color("#A0FFA0"))
+  bt.SetStyles(st)
+  ```

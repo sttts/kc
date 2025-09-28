@@ -26,6 +26,20 @@ An importable, high-performance table component built on Bubble Tea v2. It suppo
   ```
 - In your Bubble Tea model: forward `tea.Msg` to `bt.Update(msg)`, call `bt.SetSize` on window changes, and render with `bt.View()`.
 
+## Styling
+- Configure styles via `Styles` and `SetStyles`:
+  ```go
+  st := table.DefaultStyles()
+  st.Outer = st.Outer.Padding(0, 2)                                 // outer frame
+  st.Header = st.Header.Bold(true).Foreground(lipgloss.Color("#8F8")) // top header + column headers
+  st.Footer = st.Footer.Faint(true)                                  // bottom footer line
+  st.Selector = lipgloss.NewStyle().Background(lipgloss.Color("12")).Foreground(lipgloss.Color("0"))
+  st.Cell = lipgloss.NewStyle()                                      // base cell style (inherited)
+  bt.SetStyles(st)
+  ```
+- Per-cell styles: return `[]*lipgloss.Style` from your `Row.Columns()`; each cell’s style inherits from `Styles.Cell` and the selection overlay.
+- Selector highlight: applied to the focused row; multi-select overlay also uses `Styles.Selector`.
+
 ## Testing
 - Package tests: `go test ./internal/table -v`
 - Covers: truncation width, selection overlay, provider ops, selector stability, and horizontal pan.
