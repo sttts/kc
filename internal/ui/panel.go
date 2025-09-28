@@ -364,8 +364,8 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 	if p.tableRows != nil && (p.shouldRenderTable() || p.isGroupListView()) && (((strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4) || p.currentPath == "/namespaces") || p.isGroupListView()) {
 		p.columnWidths = p.computeColumnWidths(p.tableHeaders, p.tableRows, p.width-2)
 		header := p.formatRow(p.tableHeaders, p.columnWidths)
-		// Add two-char prefix to align with selection + type column in rows
-		prefixed := "  " + header
+		// Add one-char prefix to align with type column in rows
+		prefixed := " " + header
 		if len(prefixed) > p.width {
 			prefixed = prefixed[:p.width]
 		}
@@ -477,13 +477,6 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 	// Create item line
 	var line strings.Builder
 
-	// Selection indicator
-	if item.Selected {
-		line.WriteString("*")
-	} else {
-		line.WriteString(" ")
-	}
-
 	// Item type indicator: show '/' for directories, namespaces, contexts, and explicitly enterable items
 	enterable := (item.Type == ItemTypeDirectory) || (item.Type == ItemTypeNamespace) || (item.Type == ItemTypeContext) || item.Enterable
 	if enterable {
@@ -519,11 +512,6 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 	isGroupListing := (p.currentPath == "/") || (len(parts) == 3 && parts[1] == "namespaces")
 	if isGroupListing && p.tableRows == nil {
 		prefix := ""
-		if item.Selected {
-			prefix += "*"
-		} else {
-			prefix += " "
-		}
 		if (item.Type == ItemTypeDirectory) || (item.Type == ItemTypeNamespace) || (item.Type == ItemTypeContext) || item.Enterable {
 			prefix += "/"
 		} else {
@@ -624,6 +612,10 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 	} else if p.currentPath == "/" && (item.Name == "contexts" || item.Name == "kubeconfigs") {
 		// Special bold green label for top entries when not selected
 		style = style.Foreground(lipgloss.Green).Bold(true)
+	}
+	// Highlight multi-selected items (Ctrl+T/Insert) in bold yellow
+	if item.Selected {
+		style = style.Foreground(lipgloss.Yellow).Bold(true)
 	}
 
 	return style.Render(lineStr)
@@ -833,9 +825,14 @@ func (p *Panel) adjustScroll() {
 
 // Selection methods
 func (p *Panel) toggleSelection() {
-	if p.selected < len(p.items) {
-		p.items[p.selected].Selected = !p.items[p.selected].Selected
-	}
+    if p.selected < len(p.items) {
+        p.items[p.selected].Selected = !p.items[p.selected].Selected
+        // Move cursor down after toggling, staying in bounds and keeping visible
+        if p.selected < len(p.items)-1 {
+            p.selected++
+            p.adjustScroll()
+        }
+    }
 }
 
 func (p *Panel) selectAll() {
