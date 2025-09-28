@@ -35,7 +35,11 @@ Every location is backed by exact identities (GVR), never heuristic breadcrumb p
 
 - `internal/navigation` (items + folders)
   - Owns the core navigation model: `Item`, `ObjectItem`, `Enterable`, `Viewable`, `Folder`, and the Back marker.
-  - Contains concrete item and folder implementations (contexts, namespaces, resource groups, object lists, containers, config/secret keys, logs).
+  - Folder types:
+    - `ContextsFolder` — special contexts listing (not a resources folder).
+    - `ResourcesFolder` — lists GVRs (root cluster‑scoped and namespaced resource groups).
+    - `ObjectsFolder` — lists API objects for a specific GVR (+ optional namespace).
+    - Specialized: `PodContainersFolder`, `ConfigMapKeysFolder`, `SecretKeysFolder` for non‑API children.
   - Minimal UI code only (per-cell default styles); no Bubble Tea components.
   - Depends on `pkg/resources` for cluster access and `internal/table` for rows/columns.
 
@@ -124,6 +128,11 @@ type Folder interface {
     Title() string            // short label for breadcrumbs
     Key() string              // stable identity for history/restore (e.g., ns/gvr or object/children)
 }
+// ObjectsFolder additionally exposes identity for object lists (for F3/edit).
+type ObjectsFolder interface {
+    Folder
+    ObjectListMeta() (schema.GroupVersionResource, string, bool)
+}
 ```
 
 Notes:
@@ -161,7 +170,7 @@ Notes:
 
 1. Discovery + store give `Panel` the exact GVRs for each resource group.
 2. `Panel` builds `Item`s with identities and attaches capabilities (e.g., `ConfigKeyView` for configmap keys) based on the precise type of each row.
-3. On `F3`, if the selected item implements `Viewable`, `App` calls `BuildView()`. Otherwise, if it is an `ObjectItem`, it renders the full object YAML.
+3. On `F3`, when the current folder is an `ObjectsFolder`, the app fetches the object by `(GVR, ns, rowID)` and renders YAML. Key/containers/logs viewers are added on their respective folders.
 4. Column layout uses one table pipeline (headers: Name, Group, Count for resource group views) for consistent alignment/styling. We now import `internal/table` directly and build rows using its exported `Row` and `SimpleRow` types:
 
 ```go
@@ -211,6 +220,25 @@ Paths (`/namespaces/<ns>/<res>/<name>…`) are UX artifacts only. All behavior i
 
 - Unit test viewers by injecting fake stores/managers into viewer constructors.
 - Unit test panel’s item construction logic (ensuring correct capabilities and identities) with synthetic unstructured objects.
+
+## Current vs. Planned
+
+- Current:
+  - Navigation via `ContextsFolder`, `ResourcesFolder`, `ObjectsFolder` using GVR identities.
+  - Back item + Navigator with selection restore (by row ID).
+  - Root shows `/contexts`, `/namespaces` (default context), and cluster-scoped resources with counts.
+  - F3 on `ObjectsFolder` fetches `(GVR, ns, rowID)` and renders YAML.
+  - Specialized child folders exist for pods (containers) and {configmaps,secrets} (keys).
+  - YAML modal removes left/right borders for clean copy/paste.
+
+- Planned:
+  - Viewers for specialized folders:
+    - `ConfigKeyView` (plain or UTF‑8 decoded vs base64 for secrets).
+    - `PodContainerView` (single container spec); `LogsView` with follow/search.
+  - Big table integration (internal/table `BigTable`) with virtualization + selection styles.
+  - Group column dimming and refined styles.
+  - Replace any legacy `SliceFolder` remnants; fully adopt pluralized folder types.
+  - Extend Enterables for logs under containers.
 
 ## Summary
 

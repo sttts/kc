@@ -30,8 +30,8 @@ Current tasks
 - Tests: panel navigation logic, sorting and enablement state, selection behavior.
 
 Current tasks
-- [ ] Wire panel to Router/Store; implement `Enter`, `..`, breadcrumbs.
-- [ ] Implement F3 using server YAML (kubectl or client-go) and F8 delete with confirm; add hooks for F4/F7.
+- [x] Wire panel to Folder/Store; implement `Enter`, `..`, breadcrumbs, selection restore.
+- [x] Implement F3 YAML for object lists (ObjectsFolder); add hooks for F4/F7.
 - [ ] Implement per-panel sorting toggle UI and apply to list model.
  - [ ] Use Watch events to drive live updates; keep cursor stable as much as possible.
   - [ ] Ensure initial `Synced` event triggers first render to avoid empty flashes.
@@ -45,6 +45,9 @@ Current tasks
 - [ ] YAML viewer search: start with `F7`/`Ctrl+F`/`/` (documented as `F7`+`F` in function bar); `F2` to continue to next match; highlight matches.
 - [ ] Pods detail: entering a pod shows container list (containers + initContainers). Under each container, add a `logs` subresource. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + watch). `Esc` closes.
 - [ ] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal; `F4` edits the field in an editor modal. Handle binary secret data gracefully.
+  - [x] Attach precise ViewProvider scaffolds for container spec and config key values (no breadcrumb string matching).
+  - [ ] Wire viewers for `ConfigMapKeysFolder` and `SecretKeysFolder` (value rendering).
+  - [ ] Add `LogsView` and wire under `PodContainersFolder`.
   - [x] Attach precise ViewProvider implementations for container spec and config key values (no breadcrumb string matching).
   - [ ] Logs: implement a logs viewer (follow mode, search). Wire container “logs” entries to open it.
 - [ ] `F4` Edit: launch `kubectl edit` for the current object; refresh on successful apply.
@@ -56,12 +59,21 @@ Current tasks
 ## Table View Enhancements
 - [x] Namespaces: prefer server‑side Table with header + aligned columns.
 - [ ] Horizontal scroll: when columns exceed panel width, support column‑wise scrolling with Left/Right keys; gate on “no typed input” (same Enter routing gating).
+ - [ ] Dim Group column and align counts per spec; refine selection style (bold yellow) in table mode.
 
 ## Table Component (internal/table)
 - [ ] Define public model interfaces (no SetCell):
   - [ ] `type Row interface { Columns() (id string, cells []string, styles []*lipgloss.Style, exists bool) }`
   - [ ] `type List interface { Lines(top, num int) []Row; Above(rowID string, num int) []Row; Below(rowID string, num int) []Row }`
 - [ ] Implement virtualization/windowing to support 10s of thousands of rows (render only visible rows).
+ - [x] Provide `BigTable` skeleton and tests; integrate with panels once stable.
+
+## Current gaps (Hierarchy & Folders)
+- [x] ContextsFolder: counts + default context styling.
+- [x] Namespaces as ObjectsFolder: F3 YAML; enter to resource groups.
+- [x] ResourcesFolder (root/ns groups): counts; Group column plain (dimming later).
+- [x] Specialized child folders present (containers, keys); F3 viewers pending.
+- [ ] Replace any remaining `NewSliceFolder` usage in tests with explicit constructors (`NewResourcesFolder` / `NewObjectsFolder`).
 - [ ] Implement two modes:
   - [ ] Fit mode: pre-truncate ASCII to target widths, then style; no horizontal scroll.
   - [ ] Left/Right mode: no pre-truncate; support horizontal panning with arrow keys.
