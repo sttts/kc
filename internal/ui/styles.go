@@ -32,6 +32,7 @@ var (
 			Background(lipgloss.Blue).
 			Foreground(lipgloss.White)
 
+	// Current row highlight (cursor): cyan background, black text
 	PanelItemSelectedStyle = lipgloss.NewStyle().
 				Background(lipgloss.Cyan).
 				Foreground(lipgloss.Black)

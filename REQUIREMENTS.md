@@ -82,3 +82,9 @@
 - Panel object views include filtering via menu.
 - `Ctrl+F` finds in the current listing; highlight and support “find next”.
 
+## Selection by Pattern
+- `+` opens a pattern dialog when the terminal has no input:
+  - Input field supports glob by default (e.g., `*.yaml`), with a checkbox to switch to regexp.
+  - On confirm, all objects whose names match the pattern are added to the selection.
+- `-` opens the same dialog and removes matching objects from the selection.
+- Pattern scope is the current view (resource object list). Matching is against the object’s name as rendered in the first column.
