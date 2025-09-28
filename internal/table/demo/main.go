@@ -12,7 +12,10 @@ import (
 	table "github.com/sttts/kc/internal/table"
 )
 
-type app struct{ bt table.BigTable }
+type app struct{
+    bt     table.BigTable
+    bstate int
+}
 
 func newApp(provider string) app {
 	cols := make([]table.Column, 10)
@@ -73,7 +76,9 @@ func newApp(provider string) app {
 	st.Header = st.Header.Foreground(lipgloss.Color("#FFFF00")).Background(lipgloss.Color("#0000AA"))
 	st.Selector = lipgloss.NewStyle().Background(lipgloss.Color("#00AAAA")).Foreground(lipgloss.Color("#000000"))
 	bt.SetStyles(st)
-	return app{bt: bt}
+    // start with no borders
+    bt.BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderHeader(false)
+    return app{bt: bt, bstate: 0}
 }
 
 func (a app) Init() tea.Cmd { return nil }
@@ -126,9 +131,16 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.bt.SetList(table.NewSliceList(src))
 			}
 			return a, nil
-		case "b":
-			a.bt.CycleBorderMode()
-			return a, nil
+        case "b":
+            // Toggle simple border cycle: none <-> outside only
+            a.bstate = (a.bstate + 1) % 2
+            switch a.bstate {
+            case 0:
+                a.bt.BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderHeader(false)
+            case 1:
+                a.bt.BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true).BorderColumn(false).BorderHeader(false)
+            }
+            return a, nil
 		}
     case tea.WindowSizeMsg:
         // Reserve one line for the demo help header
