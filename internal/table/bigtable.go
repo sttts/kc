@@ -49,8 +49,10 @@ type BigTable struct {
 
 	headerRow string // sticky header row (rendered outside viewport)
 
-	styles     Styles // external styles
-	borderMode int    // current border variant
+    styles     Styles // external styles
+    borderMode int    // current border variant
+
+    truncTail string // tail used when truncating in FIT mode (default: "")
 }
 
 // Styles groups all externally configurable styles.
@@ -112,8 +114,9 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 		xOff:       0,
 		hStep:      8,
 		styles:     DefaultStyles(),
-		borderMode: 0,
-	}
+        borderMode: 0,
+        truncTail:  "",
+    }
 	bt.applyMode()
 	bt.sync()
 	return bt
@@ -151,6 +154,13 @@ func (m *BigTable) ToggleMode() {
 	} else {
 		m.SetMode(ModeScroll)
 	}
+}
+
+// SetTruncationTail sets the ASCII tail used when truncating in FIT mode.
+// Use "" to disable ellipsis completely.
+func (m *BigTable) SetTruncationTail(tail string) {
+    m.truncTail = tail
+    m.rebuildWindow()
 }
 
 // SetList swaps the data provider and repositions the cursor according to
@@ -360,8 +370,9 @@ func (m *BigTable) rebuildWindow() {
 			}
 		}
 	}
-	// Build lipgloss table content sized to body height.
-	t := lgtable.New().Wrap(false).Height(h)
+    // Build lipgloss table content; we control height via window sizing,
+    // not via lipgloss/table's Height() to avoid any overflow indicators.
+    t := lgtable.New().Wrap(false)
 	m.configureBodyBorders(t)
 	if m.mode == ModeFit {
 		desired := make([]int, len(m.cols))
@@ -382,9 +393,9 @@ func (m *BigTable) rebuildWindow() {
 				}
 			}
 		}
-		for i, c := range m.cols {
-			headers[i] = asciiTruncatePad(c.Title, tt[i])
-		}
+        for i, c := range m.cols {
+            headers[i] = m.truncPad(c.Title, tt[i])
+        }
 		if !outside && !vcol {
 			for i := 0; i < len(headers)-1; i++ {
 				headers[i] += " "
@@ -394,7 +405,7 @@ func (m *BigTable) rebuildWindow() {
 		ht.Width(m.w)
 		ht.StyleFunc(func(row, col int) lipgloss.Style { return m.styles.Header })
 		m.headerRow = strings.TrimRight(ht.Render(), "\n")
-		trRows := truncateRows(m.window, tt)
+        trRows := truncateRowsWithTail(m.window, tt, m.truncTail)
 		if !outside && !vcol {
 			trRows = addSpacing(trRows)
 		}
@@ -418,9 +429,9 @@ func (m *BigTable) rebuildWindow() {
 				}
 			}
 		}
-		for i, c := range m.cols {
-			headers[i] = asciiTruncatePad(c.Title, tt[i])
-		}
+        for i, c := range m.cols {
+            headers[i] = m.truncPad(c.Title, tt[i])
+        }
 		if !outside && !vcol {
 			for i := 0; i < len(headers)-1; i++ {
 				headers[i] += " "
@@ -486,13 +497,15 @@ func (m *BigTable) applyMode() { m.rebuildWindow() }
 // 5: verticals + header + outside
 // 6: double outside + single inside (verticals + header)
 func (m *BigTable) configureHeaderBorders(t *lgtable.Table) {
-	outside, vcol, hline, dbl := m.borderFlags()
-	t.BorderRow(false)
-	t.BorderHeader(hline)
-	t.BorderTop(outside)
-	t.BorderBottom(false)
-	t.BorderLeft(outside)
-	t.BorderRight(outside)
+    outside, vcol, hline, dbl := m.borderFlags()
+    t.BorderRow(false)
+    t.BorderHeader(hline)
+    // Ensure sticky header is always exactly one line tall.
+    // Do NOT draw the outside top border on the header; let the body render it.
+    t.BorderTop(false)
+    t.BorderBottom(false)
+    t.BorderLeft(outside)
+    t.BorderRight(outside)
 	// In outside-only mode, draw header column separators for clarity.
 	if outside && !vcol {
 		t.BorderColumn(true)
@@ -516,13 +529,15 @@ func (m *BigTable) configureHeaderBorders(t *lgtable.Table) {
 }
 
 func (m *BigTable) configureBodyBorders(t *lgtable.Table) {
-	outside, vcol, _, dbl := m.borderFlags()
-	t.BorderRow(false)
-	t.BorderHeader(false)
-	t.BorderTop(false)
-	t.BorderLeft(outside)
-	t.BorderRight(outside)
-	t.BorderBottom(outside)
+    outside, vcol, hline, dbl := m.borderFlags()
+    t.BorderRow(false)
+    t.BorderHeader(false)
+    // Draw the outside top border on the body unless the header underline is on
+    // (in which case the header already draws a separator line beneath the header).
+    t.BorderTop(outside && !hline)
+    t.BorderLeft(outside)
+    t.BorderRight(outside)
+    t.BorderBottom(outside)
 	t.BorderColumn(vcol || (outside && !vcol))
 	b := buildBorder(outside, vcol, dbl)
 	t.Border(b)
@@ -753,25 +768,29 @@ func computeScrollWindowFrozen(full []int, freezeN, xOff, total int) ([]int, []i
 
 // --- truncate (plain ASCII) then style ---
 
-func asciiTruncatePad(s string, w int) string {
-	if w <= 0 {
-		return ""
-	}
-	if lipgloss.Width(s) <= w {
-		if pad := w - lipgloss.Width(s); pad > 0 {
-			return s + strings.Repeat(" ", pad)
-		}
-		return s
-	}
-	if w <= 3 {
-		return strings.Repeat(".", w)
-	}
-	out := truncate.StringWithTail(s, uint(w), "...") // ASCII tail only
-	if pad := w - lipgloss.Width(out); pad > 0 {
-		out += strings.Repeat(" ", pad)
-	}
-	return out
+func asciiTruncatePadTail(s string, w int, tail string) string {
+    if w <= 0 {
+        return ""
+    }
+    if lipgloss.Width(s) <= w {
+        if pad := w - lipgloss.Width(s); pad > 0 {
+            return s + strings.Repeat(" ", pad)
+        }
+        return s
+    }
+    // Truncate with the provided tail; empty tail disables ellipsis.
+    out := truncate.StringWithTail(s, uint(w), tail)
+    if pad := w - lipgloss.Width(out); pad > 0 {
+        out += strings.Repeat(" ", pad)
+    }
+    return out
 }
+
+// Backwards-compatible helper used in tests.
+func asciiTruncatePad(s string, w int) string { return asciiTruncatePadTail(s, w, "...") }
+
+// instance-aware helper for FIT mode
+func (m *BigTable) truncPad(s string, w int) string { return asciiTruncatePadTail(s, w, m.truncTail) }
 
 // asciiSlicePad returns a substring of s that begins at start and extends for
 // width cells, padding with spaces if necessary. s is expected to be ASCII.
@@ -853,21 +872,21 @@ func padRightToWidth(s string, width int, st lipgloss.Style) string {
 	return strings.Join(lines, "\n")
 }
 
-func truncateRows(rows []Row, target []int) []Row {
-	tr := make([]Row, len(rows))
-	for r := range rows {
-		id, cells, styles, _ := rows[r].Columns()
-		truncated := make([]string, len(target))
-		for c := range target {
-			s := ""
-			if c < len(cells) {
-				s = cells[c]
-			}
-			truncated[c] = asciiTruncatePad(s, target[c])
-		}
-		tr[r] = SimpleRow{ID: id, Cells: truncated, Styles: styles}
-	}
-	return tr
+func truncateRowsWithTail(rows []Row, target []int, tail string) []Row {
+    tr := make([]Row, len(rows))
+    for r := range rows {
+        id, cells, styles, _ := rows[r].Columns()
+        truncated := make([]string, len(target))
+        for c := range target {
+            s := ""
+            if c < len(cells) {
+                s = cells[c]
+            }
+            truncated[c] = asciiTruncatePadTail(s, target[c], tail)
+        }
+        tr[r] = SimpleRow{ID: id, Cells: truncated, Styles: styles}
+    }
+    return tr
 }
 
 // sliceRowsWindow slices each cell horizontally according to the provided
@@ -995,15 +1014,15 @@ func initWidthCache(cols []Column) []int {
 // renderHeaderRow renders a single header row with the given titles and
 // target widths (no horizontal scrolling applied to titles).
 func renderHeaderRow(cols []Column, _ []int, target []int) string {
-	headers := make([]string, len(cols))
-	for i, c := range cols {
-		headers[i] = asciiTruncatePad(c.Title, target[i])
-	}
-	ht := lgtable.New().Wrap(false)
-	// Borders configured by caller after creating the row; keep minimal here
-	ht = ht.BorderLeft(false).BorderRight(false).BorderTop(false).BorderBottom(false).BorderRow(false).BorderHeader(false).BorderColumn(false)
-	ht.Headers(headers...)
-	return strings.TrimRight(ht.Render(), "\n")
+    headers := make([]string, len(cols))
+    for i, c := range cols {
+        headers[i] = asciiTruncatePadTail(c.Title, target[i], "")
+    }
+    ht := lgtable.New().Wrap(false)
+    // Borders configured by caller after creating the row; keep minimal here
+    ht = ht.BorderLeft(false).BorderRight(false).BorderTop(false).BorderBottom(false).BorderRow(false).BorderHeader(false).BorderColumn(false)
+    ht.Headers(headers...)
+    return strings.TrimRight(ht.Render(), "\n")
 }
 
 func fmtPercent(p int) string {
