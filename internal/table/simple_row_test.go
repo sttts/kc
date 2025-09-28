@@ -1,4 +1,4 @@
-package main
+package table
 
 import (
     "testing"
@@ -29,4 +29,3 @@ func TestSimpleRowSetColumnKeepsStyleWhenNil(t *testing.T) {
         t.Fatalf("expected style to be retained")
     }
 }
-

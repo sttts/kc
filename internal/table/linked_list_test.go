@@ -1,4 +1,4 @@
-package main
+package table
 
 import "testing"
 
@@ -10,4 +10,3 @@ func TestLinkedListBasicOps(t *testing.T) {
     if _, _, ok := ll.Find("x"); !ok { t.Fatalf("expected to find x") }
     if n := ll.RemoveIDs("a1", "x"); n != 2 { t.Fatalf("expected removed 2, got %d", n) }
 }
-

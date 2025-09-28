@@ -1,4 +1,4 @@
-package main
+package table
 
 import (
     "github.com/charmbracelet/lipgloss/v2"
@@ -141,6 +141,13 @@ func (l *SliceList) Lines(top, num int) []Row {
     end := top + num
     if end > len(l.rows) { end = len(l.rows) }
     return l.rows[top:end]
+}
+
+// LinesToRows is a helper to copy a slice of Row values.
+func LinesToRows(in []Row) []Row {
+    out := make([]Row, len(in))
+    copy(out, in)
+    return out
 }
 
 func (l *SliceList) Above(rowID string, num int) []Row {

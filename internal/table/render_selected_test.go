@@ -1,4 +1,4 @@
-package main
+package table
 
 import "testing"
 
@@ -22,4 +22,3 @@ func TestRenderRowsSelectedOverlay(t *testing.T) {
         t.Fatalf("expected unselected cell plain 'X', got %q", b0)
     }
 }
-
