@@ -1183,30 +1183,18 @@ func (a *App) initData() error {
 	// Provide contexts count to panels for root display
 	a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	a.rightPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
-	// Preview: Use folder-backed rendering for root contexts using internal/navigation
-    {
-        // Build a contexts folder with enterable rows that open namespaces for the active context.
-        cs := a.kubeMgr.GetContexts()
-        rows := make([]table.Row, 0, len(cs))
-        sty := navui.GreenStyle()
-        for _, c := range cs {
-            name := c.Name
-            enter := func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }
-            it := navui.NewEnterableItem(name, []string{name}, enter, sty)
-            rows = append(rows, it)
-        }
-        folder := navui.NewContextsFolder(rows)
-        a.leftPanel.SetFolder(folder, false)
-        a.rightPanel.SetFolder(folder, false)
-        a.leftPanel.UseFolder(true)
-        a.rightPanel.UseFolder(true)
-        // Wire folder navigation handlers to manage back/forward stack and update panels.
-        handler := func(back bool, next navui.Folder) {
-            a.handleFolderNav(back, next)
-        }
-        a.leftPanel.SetFolderNavHandler(handler)
-        a.rightPanel.SetFolderNavHandler(handler)
-    }
+	// Preview: Use folder-backed rendering starting at root (not contexts listing)
+	{
+		folder := a.buildRootFolder()
+		a.leftPanel.SetFolder(folder, false)
+		a.rightPanel.SetFolder(folder, false)
+		a.leftPanel.UseFolder(true)
+		a.rightPanel.UseFolder(true)
+		// Wire folder navigation handlers to manage back/forward stack and update panels.
+		handler := func(back bool, next navui.Folder) { a.handleFolderNav(back, next) }
+		a.leftPanel.SetFolderNavHandler(handler)
+		a.rightPanel.SetFolderNavHandler(handler)
+	}
     return nil
 }
 
@@ -1230,6 +1218,32 @@ func (a *App) buildNamespacesFolder() navui.Folder {
     return navui.NewNamespacesFolder(a.currentCtx.Name, rows)
 }
 
+// buildContextsFolder creates a Folder listing all known contexts.
+func (a *App) buildContextsFolder() navui.Folder {
+    cs := a.kubeMgr.GetContexts()
+    rows := make([]table.Row, 0, len(cs))
+    sty := navui.GreenStyle()
+    for _, c := range cs {
+        name := c.Name
+        // Entering a context opens the namespaces folder for that context.
+        enter := func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }
+        it := navui.NewEnterableItem(name, []string{name}, enter, sty)
+        rows = append(rows, it)
+    }
+    return navui.NewContextsFolder(rows)
+}
+
+// buildRootFolder creates the initial Folder view per hierarchy design.
+// For now, it includes a single "contexts" row that opens the contexts listing.
+// Cluster-scoped resources will be added incrementally.
+func (a *App) buildRootFolder() navui.Folder {
+    sty := navui.GreenStyle()
+    enter := func() (navui.Folder, error) { return a.buildContextsFolder(), nil }
+    it := navui.NewEnterableItem("contexts", []string{"contexts"}, enter, sty)
+    rows := []table.Row{it}
+    return navui.NewSliceFolder("/", "root", []table.Column{{Title: "Name"}}, rows)
+}
+
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
 func (a *App) handleFolderNav(back bool, next navui.Folder) {
     if a._navStack == nil { a._navStack = make([]navui.Folder, 0, 4) }
@@ -1238,23 +1252,8 @@ func (a *App) handleFolderNav(back bool, next navui.Folder) {
     } else if next != nil {
         a._navStack = append(a._navStack, next)
     }
-    var cur navui.Folder
-    if len(a._navStack) == 0 {
-        // Seed with contexts folder if empty
-        cs := a.kubeMgr.GetContexts()
-        rows := make([]table.Row, 0, len(cs))
-        sty := navui.GreenStyle()
-        for _, c := range cs {
-            name := c.Name
-            enter := func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }
-            it := navui.NewEnterableItem(name, []string{name}, enter, sty)
-            rows = append(rows, it)
-        }
-        cur = navui.NewContextsFolder(rows)
-        a._navStack = append(a._navStack, cur)
-    } else {
-        cur = a._navStack[len(a._navStack)-1]
-    }
+	var cur navui.Folder
+	if len(a._navStack) == 0 { cur = a.buildRootFolder(); a._navStack = append(a._navStack, cur) } else { cur = a._navStack[len(a._navStack)-1] }
     hasBack := len(a._navStack) > 1
     a.leftPanel.SetFolder(cur, hasBack)
     a.rightPanel.SetFolder(cur, hasBack)
