@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/sttts/kc/internal/ui"
+	klog "k8s.io/klog/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -64,6 +65,8 @@ func setupControllerRuntimeLogger() {
 						crzap.WriteTo(f),
 					)
 					ctrllog.SetLogger(l)
+					// Redirect klog to the controller-runtime logger (zap)
+					klog.SetLogger(ctrllog.Log)
 					return
 				}
 			}
@@ -71,6 +74,8 @@ func setupControllerRuntimeLogger() {
 	}
 	// Fallback: discard all controller-runtime logs
 	ctrllog.SetLogger(logr.Discard())
+	// Redirect klog to discard as well
+	klog.SetLogger(logr.Discard())
 }
 
 func showHelp() {

@@ -64,6 +64,20 @@ go build -o kc ./cmd/kc
 go run ./cmd/kc
 ```
 
+### Debug Logging
+- By default, controller-runtime and Kubernetes logs are discarded.
+- Set `DEBUG=1` to enable debug logs written to `~/.kc/debug.log` using a human-friendly zap encoder:
+
+```bash
+DEBUG=1 ./kc
+# or
+DEBUG=1 go run ./cmd/kc
+```
+
+Notes:
+- Both controller-runtime and klog (k8s.io/klog/v2) are wired to the same logger.
+- When `DEBUG` is not set, both are redirected to a discard logger.
+
 
 ### Configuration
 - Path: `~/.kc/config.yaml`
