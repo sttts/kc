@@ -39,12 +39,18 @@ func mkTwoColList(n int) *SliceList {
 func TestView_25x6_VerticalOnly_TwoColumns(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-	want := `A       │B       
-id-0004 │val-0004
-id-0005 │val-0005
-id-0006 │val-0006
-id-0007 │val-0007
-id-0008 │val-0008`
+	wantScroll := `A          │B
+id-0004       │val-0004
+id-0005       │val-0005
+id-0006       │val-0006
+id-0007       │val-0007
+id-0008       │val-0008`
+	wantFit := `A          │B
+id-0004      │val-0004
+id-0005      │val-0005
+id-0006      │val-0006
+id-0007      │val-0007
+id-0008      │val-0008`
 
 	for _, tc := range []struct {
 		name string
@@ -64,6 +70,10 @@ id-0008 │val-0008`
 			bt.SetMode(tc.mode)
 			bt.Select("id-0008")
 			got := trimRightEachLine(bt.View())
+			want := wantScroll
+			if tc.mode == ModeFit {
+				want = wantFit
+			}
 			if got != want {
 				t.Fatalf("unexpected view (%s)\nwant:\n%s\n---\ngot:\n%s", tc.name, want, got)
 			}
@@ -76,12 +86,18 @@ id-0008 │val-0008`
 func TestView_25x6_NoBorders(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-	want := `A B
-id-0004 val-0004
-id-0005 val-0005
-id-0006 val-0006
-id-0007 val-0007
-id-0008 val-0008`
+	wantScroll := `A            B
+id-0004       val-0004
+id-0005       val-0005
+id-0006       val-0006
+id-0007       val-0007
+id-0008       val-0008`
+	wantFit := `A            B
+id-0004      val-0004
+id-0005      val-0005
+id-0006      val-0006
+id-0007      val-0007
+id-0008      val-0008`
 	for _, tc := range []struct {
 		name string
 		mode GridMode
@@ -97,6 +113,10 @@ id-0008 val-0008`
 			bt.SetMode(tc.mode)
 			bt.Select("id-0008")
 			got := trimRightEachLine(bt.View())
+			want := wantScroll
+			if tc.mode == ModeFit {
+				want = wantFit
+			}
 			if got != want {
 				t.Fatalf("unexpected view (%s)\nwant:\n%s\n---\ngot:\n%s", tc.name, want, got)
 			}
@@ -109,11 +129,17 @@ id-0008 val-0008`
 func TestView_25x6_OutsideOnly(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-	want := `┌───────────────────────┐
-│A       B              │
-│id-0006 val-0006       │
-│id-0007 val-0007       │
-│id-0008 val-0008       │
+	wantScroll := `┌────────────────────────┐
+│A            B         │
+│id-0006       val-0006 │
+│id-0007       val-0007 │
+│id-0008       val-0008 │
+└───────────────────────┘`
+	wantFit := `┌────────────────────────┐
+│A            B         │
+│id-0006      val-0006  │
+│id-0007      val-0007  │
+│id-0008      val-0008  │
 └───────────────────────┘`
 	for _, tc := range []struct {
 		name string
@@ -131,6 +157,10 @@ func TestView_25x6_OutsideOnly(t *testing.T) {
 			bt.SetMode(tc.mode)
 			bt.Select("id-0008")
 			got := trimRightEachLine(bt.View())
+			want := wantScroll
+			if tc.mode == ModeFit {
+				want = wantFit
+			}
 			if got != want {
 				t.Fatalf("unexpected view (%s)\nwant:\n%s\n---\ngot:\n%s", tc.name, want, got)
 			}
@@ -143,12 +173,18 @@ func TestView_25x6_OutsideOnly(t *testing.T) {
 func TestView_25x6_HeaderUnderline(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-	want := `A       B
+	wantScroll := `A            B
 ─────────────────────────
-id-0005 val-0005
-id-0006 val-0006
-id-0007 val-0007
-id-0008 val-0008`
+id-0005      val-0005
+id-0006      val-0006
+id-0007      val-0007
+id-0008      val-0008`
+	wantFit := `A            B
+─────────────────────────
+id-0005      val-0005
+id-0006      val-0006
+id-0007      val-0007
+id-0008      val-0008`
 	for _, tc := range []struct {
 		name string
 		mode GridMode
@@ -165,6 +201,10 @@ id-0008 val-0008`
 			bt.SetMode(tc.mode)
 			bt.Select("id-0008")
 			got := trimRightEachLine(bt.View())
+			want := wantScroll
+			if tc.mode == ModeFit {
+				want = wantFit
+			}
 			if got != want {
 				t.Fatalf("unexpected view (%s)\nwant:\n%s\n---\ngot:\n%s", tc.name, want, got)
 			}
@@ -176,12 +216,18 @@ id-0008 val-0008`
 func TestView_25x6_VerticalsAndUnderline(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-    want := `A          │B
+	wantScroll := `A          │B
 ───────────┼───────────
-id-0005    │val-0005
-id-0006    │val-0006
-id-0007    │val-0007
-id-0008    │val-0008`
+id-0005       │val-0005
+id-0006       │val-0006
+id-0007       │val-0007
+id-0008       │val-0008`
+	wantFit := `A          │B
+───────────┼───────────
+id-0005      │val-0005
+id-0006      │val-0006
+id-0007      │val-0007
+id-0008      │val-0008`
 	for _, tc := range []struct {
 		name string
 		mode GridMode
@@ -198,6 +244,10 @@ id-0008    │val-0008`
 			bt.SetMode(tc.mode)
 			bt.Select("id-0008")
 			got := trimRightEachLine(bt.View())
+			want := wantScroll
+			if tc.mode == ModeFit {
+				want = wantFit
+			}
 			if got != want {
 				t.Fatalf("unexpected view (%s)\nwant:\n%s\n---\ngot:\n%s", tc.name, want, got)
 			}
@@ -210,7 +260,13 @@ id-0008    │val-0008`
 func TestView_25x6_Outside_Verticals_Header(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-    want := `┌───────────┬───────────┐
+	wantScroll := `┌───────────┬───────────┐
+│A          │B          │
+├───────────┼───────────┤
+│id-0007    │val-0007   │
+│id-0008    │val-0008   │
+└───────────┴───────────┘`
+	wantFit := `┌───────────┬───────────┐
 │A          │B          │
 ├───────────┼───────────┤
 │id-0007    │val-0007   │
@@ -232,6 +288,10 @@ func TestView_25x6_Outside_Verticals_Header(t *testing.T) {
 			bt.SetMode(tc.mode)
 			bt.Select("id-0008")
 			got := trimRightEachLine(bt.View())
+			want := wantScroll
+			if tc.mode == ModeFit {
+				want = wantFit
+			}
 			if got != want {
 				t.Fatalf("unexpected view (%s)\nwant:\n%s\n---\ngot:\n%s", tc.name, want, got)
 			}
@@ -244,7 +304,13 @@ func TestView_25x6_Outside_Verticals_Header(t *testing.T) {
 func TestView_25x6_DoubleOutside_Verticals_Header(t *testing.T) {
 	cols := []Column{{Title: "A"}, {Title: "B"}}
 	list := mkTwoColList(8)
-    want := `╔═══════════╦═══════════╗
+	wantScroll := `╔═══════════╦═══════════╗
+║A          ║B          ║
+╠═══════════╬═══════════╣
+║id-0007    ║val-0007   ║
+║id-0008    ║val-0008   ║
+╚═══════════╩═══════════╝`
+	wantFit := `╔═══════════╦═══════════╗
 ║A          ║B          ║
 ╠═══════════╬═══════════╣
 ║id-0007    ║val-0007   ║
@@ -267,6 +333,10 @@ func TestView_25x6_DoubleOutside_Verticals_Header(t *testing.T) {
 			bt.SetMode(tc.mode)
 			bt.Select("id-0008")
 			got := trimRightEachLine(bt.View())
+			want := wantScroll
+			if tc.mode == ModeFit {
+				want = wantFit
+			}
 			if got != want {
 				t.Fatalf("unexpected view (%s)\nwant:\n%s\n---\ngot:\n%s", tc.name, want, got)
 			}
