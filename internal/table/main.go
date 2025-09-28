@@ -110,6 +110,17 @@ func (m *BigTable) SetList(list List) {
     m.rebuildWindow()
 }
 
+// GetList exposes the current data provider (for demo mutations).
+func (m *BigTable) GetList() List { return m.list }
+
+// CurrentID returns the focused row ID, if any.
+func (m *BigTable) CurrentID() (string, bool) {
+    if row := m.list.Lines(m.cursor, 1); len(row) == 1 {
+        id, _, _, ok := row[0].Columns(); return id, ok
+    }
+    return "", false
+}
+
 func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
     var c1, c2 tea.Cmd
     switch v := msg.(type) {
@@ -185,8 +196,8 @@ func (m *BigTable) View() string {
 }
 
 func (m *BigTable) header() string {
-	if m.mode == ModeScroll { return "Left/Right horizontal | Up/Down vertical | PgUp/PgDn | Home/End | m: FIT" }
-	return "FIT MODE (no horizontal scroll) | Up/Down | PgUp/PgDn | Home/End | m: SCROLL"
+    if m.mode == ModeScroll { return "Left/Right horizontal | Up/Down | PgUp/PgDn | Home/End | m: FIT | i: insert | d/Del: delete | t: toggle provider" }
+    return "FIT MODE (no horizontal scroll) | Up/Down | PgUp/PgDn | Home/End | m: SCROLL | i: insert | d/Del: delete | t: toggle provider"
 }
 func (m *BigTable) footer() string {
 	if m.mode == ModeScroll { return "Columns sized to full plain content; use Left/Right to pan" }
@@ -471,18 +482,58 @@ func newApp() app {
 func (a app) Init() tea.Cmd { return nil }
 
 func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch v := msg.(type) {
-	case tea.KeyMsg:
-		switch v.String() {
-		case "q", "ctrl+c":
-			return a, tea.Quit
-		case "m":
-			a.bt.ToggleMode()
-			return a, nil
-		}
-	case tea.WindowSizeMsg:
-		a.bt.SetSize(v.Width-2, v.Height-2)
-	}
+    switch v := msg.(type) {
+    case tea.KeyMsg:
+        switch v.String() {
+        case "q", "ctrl+c":
+            return a, tea.Quit
+        case "m":
+            a.bt.ToggleMode()
+            return a, nil
+        case "i":
+            // Insert a new row after current
+            if id, ok := a.bt.CurrentID(); ok {
+                // Build a sample row
+                nr := SimpleRow{ID: fmt.Sprintf("id-%d", time.Now().UnixNano()%1_000_000_000)}
+                nr.SetColumn(0, nr.ID, nil)
+                nr.SetColumn(1, "OK", nil)
+                nr.SetColumn(2, "inserted row", nil)
+                switch l := a.bt.GetList().(type) {
+                case *SliceList:
+                    l.InsertAfter(id, nr)
+                    a.bt.SetList(l)
+                case *LinkedList:
+                    l.InsertAfterID(id, nr)
+                    a.bt.SetList(l)
+                }
+            }
+            return a, nil
+        case "d", "delete":
+            // Remove current row
+            if id, ok := a.bt.CurrentID(); ok {
+                switch l := a.bt.GetList().(type) {
+                case *SliceList:
+                    l.RemoveIDs(id)
+                    a.bt.SetList(l)
+                case *LinkedList:
+                    l.RemoveIDs(id)
+                    a.bt.SetList(l)
+                }
+            }
+            return a, nil
+        case "t":
+            // Toggle provider implementation
+            src := collectAll(a.bt.GetList())
+            if _, isSlice := a.bt.GetList().(*SliceList); isSlice {
+                a.bt.SetList(NewLinkedList(src))
+            } else {
+                a.bt.SetList(NewSliceList(src))
+            }
+            return a, nil
+        }
+    case tea.WindowSizeMsg:
+        a.bt.SetSize(v.Width-2, v.Height-2)
+    }
 	c1, c2 := a.bt.Update(msg)
 	return a, tea.Batch(c1, c2)
 }
