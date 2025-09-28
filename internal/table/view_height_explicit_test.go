@@ -66,9 +66,8 @@ func TestView_25x6_VerticalOnly_TwoColumns(t *testing.T) {
 	st.Border = lipgloss.NewStyle()
 	bt.SetStyles(st)
 
-	// Move to bottom and rebuild
-	bt.cursor = list.Len() - 1
-	bt.rebuildWindow()
+    // Move to bottom by selecting last ID
+    bt.Select("id-0008")
 
 	got := trimRightEachLine(bt.View())
 	// Header uses padded first column plus a single space between columns, then second title.
@@ -102,9 +101,8 @@ func TestView_25x6_NoBorders(t *testing.T) {
 	st.Border = lipgloss.NewStyle()
 	bt.SetStyles(st)
 
-	// Move to bottom and rebuild
-	bt.cursor = list.Len() - 1 // id-0008
-	bt.rebuildWindow()
+    // Move to bottom by selecting last ID
+    bt.Select("id-0008")
 
 	got := trimRightEachLine(bt.View())
 	// Expect header + last 5 rows separated by a single space (no inner border)
@@ -137,8 +135,7 @@ func TestView_25x6_OutsideOnly(t *testing.T) {
 	st.Border = lipgloss.NewStyle()
 	bt.SetStyles(st)
 
-	bt.cursor = list.Len() - 1
-	bt.rebuildWindow()
+    bt.Select("id-0008")
 
 	got := trimRightEachLine(bt.View())
 
@@ -163,8 +160,7 @@ func TestView_25x6_HeaderUnderline(t *testing.T) {
 	bt.SetMode(ModeScroll)
 	bt.BorderHeader(true)
 
-	bt.cursor = list.Len() - 1
-	bt.rebuildWindow()
+    bt.Select("id-0008")
 
 	// Neutral styles to avoid ANSI escapes
 	st := DefaultStyles()
@@ -194,8 +190,7 @@ func TestView_25x6_VerticalsAndUnderline(t *testing.T) {
 	bt.SetMode(ModeScroll)
 	bt.BorderColumn(true).BorderHeader(true)
 
-	bt.cursor = list.Len() - 1
-	bt.rebuildWindow()
+    bt.Select("id-0008")
 
 	// Neutral styles to avoid ANSI escapes
 	st := DefaultStyles()
@@ -226,8 +221,7 @@ func TestView_25x6_Outside_Verticals_Header(t *testing.T) {
 	bt.SetMode(ModeScroll)
 	bt.BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true).BorderColumn(true).BorderHeader(true)
 
-	bt.cursor = list.Len() - 1
-	bt.rebuildWindow()
+    bt.Select("id-0008")
 
 	// Neutral styles to avoid ANSI escapes
 	st := DefaultStyles()
