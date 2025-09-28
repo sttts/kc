@@ -10,13 +10,21 @@ import (
     "github.com/muesli/reflow/truncate"
 )
 
+// GridMode controls how the table renders horizontally.
+//   - ModeScroll: no pre-truncation; horizontally pannable content.
+//   - ModeFit: truncate ASCII to the available width, then apply styles.
 type GridMode int
 
 const (
-    ModeScroll GridMode = iota // viewport pans; columns wide enough for full plain text
-    ModeFit                    // pre-truncate plain text to fit; then style
+    // ModeScroll sizes columns to full plain widths and allows horizontal panning.
+    ModeScroll GridMode = iota
+    // ModeFit pre-truncates ASCII text to fit the viewport, then applies styles.
+    ModeFit
 )
 
+// BigTable is a reusable Bubble Tea component that renders large, dynamic
+// tables backed by a List provider. It is optimized for very large datasets
+// via windowed rendering and maintains selection stability using row IDs.
 type BigTable struct {
     vp    viewport.Model
     tbl   table.Model
@@ -38,6 +46,8 @@ type BigTable struct {
     widthCache []int               // incremental max width cache for columns
 }
 
+// NewBigTable constructs a table with the given columns, data provider and
+// initial size (content width and height). Titles are treated as plain ASCII.
 func NewBigTable(cols []table.Column, list List, w, h int) BigTable {
     desired := make([]int, len(cols))
     for i := range cols {
@@ -80,6 +90,8 @@ func NewBigTable(cols []table.Column, list List, w, h int) BigTable {
     return bt
 }
 
+// SetSize updates the component size (content area). Width/height are clamped
+// to sensible minimums and trigger a relayout.
 func (m *BigTable) SetSize(w, h int) {
     if w < 20 { w = 20 }
     if h < 6  { h = 6 }
@@ -90,12 +102,17 @@ func (m *BigTable) SetSize(w, h int) {
     m.sync()
 }
 
+// SetMode switches between ModeScroll and ModeFit and refreshes the view.
 func (m *BigTable) SetMode(md GridMode) { if m.mode != md { m.mode = md; m.applyMode(); m.sync() } }
+// ToggleMode flips the current GridMode.
 func (m *BigTable) ToggleMode()         { if m.mode == ModeScroll { m.SetMode(ModeFit) } else { m.SetMode(ModeScroll) } }
 
 // SetList swaps the data provider and repositions the cursor according to
 // the focused row ID. If the focused row disappeared, the cursor moves to the
 // next row; if none, to the previous; otherwise it clamps within bounds.
+// SetList swaps the data provider and repositions the cursor based on the
+// previously focused row ID. If that row disappeared, the cursor moves to the
+// next row, or previous when no next exists.
 func (m *BigTable) SetList(list List) {
     m.list = list
     m.repositionOnDataChange()
@@ -103,8 +120,10 @@ func (m *BigTable) SetList(list List) {
 }
 
 // GetList exposes the current data provider (for demo mutations).
+// GetList returns the current data provider.
 func (m *BigTable) GetList() List { return m.list }
 
+// CurrentID returns the focused row ID, if any.
 // CurrentID returns the focused row ID, if any.
 func (m *BigTable) CurrentID() (string, bool) {
     if row := m.list.Lines(m.cursor, 1); len(row) == 1 {
@@ -113,6 +132,9 @@ func (m *BigTable) CurrentID() (string, bool) {
     return "", false
 }
 
+// Update handles key navigation and selection toggling; it also forwards other
+// messages to the internal bubbles components. It returns a batchable pair of
+// commands for external composition.
 func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
     var c1, c2 tea.Cmd
     switch v := msg.(type) {
@@ -181,6 +203,7 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
     return c1, c2
 }
 
+// View renders the component.
 func (m *BigTable) View() string {
     header := headerStyle.Render(m.header())
     footer := footerStyle.Render(m.footer())
