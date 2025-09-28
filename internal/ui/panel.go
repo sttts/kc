@@ -117,6 +117,12 @@ func NewPanel(title string) *Panel {
     }
 }
 
+// ResetSelectionTop moves the cursor to the top and resets scrolling.
+func (p *Panel) ResetSelectionTop() {
+    p.selected = 0
+    p.scrollTop = 0
+}
+
 // SetFolder enables folder-backed rendering using the new navigation package.
 // This does not alter legacy behaviors beyond rendering headers/rows from the
 // folder for preview purposes. Selection/enter logic remains unchanged.
@@ -145,9 +151,14 @@ func (p *Panel) syncFromFolder() {
     // Build items aligned to rows and mark enterable where applicable
     items := make([]Item, 0, len(cells)+1)
     tableRows := make([][]string, 0, len(cells)+1)
-    if p.folderHasBack {
+    addBack := p.folderHasBack
+    if !addBack && p.folder != nil && p.folder.Title() != "/" {
+        // Fallback: for non-root folders, ensure back row is visible
+        addBack = true
+    }
+    if addBack {
         items = append(items, Item{Name: "..", Type: ItemTypeDirectory, Enterable: true})
-        tableRows = append(tableRows, []string{".."})
+        // Do NOT add a matching row to tableRows; keep table rows aligned to real data rows.
     }
     for i := range cells {
         name := ""
@@ -594,7 +605,8 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 			group = "core"
 		}
 		gv := group + "/" + item.TypedGVK.Version
-		gvEsc := "\033[2m\033[37m" + gv + "\033[39m\033[22m"
+		// Dimmed grey foreground for group/version
+		gvEsc := "\033[2m\033[90m" + gv + "\033[39m\033[22m"
 		prefixW := lipgloss.Width(prefix)
 		innerW := max(0, leftW-prefixW)
 		showGV := (len(name)+2+len(gv) <= innerW)
@@ -671,12 +683,12 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 
 	// Apply styling
 	style := PanelItemStyle.Width(p.width)
-	if selected {
-		style = PanelItemSelectedStyle.Width(p.width)
-	} else if p.currentPath == "/" && (item.Name == "contexts" || item.Name == "kubeconfigs") {
-		// Special bold green label for top entries when not selected
-		style = style.Foreground(lipgloss.Green).Bold(true)
-	}
+    if selected {
+        style = PanelItemSelectedStyle.Width(p.width)
+    } else if p.currentPath == "/" && (item.Name == "contexts" || item.Name == "kubeconfigs") {
+        // Special bold green label for top entries when not selected
+        style = style.Foreground(lipgloss.Green).Bold(true)
+    }
 	// Highlight multi-selected items (Ctrl+T/Insert) in bold yellow
 	if item.Selected {
 		style = style.Foreground(lipgloss.Yellow).Bold(true)
@@ -921,14 +933,20 @@ func (p *Panel) invertSelection() {
 func (p *Panel) enterItem() tea.Cmd {
     // Folder-backed navigation: delegate to handler
     if p.useFolder && p.folder != nil {
+        // Ensure items are in sync with folder rows (back row, etc.).
+        p.syncFromFolder()
         if p.folderHandler != nil {
-            // Determine if back selected
-            if p.folderHasBack && p.selected == 0 {
-                p.folderHandler(true, nil)
-                return nil
+            // Determine if back selected by item name or position
+            if p.selected < len(p.items) {
+                cur := p.items[p.selected]
+                if cur.Name == ".." {
+                    p.folderHandler(true, nil)
+                    return nil
+                }
             }
+            // Map selected index to row index (skip synthetic back item if present)
             idx := p.selected
-            if p.folderHasBack { idx-- }
+            if len(p.items) > 0 && p.items[0].Name == ".." { idx-- }
             if idx < 0 || idx >= p.folder.Len() { return nil }
             rows := p.folder.Lines(0, p.folder.Len())
             if idx < len(rows) {
