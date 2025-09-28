@@ -132,13 +132,37 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
         case "b":
-            // Toggle simple border cycle: none <-> outside only
-            a.bstate = (a.bstate + 1) % 2
+            // Cycle border presets:
+            // 0 none
+            // 1 outside only
+            // 2 verticals only
+            // 3 header underline only
+            // 4 verticals + underline
+            // 5 outside + verticals + underline
+            // 6 double outside + verticals + underline
+            a.bstate = (a.bstate + 1) % 7
+            // reset base
+            a.bt.Border(lipgloss.NormalBorder()).
+                BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).
+                BorderColumn(false).BorderHeader(false)
             switch a.bstate {
             case 0:
-                a.bt.BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderHeader(false)
+                // none
             case 1:
-                a.bt.BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true).BorderColumn(false).BorderHeader(false)
+                a.bt.BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true)
+            case 2:
+                a.bt.BorderColumn(true)
+            case 3:
+                a.bt.BorderHeader(true)
+            case 4:
+                a.bt.BorderColumn(true).BorderHeader(true)
+            case 5:
+                a.bt.BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true).
+                    BorderColumn(true).BorderHeader(true)
+            case 6:
+                a.bt.Border(lipgloss.DoubleBorder()).
+                    BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true).
+                    BorderColumn(true).BorderHeader(true)
             }
             return a, nil
 		}
@@ -151,8 +175,12 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a app) View() string {
+    modes := []string{
+        "none", "outside", "verticals", "underline", "verticals+underline", "outside+verticals+underline", "double+verticals+underline",
+    }
+    cur := modes[a.bstate]
     help := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A8FF60")).Render(
-        "Left/Right horizontal | Up/Down | PgUp/PgDn | Home/End | m: FIT | b: border | i: insert | d/Del: delete | t: toggle provider",
+        fmt.Sprintf("Left/Right | Up/Down | PgUp/PgDn | Home/End | m: mode(FIT/SCROLL) | b: border(%s) | i: insert | d/Del: delete | t: provider", cur),
     )
     return strings.Join([]string{help, a.bt.View()}, "\n")
 }
