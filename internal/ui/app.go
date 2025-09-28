@@ -662,11 +662,48 @@ func (a *App) editItem() tea.Cmd {
 
 // openYAMLForSelection fetches the selected object and opens a YAML viewer modal.
 func (a *App) openYAMLForSelection() tea.Cmd {
-	// Determine active panel and current selection
-	p := a.leftPanel
-	if a.activePanel == 1 {
-		p = a.rightPanel
-	}
+    // Determine active panel and current selection
+    p := a.leftPanel
+    if a.activePanel == 1 {
+        p = a.rightPanel
+    }
+    // Folder-backed path: use Folder meta and row ID
+    if p.useFolder && p.folder != nil {
+        // compute row index, skipping back row
+        idx := p.selected
+        if (p.folderHasBack || p.folder.Title() != "/") && idx == 0 {
+            return nil
+        }
+        if p.folderHasBack || p.folder.Title() != "/" { idx-- }
+        if idx < 0 || idx >= p.folder.Len() { return nil }
+        rows := p.folder.Lines(0, p.folder.Len())
+        id, _, _, ok := rows[idx].Columns()
+        if !ok { return nil }
+        // Extract object-list metadata
+        type metaProv interface{ ObjectListMeta() (schema.GroupVersionResource, string, bool) }
+        if mp, ok := p.folder.(metaProv); ok {
+            gvr, ns, mok := mp.ObjectListMeta()
+            if mok {
+                obj, err := a.storeProvider.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ns}, id)
+                if err != nil || obj == nil { return nil }
+                unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+                yb, _ := yaml.Marshal(obj.Object)
+                theme := "dracula"
+                if a.cfg != nil && a.cfg.Viewer.Theme != "" { theme = a.cfg.Viewer.Theme }
+                viewer := NewYAMLViewer(id, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
+                viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
+                title := p.GetCurrentPath()
+                if !strings.HasSuffix(title, "/"+id) { title = title + "/" + id }
+                modal := NewModal(title, viewer)
+                modal.SetDimensions(a.width, a.height)
+                modal.SetCloseOnSingleEsc(false)
+                a.modalManager.Register("yaml_viewer", modal)
+                a.modalManager.Show("yaml_viewer")
+                return nil
+            }
+        }
+        return nil
+    }
 	item := p.GetCurrentItem()
 	if item == nil || item.Name == ".." {
 		return nil
@@ -1264,9 +1301,60 @@ func (a *App) buildNamespacedObjectsFolder(gvr schema.GroupVersionResource, name
     for i := range lst.Items {
         o := &lst.Items[i]
         name := o.GetName()
-        rows = append(rows, navui.NewSimpleItem(name, []string{name}, sty))
+        switch gvr.Resource {
+        case "pods":
+            ns := namespace; nm := name
+            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildPodContainersFolder(ns, nm), nil }, sty))
+        case "configmaps":
+            ns := namespace; nm := name
+            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildConfigMapKeysFolder(ns, nm), nil }, sty))
+        case "secrets":
+            ns := namespace; nm := name
+            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildSecretKeysFolder(ns, nm), nil }, sty))
+        default:
+            rows = append(rows, navui.NewSimpleItem(name, []string{name}, sty))
+        }
     }
     return navui.NewObjectsFolder(a.currentCtx.Name, gvr, namespace, rows)
+}
+
+// buildPodContainersFolder lists containers for a pod
+func (a *App) buildPodContainersFolder(namespace, pod string) navui.Folder {
+    gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
+    if err != nil { return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, nil) }
+    obj, err := a.storeProvider.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}, pod)
+    if err != nil || obj == nil { return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, nil) }
+    rows := make([]table.Row, 0, 8)
+    sty := navui.WhiteStyle()
+    if arr, found, _ := unstructured.NestedSlice(obj.Object, "spec", "containers"); found {
+        for _, c := range arr { if m, ok := c.(map[string]interface{}); ok { if n, _ := m["name"].(string); n != "" { rows = append(rows, navui.NewSimpleItem(n, []string{n}, sty)) } } }
+    }
+    if arr, found, _ := unstructured.NestedSlice(obj.Object, "spec", "initContainers"); found {
+        for _, c := range arr { if m, ok := c.(map[string]interface{}); ok { if n, _ := m["name"].(string); n != "" { rows = append(rows, navui.NewSimpleItem(n, []string{n}, sty)) } } }
+    }
+    return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, rows)
+}
+
+func (a *App) buildConfigMapKeysFolder(namespace, name string) navui.Folder {
+    gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
+    if err != nil { return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, nil) }
+    obj, err := a.storeProvider.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}, name)
+    if err != nil || obj == nil { return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, nil) }
+    rows := make([]table.Row, 0, 8)
+    sty := navui.WhiteStyle()
+    if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found { for k := range data { rows = append(rows, navui.NewSimpleItem(k, []string{k}, sty)) } }
+    return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, rows)
+}
+
+func (a *App) buildSecretKeysFolder(namespace, name string) navui.Folder {
+    gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"})
+    if err != nil { return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, nil) }
+    obj, err := a.storeProvider.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}, name)
+    if err != nil || obj == nil { return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, nil) }
+    rows := make([]table.Row, 0, 8)
+    sty := navui.WhiteStyle()
+    if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found { for k := range data { rows = append(rows, navui.NewSimpleItem(k, []string{k}, sty)) } }
+    return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, rows)
 }
 
 // buildContextsFolder creates a Folder listing all known contexts.
@@ -1374,11 +1462,23 @@ func (a *App) buildClusterObjectsFolder(gvr schema.GroupVersionResource) navui.F
     lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
     if err != nil { return navui.NewObjectsFolder(a.currentCtx.Name, gvr, "", nil) }
     rows := make([]table.Row, 0, len(lst.Items))
-    sty := navui.GreenStyle()
+    sty := navui.WhiteStyle()
     for i := range lst.Items {
         o := &lst.Items[i]
         name := o.GetName()
-        rows = append(rows, navui.NewSimpleItem(name, []string{name}, sty))
+        switch gvr.Resource {
+        case "pods":
+            nm := name
+            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildPodContainersFolder("", nm), nil }, sty))
+        case "configmaps":
+            nm := name
+            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildConfigMapKeysFolder("", nm), nil }, sty))
+        case "secrets":
+            nm := name
+            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildSecretKeysFolder("", nm), nil }, sty))
+        default:
+            rows = append(rows, navui.NewSimpleItem(name, []string{name}, sty))
+        }
     }
     return navui.NewObjectsFolder(a.currentCtx.Name, gvr, "", rows)
 }
