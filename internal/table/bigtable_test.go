@@ -2,6 +2,7 @@ package table
 
 import (
     "fmt"
+    "strings"
     "testing"
     table "github.com/charmbracelet/bubbles/v2/table"
     "github.com/charmbracelet/lipgloss/v2"
@@ -46,6 +47,11 @@ func TestScrollModeHorizontalPan(t *testing.T) {
     bt.vp.MoveRight(10)
     if bt.vp.HorizontalScrollPercent() <= 0 {
         t.Fatalf("expected horizontal scroll percent > 0, got %f", bt.vp.HorizontalScrollPercent())
+    }
+    // Ensure view is free from replacement runes while panned
+    s := bt.View()
+    if strings.ContainsRune(s, '\uFFFD') {
+        t.Fatalf("view contains replacement rune while panned: %q", s)
     }
 }
 

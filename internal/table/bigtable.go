@@ -252,7 +252,9 @@ func (m *BigTable) rebuildWindow() {
         for i := range cols { target[i] = cols[i].Width }
         rows = renderRowsFromSlice(truncateRows(m.window, target), m.selected)
     } else {
-        rows = renderRowsFromSlice(m.window, m.selected)
+        // In scroll mode, avoid per-cell ANSI styling to prevent viewport
+        // horizontal slicing from breaking escape sequences.
+        rows = renderPlainRows(m.window)
     }
     m.tbl.SetRows(rows)
     m.tbl.SetCursor(m.cursor - m.top)
@@ -380,6 +382,20 @@ func renderRowsFromSlice(src []Row, selected map[string]struct{}) []table.Row {
             }
             rendered[c] = s
         }
+        out[r] = table.Row(rendered)
+    }
+    return out
+}
+
+// renderPlainRows renders rows without applying per-cell styles. This is used
+// in scroll mode to avoid ANSI sequences being horizontally sliced by the
+// viewport, which can introduce replacement runes.
+func renderPlainRows(src []Row) []table.Row {
+    out := make([]table.Row, len(src))
+    for r := range src {
+        _, cells, _, _ := src[r].Columns()
+        rendered := make([]string, len(cells))
+        copy(rendered, cells)
         out[r] = table.Row(rendered)
     }
     return out
