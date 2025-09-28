@@ -1237,14 +1237,17 @@ func (a *App) buildContextsFolder() navui.Folder {
 // For now, it includes a single "contexts" row that opens the contexts listing.
 // Cluster-scoped resources will be added incrementally.
 func (a *App) buildRootFolder() navui.Folder {
-    sty := navui.GreenStyle()
-    rows := make([]table.Row, 0, 8)
-    // Row: contexts (enterable). Panel prefixes '/' for enterable items; keep cell plain.
+    nameSty := navui.GreenStyle()
+    dimSty := navui.DimStyle()
+    rows := make([]table.Row, 0, 16)
+    // Columns: Name, Group (dim), Count
+    cols := []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}
+    // Row: contexts (enterable)
     enterContexts := func() (navui.Folder, error) { return a.buildContextsFolder(), nil }
-    rows = append(rows, navui.NewEnterableItem("contexts", []string{"contexts", ""}, enterContexts, sty))
-    // Row: namespaces (enterable) with count
+    rows = append(rows, navui.NewEnterableItemStyled("contexts", []string{"contexts", "", ""}, []*lipgloss.Style{nameSty, dimSty, nil}, enterContexts))
+    // Row: namespaces (enterable) with count and group
     nsCount := a.countClusterScoped(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
-    rows = append(rows, navui.NewEnterableItem("namespaces", []string{"namespaces", fmt.Sprintf("%d", nsCount)}, func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }, sty))
+    rows = append(rows, navui.NewEnterableItemStyled("namespaces", []string{"namespaces", "core/v1", fmt.Sprintf("%d", nsCount)}, []*lipgloss.Style{nameSty, dimSty, nil}, func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }))
     // Cluster-scoped resources with counts (excluding namespaces)
     if infos, err := a.resMgr.GetResourceInfos(); err == nil {
         for _, info := range infos {
@@ -1255,11 +1258,17 @@ func (a *App) buildRootFolder() navui.Folder {
             for _, v := range info.Verbs { if v == "list" { hasList = true; break } }
             if !hasList { continue }
             c := a.countClusterScoped(info.GVK)
-            rows = append(rows, navui.NewSimpleItem(info.Resource, []string{info.Resource, fmt.Sprintf("%d", c)}, sty))
+            gv := info.GVK.Group
+            if gv == "" { gv = "core" }
+            gv = gv + "/" + info.GVK.Version
+            gvr, err := a.resMgr.GVKToGVR(info.GVK)
+            if err != nil { continue }
+            g := gvr
+            enter := func() (navui.Folder, error) { return a.buildClusterObjectsFolder(g), nil }
+            rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{info.Resource, gv, fmt.Sprintf("%d", c)}, []*lipgloss.Style{nameSty, dimSty, nil}, enter))
         }
     }
-    // Columns: leading space in Name for header alignment, plus Count
-    return navui.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}, {Title: "Count"}}, rows)
+    return navui.NewSliceFolder("/", "root", cols, rows)
 }
 
 // countClusterScoped returns the number of cluster-scoped objects for a given GVK.
@@ -1285,6 +1294,21 @@ func (a *App) handleFolderNav(back bool, next navui.Folder) {
     a.leftPanel.SetFolder(cur, hasBack)
     a.rightPanel.SetFolder(cur, hasBack)
 }
+
+// buildClusterObjectsFolder lists cluster-scoped objects for a given GVR.
+func (a *App) buildClusterObjectsFolder(gvr schema.GroupVersionResource) navui.Folder {
+    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
+    if err != nil { return navui.NewObjectsFolder(a.currentCtx.Name, gvr, "", nil) }
+    rows := make([]table.Row, 0, len(lst.Items))
+    sty := navui.GreenStyle()
+    for i := range lst.Items {
+        o := &lst.Items[i]
+        name := o.GetName()
+        rows = append(rows, navui.NewSimpleItem(name, []string{name}, sty))
+    }
+    return navui.NewObjectsFolder(a.currentCtx.Name, gvr, "", rows)
+}
+
 
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.
 func (a *App) selectCurrentContext() *kubeconfig.Context {
