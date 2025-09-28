@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	nav "github.com/sttts/kc/internal/navigation"
 	viewpkg "github.com/sttts/kc/internal/ui/view"
 	"github.com/sttts/kc/pkg/resources"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -47,6 +48,10 @@ type Panel struct {
 	viewConfig         *ViewConfig
 	// Optional providers
 	contextCountProvider func() int // returns number of contexts, or negative if unknown
+	// Optional: folder-backed rendering (preview path using internal/navigation)
+	useFolder     bool
+	folder        nav.Folder
+	folderHasBack bool
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -99,16 +104,54 @@ const (
 
 // NewPanel creates a new panel
 func NewPanel(title string) *Panel {
-	return &Panel{
-		title:            title,
-		items:            make([]Item, 0),
-		selected:         0,
-		scrollTop:        0,
-		currentPath:      "/",
-		pathHistory:      make([]string, 0),
-		positionMemory:   make(map[string]PositionInfo),
-		tableViewEnabled: true,
-	}
+    return &Panel{
+        title:            title,
+        items:            make([]Item, 0),
+        selected:         0,
+        scrollTop:        0,
+        currentPath:      "/",
+        pathHistory:      make([]string, 0),
+        positionMemory:   make(map[string]PositionInfo),
+        tableViewEnabled: true,
+    }
+}
+
+// SetFolder enables folder-backed rendering using the new navigation package.
+// This does not alter legacy behaviors beyond rendering headers/rows from the
+// folder for preview purposes. Selection/enter logic remains unchanged.
+func (p *Panel) SetFolder(f nav.Folder, hasBack bool) {
+    p.folder = f
+    p.folderHasBack = hasBack
+}
+
+// UseFolder toggles folder-backed rendering.
+func (p *Panel) UseFolder(on bool) { p.useFolder = on }
+
+// ClearFolder disables folder-backed rendering and clears current folder.
+func (p *Panel) ClearFolder() { p.folder = nil; p.folderHasBack = false; p.useFolder = false }
+
+// syncFromFolder rebuilds table headers/rows and a minimal items slice from
+// the current folder so existing rendering paths can display it.
+func (p *Panel) syncFromFolder() {
+    if !p.useFolder || p.folder == nil {
+        return
+    }
+    cols := nav.ColumnsToTitles(p.folder.Columns())
+    rows := p.folder.Lines(0, p.folder.Len())
+    cells := nav.RowsToCells(rows)
+    if p.folderHasBack {
+        cells = append([][]string{{".."}}, cells...)
+    }
+    p.tableHeaders = cols
+    p.tableRows = cells
+    // Build a minimal items slice aligned to rows so selection works.
+    items := make([]Item, len(cells))
+    for i := range cells {
+        name := ""
+        if len(cells[i]) > 0 { name = cells[i][0] }
+        items[i] = Item{Name: name, Type: ItemTypeResource}
+    }
+    p.items = items
 }
 
 // SetNamespacesDataSource wires a namespaces data source for live listings.
@@ -344,13 +387,17 @@ func (p *Panel) renderContent() string {
 
 // renderContentFocused renders the panel content with focus state
 func (p *Panel) renderContentFocused(isFocused bool) string {
-	if len(p.items) == 0 {
-		return PanelContentStyle.
-			Width(p.width).
-			Height(p.height).
-			Align(lipgloss.Center).
-			Render("No items")
-	}
+    // If a folder is set for preview, sync headers/rows/items from it first.
+    if p.useFolder && p.folder != nil {
+        p.syncFromFolder()
+    }
+    if len(p.items) == 0 {
+        return PanelContentStyle.
+            Width(p.width).
+            Height(p.height).
+            Align(lipgloss.Center).
+            Render("No items")
+    }
 
 	// Calculate visible items
 	visibleHeight := p.height - 1
