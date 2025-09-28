@@ -3,6 +3,7 @@ package main
 import (
     "fmt"
     "math/rand"
+    "os"
     "strings"
     "time"
 
@@ -450,7 +451,7 @@ func (m *BigTable) repositionOnDataChange() {
 
 type app struct{ bt BigTable }
 
-func newApp() app {
+func newApp(provider string) app {
     cols := make([]table.Column, 20)
     for c := 0; c < 20; c++ { cols[c] = table.Column{Title: fmt.Sprintf("Col%02d", c+1), Width: 18} }
     // Build a demo List provider with ASCII cells and per-cell styles.
@@ -487,8 +488,14 @@ func newApp() app {
         }
         rows = append(rows, SimpleRow{ ID: fmt.Sprintf("id-%04d", i+1), Cells: cells, Styles: styles })
     }
-    provider := NewSliceList(rows)
-    bt := NewBigTable(cols, provider, 100, 28)
+    var list List
+    switch strings.ToLower(provider) {
+    case "linked", "ll", "dll":
+        list = NewLinkedList(rows)
+    default:
+        list = NewSliceList(rows)
+    }
+    bt := NewBigTable(cols, list, 100, 28)
     return app{bt: bt}
 }
 
@@ -554,10 +561,12 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a app) View() string { return a.bt.View() }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-	if _, err := tea.NewProgram(newApp(), tea.WithAltScreen()).Run(); err != nil {
-		fmt.Println("error:", err)
-	}
+    rand.Seed(time.Now().UnixNano())
+    provider := ""
+    if len(os.Args) > 1 { provider = os.Args[1] }
+    if _, err := tea.NewProgram(newApp(provider), tea.WithAltScreen()).Run(); err != nil {
+        fmt.Println("error:", err)
+    }
 }
 
 // --- styles & demo data ---
