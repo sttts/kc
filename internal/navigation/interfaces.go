@@ -62,3 +62,9 @@ func DimStyle() *lipgloss.Style {
     s := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#7D7D7D"))
     return &s
 }
+
+// WhiteStyle returns a white foreground style for primary name columns.
+func WhiteStyle() *lipgloss.Style {
+    s := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+    return &s
+}

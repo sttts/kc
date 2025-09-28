@@ -74,6 +74,22 @@
 - Avoid blocking the UI on network; async loads with placeholders.
 - Cache informer data per kubeconfig/context/namespace; reuse when possible.
 
+## Table Component
+- Modes: two horizontal modes
+  - Fit mode: truncate ASCII cell text to fit panel width, then apply style.
+  - Left/Right mode: no pre-truncate; allow horizontal scroll with arrow keys.
+- Scale: support tens of thousands of rows via windowing/virtualization; render only visible rows.
+- Cells: base strings are ASCII only; every cell is rendered through a style (lipgloss) applied to the full string.
+- Model interface (no SetCell): provide row/list providers with stable IDs
+  - `Row`: `Columns() (id string, cells []string, styles []*lipgloss.Style, exists bool)`
+  - `List`: `Lines(top, num int) []Row`, `Above(rowID string, num int) []Row`, `Below(rowID string, num int) []Row`
+  - Implementations may stream/live-update; IDs keep cursor stable across changes.
+- Selector line: visible when focused; moves only when previously selected row disappears, then clamps to next (or previous if no next).
+- Dynamic content: optimized for frequent updates; diff minimally and preserve scroll/cursor.
+- Selection: toggle with `Ctrl+T` or `Insert`; selected rows render with selection style.
+- Reusability: component is self-contained under `internal/table` with a clear public API.
+- Styling: highly customizable borders and header (including none and vertical column separators) using Bubble Tea v2 + lipgloss; sensible defaults fully overridable.
+
 ## Viewer Search
 - Start a search with `F7`, `Ctrl+F`, or `/`; `F2` finds next.
 - Highlight all matches and scroll current match into view.

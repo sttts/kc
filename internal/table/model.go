@@ -4,6 +4,12 @@ import (
     "github.com/charmbracelet/lipgloss/v2"
 )
 
+// Column describes a visible column with a title and desired width hint.
+type Column struct {
+    Title string
+    Width int
+}
+
 // Row represents a single logical row in the table.
 // It must return a stable ID, ASCII cell strings, and a style for each cell.
 type Row interface {
