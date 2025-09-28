@@ -22,8 +22,18 @@ func NewEnterableItem(id string, cells []string, enter func() (Folder, error), s
     return &EnterableItem{Row: table.SimpleRow{ID: id, Cells: cells, Styles: styles}, enter: enter}
 }
 
+// NewEnterableItemStyled constructs an EnterableItem with per-cell styles.
+func NewEnterableItemStyled(id string, cells []string, styles []*lipgloss.Style, enter func() (Folder, error)) *EnterableItem {
+    // ensure styles slice length matches cells
+    ss := make([]*lipgloss.Style, len(cells))
+    copy(ss, styles)
+    for i := range ss {
+        if ss[i] == nil { s := lipgloss.NewStyle(); ss[i] = &s }
+    }
+    return &EnterableItem{Row: table.SimpleRow{ID: id, Cells: cells, Styles: ss}, enter: enter}
+}
+
 func (e *EnterableItem) Columns() (string, []string, []*lipgloss.Style, bool) { return e.Row.Columns() }
 func (e *EnterableItem) Details() string { return e.details }
 func (e *EnterableItem) WithDetails(d string) *EnterableItem { e.details = d; return e }
 func (e *EnterableItem) Enter() (Folder, error) { if e.enter == nil { return nil, nil }; return e.enter() }
-

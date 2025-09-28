@@ -57,3 +57,8 @@ func GreenStyle() *lipgloss.Style {
     return &s
 }
 
+// DimStyle returns a faint gray style suitable for secondary columns (e.g., Group).
+func DimStyle() *lipgloss.Style {
+    s := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#7D7D7D"))
+    return &s
+}
