@@ -1207,7 +1207,7 @@ func (a *App) buildNamespacesFolder() navui.Folder {
     lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
     if err != nil { return navui.NewNamespacesFolder(a.currentCtx.Name, nil) }
     rows := make([]table.Row, 0, len(lst.Items))
-    sty := navui.GreenStyle()
+    sty := navui.WhiteStyle()
     for i := range lst.Items {
         ns := &lst.Items[i]
         name := ns.GetName()
@@ -1222,12 +1222,16 @@ func (a *App) buildNamespacesFolder() navui.Folder {
 func (a *App) buildContextsFolder() navui.Folder {
     cs := a.kubeMgr.GetContexts()
     rows := make([]table.Row, 0, len(cs))
-    sty := navui.GreenStyle()
+    base := navui.WhiteStyle()
     for _, c := range cs {
         name := c.Name
         // Entering a context opens the namespaces folder for that context.
         enter := func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }
-        it := navui.NewEnterableItem(name, []string{name}, enter, sty)
+        // Bold the default context name using ANSI so legacy renderer shows it.
+        cell := name
+        if a.currentCtx != nil && a.currentCtx.Name == name { cell = "\033[1m" + name + "\033[22m" }
+        st := *base
+        it := navui.NewEnterableItemStyled(name, []string{cell}, []*lipgloss.Style{&st}, enter)
         rows = append(rows, it)
     }
     return navui.NewContextsFolder(rows)
@@ -1237,17 +1241,19 @@ func (a *App) buildContextsFolder() navui.Folder {
 // For now, it includes a single "contexts" row that opens the contexts listing.
 // Cluster-scoped resources will be added incrementally.
 func (a *App) buildRootFolder() navui.Folder {
-    nameSty := navui.GreenStyle()
+    nameSty := navui.WhiteStyle()
     dimSty := navui.DimStyle()
     rows := make([]table.Row, 0, 16)
     // Columns: Name, Group (dim), Count
     cols := []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}
-    // Row: contexts (enterable)
+    // Row: contexts (enterable) with count of contexts
     enterContexts := func() (navui.Folder, error) { return a.buildContextsFolder(), nil }
-    rows = append(rows, navui.NewEnterableItemStyled("contexts", []string{"contexts", "", ""}, []*lipgloss.Style{nameSty, dimSty, nil}, enterContexts))
-    // Row: namespaces (enterable) with count and group
+    ctxCount := len(a.kubeMgr.GetContexts())
+    rows = append(rows, navui.NewEnterableItemStyled("contexts", []string{"contexts", "", fmt.Sprintf("%d", ctxCount)}, []*lipgloss.Style{nameSty, dimSty, nil}, enterContexts))
+    // Row: namespaces (default context) with count and group
     nsCount := a.countClusterScoped(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
     rows = append(rows, navui.NewEnterableItemStyled("namespaces", []string{"namespaces", "core/v1", fmt.Sprintf("%d", nsCount)}, []*lipgloss.Style{nameSty, dimSty, nil}, func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }))
+    // Namespaces are accessible under contexts; not listed at root.
     // Cluster-scoped resources with counts (excluding namespaces)
     if infos, err := a.resMgr.GetResourceInfos(); err == nil {
         for _, info := range infos {
@@ -1293,6 +1299,9 @@ func (a *App) handleFolderNav(back bool, next navui.Folder) {
     hasBack := len(a._navStack) > 1
     a.leftPanel.SetFolder(cur, hasBack)
     a.rightPanel.SetFolder(cur, hasBack)
+    // Default focus to back item on new folder to allow quick back navigation.
+    a.leftPanel.ResetSelectionTop()
+    a.rightPanel.ResetSelectionTop()
 }
 
 // buildClusterObjectsFolder lists cluster-scoped objects for a given GVR.

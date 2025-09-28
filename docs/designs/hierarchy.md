@@ -8,13 +8,14 @@ The UI navigates a tree of locations derived from Kubernetes discovery and live 
 
 - Root
   - `contexts` (switch context; special row)
-  - `namespaces` (cluster namespaces)
+  - `namespaces` (default context)
   - `<cluster‑scoped resource>` (e.g., nodes, storageclasses, …)
-- Namespaced
-  - `/namespaces/<ns>` → resource groups within the namespace
-  - `/namespaces/<ns>/<resource>` → objects of that resource
-  - `/namespaces/<ns>/pods/<pod>` → folders for containers + initContainers
-  - `/namespaces/<ns>/(configmaps|secrets)/<name>` → data keys as file‑like entries
+- Context‑scoped
+  - `/contexts/<ctx>/namespaces` → all namespaces in the selected context
+  - `/contexts/<ctx>/namespaces/<ns>` → resource groups within the namespace
+  - `/contexts/<ctx>/namespaces/<ns>/<resource>` → objects of that resource
+  - `/contexts/<ctx>/namespaces/<ns>/pods/<pod>` → folders for containers + initContainers
+  - `/contexts/<ctx>/namespaces/<ns>/(configmaps|secrets)/<name>` → data keys as file‑like entries
 
 Every location is backed by exact identities (GVR), never heuristic breadcrumb parsing. GVK is presentation-only and used for display or creation workflows.
 
