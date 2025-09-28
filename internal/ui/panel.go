@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	viewpkg "github.com/sttts/kc/internal/ui/view"
 	"github.com/sttts/kc/pkg/resources"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -64,7 +65,8 @@ type Item struct {
 	GVK       string // deprecated display
 	TypedGVK  schema.GroupVersionKind
 	TypedGVR  schema.GroupVersionResource
-	Enterable bool // Whether Enter is meaningful (folder-like)
+	Enterable bool                 // Whether Enter is meaningful (folder-like)
+	Viewer    viewpkg.ViewProvider // Optional: F3 view provider for this item
 }
 
 // GetFooterInfo returns the display string for this item in the footer
@@ -825,14 +827,14 @@ func (p *Panel) adjustScroll() {
 
 // Selection methods
 func (p *Panel) toggleSelection() {
-    if p.selected < len(p.items) {
-        p.items[p.selected].Selected = !p.items[p.selected].Selected
-        // Move cursor down after toggling, staying in bounds and keeping visible
-        if p.selected < len(p.items)-1 {
-            p.selected++
-            p.adjustScroll()
-        }
-    }
+	if p.selected < len(p.items) {
+		p.items[p.selected].Selected = !p.items[p.selected].Selected
+		// Move cursor down after toggling, staying in bounds and keeping visible
+		if p.selected < len(p.items)-1 {
+			p.selected++
+			p.adjustScroll()
+		}
+	}
 }
 
 func (p *Panel) selectAll() {
@@ -1304,7 +1306,7 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 										for _, c := range arr {
 											if m, ok := c.(map[string]interface{}); ok {
 												if n, ok := m["name"].(string); ok {
-													p.items = append(p.items, Item{Name: n, Type: ItemTypeDirectory, Enterable: true})
+													p.items = append(p.items, Item{Name: n, Type: ItemTypeDirectory, Enterable: true, Viewer: &viewpkg.PodContainerView{Namespace: ns, Pod: name, Container: n}})
 												}
 											}
 										}
@@ -1314,7 +1316,7 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 										for _, c := range arr {
 											if m, ok := c.(map[string]interface{}); ok {
 												if n, ok := m["name"].(string); ok {
-													p.items = append(p.items, Item{Name: n, Type: ItemTypeDirectory, Enterable: true})
+													p.items = append(p.items, Item{Name: n, Type: ItemTypeDirectory, Enterable: true, Viewer: &viewpkg.PodContainerView{Namespace: ns, Pod: name, Container: n}})
 												}
 											}
 										}
@@ -1344,12 +1346,18 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 										}
 										sort.Strings(keys)
 										for _, k := range keys {
-											p.items = append(p.items, Item{Name: k, Type: ItemTypeFile})
+											p.items = append(p.items, Item{Name: k, Type: ItemTypeFile, Viewer: &viewpkg.ConfigKeyView{Namespace: ns, Name: name, Key: k, IsSecret: res == "secrets"}})
 										}
 									}
 								}
 							}
 						}
+					}
+					// Additional container sub-view: /namespaces/<ns>/pods/<pod>/<container>
+					if len(parts) == 6 && res == "pods" {
+						// Inside a container folder: show a logs entry
+						p.items = append(p.items, Item{Name: "logs", Type: ItemTypeFile})
+						return nil
 					}
 					// Done with object view
 					return nil
