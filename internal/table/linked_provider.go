@@ -1,6 +1,7 @@
 package table
 
-// Doubly linked list data source implementing List.
+// LinkedList is a doubly-linked list List implementation. It offers efficient
+// inserts/removals by pointer and linear-time indexing.
 
 type dnode struct {
     row  Row
@@ -15,6 +16,7 @@ type LinkedList struct {
     byID  map[string]*dnode
 }
 
+// NewLinkedList builds a LinkedList from rows in order.
 func NewLinkedList(rows []Row) *LinkedList {
     ll := &LinkedList{byID: make(map[string]*dnode, len(rows))}
     for _, r := range rows { ll.appendOne(r) }
@@ -37,8 +39,10 @@ func (l *LinkedList) appendOne(r Row) {
 
 // Mutations (not part of List interface)
 
+// Append adds rows to the end of the list.
 func (l *LinkedList) Append(rows ...Row) { for _, r := range rows { l.appendOne(r) } }
 
+// Prepend inserts rows at the beginning of the list.
 func (l *LinkedList) Prepend(rows ...Row) {
     for i := len(rows) - 1; i >= 0; i-- { // keep order
         r := rows[i]
@@ -56,6 +60,8 @@ func (l *LinkedList) Prepend(rows ...Row) {
     }
 }
 
+// InsertBeforeID inserts rows before the node with anchorID. Returns false if
+// the anchor is not found.
 func (l *LinkedList) InsertBeforeID(anchorID string, rows ...Row) bool {
     at, ok := l.byID[anchorID]
     if !ok { return false }
@@ -73,6 +79,8 @@ func (l *LinkedList) InsertBeforeID(anchorID string, rows ...Row) bool {
     return true
 }
 
+// InsertAfterID inserts rows after the node with anchorID. Returns false if
+// the anchor is not found.
 func (l *LinkedList) InsertAfterID(anchorID string, rows ...Row) bool {
     at, ok := l.byID[anchorID]
     if !ok { return false }
@@ -90,6 +98,7 @@ func (l *LinkedList) InsertAfterID(anchorID string, rows ...Row) bool {
     return true
 }
 
+// RemoveIDs removes all rows with the provided IDs. Returns count removed.
 func (l *LinkedList) RemoveIDs(ids ...string) int {
     removed := 0
     for _, id := range ids {
@@ -105,6 +114,7 @@ func (l *LinkedList) RemoveIDs(ids ...string) int {
 }
 
 // Helpers
+// nodeAt returns the node at index, or nil if out of range.
 func (l *LinkedList) nodeAt(idx int) *dnode {
     if idx < 0 || idx >= l.size { return nil }
     cur := l.head
@@ -114,8 +124,10 @@ func (l *LinkedList) nodeAt(idx int) *dnode {
 
 // List interface implementation
 
+// Len returns the number of rows in the list.
 func (l *LinkedList) Len() int { return l.size }
 
+// Lines returns a slice of rows starting at top with length up to num.
 func (l *LinkedList) Lines(top, num int) []Row {
     if num <= 0 || top >= l.size { return nil }
     if top < 0 { top = 0 }
@@ -125,6 +137,7 @@ func (l *LinkedList) Lines(top, num int) []Row {
     return out
 }
 
+// Above returns up to num rows strictly above the row with rowID.
 func (l *LinkedList) Above(rowID string, num int) []Row {
     n, ok := l.byID[rowID]
     if !ok || num <= 0 { return nil }
@@ -137,6 +150,7 @@ func (l *LinkedList) Above(rowID string, num int) []Row {
     return out
 }
 
+// Below returns up to num rows strictly below the row with rowID.
 func (l *LinkedList) Below(rowID string, num int) []Row {
     n, ok := l.byID[rowID]
     if !ok || num <= 0 { return nil }
@@ -146,6 +160,7 @@ func (l *LinkedList) Below(rowID string, num int) []Row {
     return out
 }
 
+// Find returns the index and row with the given ID, if present.
 func (l *LinkedList) Find(rowID string) (int, Row, bool) {
     n, ok := l.byID[rowID]
     if !ok { return -1, nil, false }
