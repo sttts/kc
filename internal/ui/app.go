@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/signal"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
@@ -689,6 +691,29 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 			}
 		}
 	}
+	// If item provides its own view, delegate to it
+	if item != nil && item.Viewer != nil {
+		titleName, body, err := item.Viewer.BuildView(a)
+		if err != nil {
+			return nil
+		}
+		theme := "dracula"
+		if a.cfg != nil && a.cfg.Viewer.Theme != "" {
+			theme = a.cfg.Viewer.Theme
+		}
+		viewer := NewYAMLViewer(titleName, body, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
+		viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
+		title := path
+		if !strings.HasSuffix(path, "/"+titleName) {
+			title = path + "/" + titleName
+		}
+		modal := NewModal(title, viewer)
+		modal.SetDimensions(a.width, a.height)
+		modal.SetCloseOnSingleEsc(false)
+		a.modalManager.Register("yaml_viewer", modal)
+		a.modalManager.Show("yaml_viewer")
+		return nil
+	}
 	// Fetch object via GenericDataSource
 	ds := a.genericFactory(gvk)
 	obj, err := ds.Get(ns, name)
@@ -697,13 +722,93 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 	}
 	// Strip managedFields
 	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-	// Marshal to YAML
-	yb, _ := yaml.Marshal(obj.Object)
+	// Determine sub-view context (container specs and data keys)
+	parts := strings.Split(path, "/")
+	content := interface{}(obj.Object)
+	// pods: container spec when selecting a container folder
+	if len(parts) >= 4 && parts[3] == "pods" {
+		if len(parts) == 5 && item != nil && item.Type == ItemTypeDirectory { // container item under a pod
+			cname := item.Name
+			found := false
+			if arr, foundCont, _ := unstructured.NestedSlice(obj.Object, "spec", "containers"); foundCont {
+				for _, c := range arr {
+					if m, ok := c.(map[string]interface{}); ok {
+						if n, _ := m["name"].(string); n == cname {
+							content = m
+							found = true
+							break
+						}
+					}
+				}
+			}
+			if !found {
+				if arr, foundInit, _ := unstructured.NestedSlice(obj.Object, "spec", "initContainers"); foundInit {
+					for _, c := range arr {
+						if m, ok := c.(map[string]interface{}); ok {
+							if n, _ := m["name"].(string); n == cname {
+								content = m
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	// configmaps | secrets: data value when selecting a key
+	if len(parts) >= 4 && (parts[3] == "configmaps" || parts[3] == "secrets") && len(parts) == 5 && item != nil && item.Type == ItemTypeFile {
+		key := item.Name
+		if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found {
+			if val, ok := data[key]; ok {
+				content = map[string]interface{}{"key": key, "value": val}
+			}
+		}
+	}
+	// Marshal to YAML unless we computed a rawText value (key view below)
+	var body string
+	// configmaps | secrets: plain value or base64
+	if len(parts) >= 4 && (parts[3] == "configmaps" || parts[3] == "secrets") && len(parts) == 5 && item != nil && item.Type == ItemTypeFile {
+		key := item.Name
+		if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found {
+			if val, ok := data[key]; ok {
+				switch v := val.(type) {
+				case string:
+					if parts[3] == "secrets" {
+						if b, err := base64.StdEncoding.DecodeString(v); err == nil {
+							if isProbablyText(b) {
+								body = string(b)
+							} else {
+								body = v
+							}
+						} else {
+							body = v
+						}
+					} else {
+						body = v
+					}
+				default:
+					yb, _ := yaml.Marshal(v)
+					body = string(yb)
+				}
+			}
+		}
+	}
+	if body == "" {
+		yb, _ := yaml.Marshal(content)
+		body = string(yb)
+	}
 	theme := "dracula"
 	if a.cfg != nil && a.cfg.Viewer.Theme != "" {
 		theme = a.cfg.Viewer.Theme
 	}
-	viewer := NewYAMLViewer(name, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
+	titleName := name
+	if item != nil && item.Type == ItemTypeDirectory && len(parts) >= 4 && parts[3] == "pods" {
+		titleName = name + "/" + item.Name
+	}
+	if item != nil && item.Type == ItemTypeFile && (len(parts) >= 4 && (parts[3] == "configmaps" || parts[3] == "secrets")) {
+		titleName = name + ":" + item.Name
+	}
+	viewer := NewYAMLViewer(titleName, body, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
 		// Close the topmost modal (the YAML viewer itself)
 		a.modalManager.Hide()
 		return nil
@@ -1113,4 +1218,43 @@ func sameFilepath(a, b string) bool {
 		return a == b
 	}
 	return ap == bp
+}
+
+// Implement view.Context to support modular viewers.
+func (a *App) ResourceToGVK(resource string) (schema.GroupVersionKind, error) {
+	return a.resMgr.ResourceToGVK(resource)
+}
+
+func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]interface{}, error) {
+	ds := a.genericFactory(gvk)
+	if ds == nil {
+		return nil, fmt.Errorf("no datasource for %s", gvk.String())
+	}
+	obj, err := ds.Get(namespace, name)
+	if err != nil {
+		return nil, err
+	}
+	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+	return obj.Object, nil
+}
+
+// isProbablyText returns true if the byte slice looks like readable UTF-8
+// with a low proportion of control bytes.
+func isProbablyText(b []byte) bool {
+	if len(b) == 0 {
+		return true
+	}
+	if !utf8.Valid(b) {
+		return false
+	}
+	ctrl := 0
+	for _, r := range string(b) {
+		if r == '\n' || r == '\r' || r == '\t' {
+			continue
+		}
+		if r < 0x20 {
+			ctrl++
+		}
+	}
+	return ctrl*10 < len(b)
 }
