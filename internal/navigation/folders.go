@@ -36,13 +36,13 @@ func (f *SliceFolder) Find(rowID string) (int, table.Row, bool) { return f.list.
 
 // NewContextsFolder lists available contexts. Key is simply "contexts".
 func NewContextsFolder(rows []table.Row) *SliceFolder {
-    return NewSliceFolder("contexts", "contexts", []table.Column{{Title: "Name"}}, rows)
+    return NewSliceFolder("contexts", "contexts", []table.Column{{Title: " Name"}}, rows)
 }
 
 // NewNamespacesFolder lists namespaces for a given context.
 func NewNamespacesFolder(contextName string, rows []table.Row) *SliceFolder {
     key := contextName + "/namespaces"
-    return NewSliceFolder("namespaces", key, []table.Column{{Title: "Name"}}, rows)
+    return NewSliceFolder("namespaces", key, []table.Column{{Title: " Name"}}, rows)
 }
 
 // NewGroupFolder lists objects for a GVR (namespaced or cluster-scoped).
@@ -50,7 +50,7 @@ func NewGroupFolder(contextName string, gvr schema.GroupVersionResource, namespa
     key := contextName + "/" + gvr.String()
     if namespace != "" { key = contextName + "/namespaces/" + namespace + "/" + gvr.Resource }
     // Typical columns: Name, Group (dim), Count (right-aligned) – callers choose.
-    return NewSliceFolder(title, key, []table.Column{{Title: "Name"}}, rows)
+    return NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, rows)
 }
 
 // NewObjectsFolder lists concrete objects of the given GVR in a namespace.
@@ -58,6 +58,5 @@ func NewObjectsFolder(contextName string, gvr schema.GroupVersionResource, names
     title := gvr.Resource
     key := contextName + "/" + gvr.String()
     if namespace != "" { key = contextName + "/namespaces/" + namespace + "/" + gvr.Resource }
-    return NewSliceFolder(title, key, []table.Column{{Title: "Name"}}, rows)
+    return NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, rows)
 }
-
