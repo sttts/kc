@@ -1193,7 +1193,7 @@ func (a *App) initData() error {
         a.leftPanel.UseFolder(true)
         a.rightPanel.UseFolder(true)
         // Wire folder navigation handlers to manage back/forward stack and update panels.
-        handler := func(back bool, next navui.Folder) { a.handleFolderNav(back, next) }
+        handler := func(back bool, selID string, next navui.Folder) { a.handleFolderNav(back, selID, next) }
         a.leftPanel.SetFolderNavHandler(handler)
         a.rightPanel.SetFolderNavHandler(handler)
     }
@@ -1338,22 +1338,35 @@ func (a *App) countClusterScoped(gvk schema.GroupVersionKind) int {
 }
 
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
-func (a *App) handleFolderNav(back bool, next navui.Folder) {
+func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
     if a.navigator == nil {
         a.navigator = navui.NewNavigator(a.buildRootFolder())
     }
     if back {
         a.navigator.Back()
     } else if next != nil {
+        // Remember current selection before entering next
+        a.navigator.SetSelectionID(selID)
         a.navigator.Push(next)
     }
     cur := a.navigator.Current()
     hasBack := a.navigator.HasBack()
     a.leftPanel.SetFolder(cur, hasBack)
     a.rightPanel.SetFolder(cur, hasBack)
-    // Default focus to back item on new folder to allow quick back navigation.
-    a.leftPanel.ResetSelectionTop()
-    a.rightPanel.ResetSelectionTop()
+    // Restore selection when going back; otherwise default focus to top
+    if back {
+        id := a.navigator.CurrentSelectionID()
+        if id != "" {
+            a.leftPanel.SelectByRowID(id)
+            a.rightPanel.SelectByRowID(id)
+        } else {
+            a.leftPanel.ResetSelectionTop()
+            a.rightPanel.ResetSelectionTop()
+        }
+    } else {
+        a.leftPanel.ResetSelectionTop()
+        a.rightPanel.ResetSelectionTop()
+    }
 }
 
 // buildClusterObjectsFolder lists cluster-scoped objects for a given GVR.

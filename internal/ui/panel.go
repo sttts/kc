@@ -50,9 +50,9 @@ type Panel struct {
 	contextCountProvider func() int // returns number of contexts, or negative if unknown
 	// Optional: folder-backed rendering (preview path using internal/navigation)
 	useFolder     bool
-	folder        nav.Folder
-	folderHasBack bool
-	folderHandler func(back bool, next nav.Folder)
+    folder        nav.Folder
+    folderHasBack bool
+    folderHandler func(back bool, selID string, next nav.Folder)
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -174,10 +174,31 @@ func (p *Panel) syncFromFolder() {
     p.items = items
 }
 
+// SelectByRowID moves the selection to the row with the given ID if present.
+// It matches against the folder's row IDs and adjusts for the synthetic back row.
+func (p *Panel) SelectByRowID(id string) {
+    if !p.useFolder || p.folder == nil || id == "" { p.ResetSelectionTop(); return }
+    // Ensure items reflect current folder
+    p.syncFromFolder()
+    // Find the absolute row index in the folder
+    rows := p.folder.Lines(0, p.folder.Len())
+    idx := -1
+    for i := range rows { rid, _, _, _ := rows[i].Columns(); if rid == id { idx = i; break } }
+    // Fallback
+    if idx < 0 { p.ResetSelectionTop(); return }
+    // Adjust for back row
+    sel := idx
+    if p.folderHasBack || (p.folder != nil && p.folder.Title() != "/") { sel = idx + 1 }
+    if sel < 0 { sel = 0 }
+    if sel >= len(p.items) { sel = len(p.items) - 1 }
+    p.selected = sel
+    p.adjustScroll()
+}
+
 // SetFolderNavHandler installs a callback invoked when Enter is pressed while
 // folder-backed rendering is active. The callback receives whether a back
 // navigation was requested and, if not back, the next Folder (may be nil).
-func (p *Panel) SetFolderNavHandler(h func(back bool, next nav.Folder)) { p.folderHandler = h }
+func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next nav.Folder)) { p.folderHandler = h }
 
 // SetNamespacesDataSource wires a namespaces data source for live listings.
 func (p *Panel) SetNamespacesDataSource(ds *NamespacesDataSource) {
@@ -940,7 +961,7 @@ func (p *Panel) enterItem() tea.Cmd {
             if p.selected < len(p.items) {
                 cur := p.items[p.selected]
                 if cur.Name == ".." {
-                    p.folderHandler(true, nil)
+                    p.folderHandler(true, "", nil)
                     return nil
                 }
             }
@@ -953,7 +974,9 @@ func (p *Panel) enterItem() tea.Cmd {
                 if e, ok := rows[idx].(nav.Enterable); ok {
                     next, err := e.Enter()
                     if err == nil {
-                        p.folderHandler(false, next)
+                        // Capture selection row ID
+                        id, _, _, _ := rows[idx].Columns()
+                        p.folderHandler(false, id, next)
                     }
                 }
             }
