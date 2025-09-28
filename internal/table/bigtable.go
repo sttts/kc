@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/charmbracelet/lipgloss/v2/ansi"
 	lgtable "github.com/charmbracelet/lipgloss/v2/table"
 	"github.com/muesli/reflow/truncate"
 )
@@ -78,11 +79,11 @@ type Styles struct {
 func DefaultStyles() Styles {
 	return Styles{
 		Outer:    lipgloss.NewStyle().Padding(0, 1),
-		Header:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#8AFF80")),
-		Footer:   lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#7D7D7D")),
-		Selector: lipgloss.NewStyle().Background(lipgloss.Color("12")).Foreground(lipgloss.Color("0")),
+		Header:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Green),
+		Footer:   lipgloss.NewStyle().Faint(true).Foreground(lipgloss.White),
+		Selector: lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.Black),
 		Cell:     lipgloss.NewStyle(),
-		Border:   lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00")),
+		Border:   lipgloss.NewStyle().Foreground(lipgloss.Yellow),
 	}
 }
 
