@@ -186,11 +186,14 @@ func (m *Modal) View() string {
 	if !m.visible {
 		return ""
 	}
-	// Fullscreen modal styled like panel
-	// Reserve 1 line for overlay header and 1 terminal line for the function key bar outside the frame.
-	// The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
-	contentW := max(1, m.width-2)
-	contentH := max(1, m.height-3)
+    // Fullscreen modal styled like panel
+    // Reserve 1 line for overlay header and 1 terminal line for the function key bar outside the frame.
+    // The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
+    contentW := max(1, m.width-2)
+    contentH := max(1, m.height-3)
+    // For YAML viewers, drop left/right borders for easier copy/paste and allow full width content.
+    _, isYAML := m.content.(*YAMLViewer)
+    if isYAML { contentW = m.width }
 
 	if m.windowed {
 		// Render background (use provided base or blank)
@@ -348,12 +351,16 @@ func (m *Modal) View() string {
 	}
 
 	// Box content under header (no footer inside the frame)
-	bottom := boxStyle.Copy().
-		BorderTop(false).
-		Width(m.width).
-		// Reserve one terminal line for the footer outside the frame
-		Height(m.height - 2).
-		Render(inner)
+    bottomSty := boxStyle.Copy().
+        BorderTop(false).
+        Width(m.width).
+        // Reserve one terminal line for the footer outside the frame
+        Height(m.height - 2)
+    if isYAML {
+        // Remove vertical borders to allow clean copy/paste of YAML lines.
+        bottomSty = bottomSty.BorderLeft(false).BorderRight(false)
+    }
+    bottom := bottomSty.Render(inner)
 
 	// Replace bottom corners to T junction at the top border of bottom
 	lines := strings.Split(bottom, "\n")
