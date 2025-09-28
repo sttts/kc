@@ -1,12 +1,10 @@
 package table
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
-	"github.com/charmbracelet/lipgloss/v2/ansi"
 	lgtable "github.com/charmbracelet/lipgloss/v2/table"
 	"github.com/muesli/reflow/truncate"
 )
@@ -273,7 +271,6 @@ func (m *BigTable) CurrentID() (string, bool) {
 // commands for external composition.
 func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 	var c1, c2 tea.Cmd
-	var consumed bool
 	switch v := msg.(type) {
 	case tea.KeyMsg:
 		switch v.String() {
@@ -294,7 +291,6 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 					m.top = m.cursor
 				}
 				m.rebuildWindow()
-				consumed = true
 			}
 		case "down", "j":
 			if m.cursor+1 < m.list.Len() {
@@ -304,7 +300,6 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 					m.top = m.cursor - (vis - 1)
 				}
 				m.rebuildWindow()
-				consumed = true
 			}
 		case "pgup":
 			vis := m.bodyRowsHeight()
@@ -319,7 +314,6 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 				m.top = m.cursor
 			}
 			m.rebuildWindow()
-			consumed = true
 		case "pgdown":
 			vis := m.bodyRowsHeight()
 			if vis < 1 {
@@ -333,12 +327,10 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 				m.top = max(0, m.cursor-(vis-1))
 			}
 			m.rebuildWindow()
-			consumed = true
 		case "home":
 			m.cursor = 0
 			m.top = 0
 			m.rebuildWindow()
-			consumed = true
 		case "end":
 			if n := m.list.Len(); n > 0 {
 				m.cursor = n - 1
@@ -346,7 +338,6 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 				m.top = max(0, n-vis)
 				m.rebuildWindow()
 			}
-			consumed = true
 		case "left":
 			if m.xOff > 0 {
 				m.xOff -= m.hStep
@@ -354,7 +345,6 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 					m.xOff = 0
 				}
 				m.applyMode() // recalc columns + rows for scroll window
-				consumed = true
 			}
 		case "right":
 			// Advance the window while total width beyond viewport.
@@ -371,7 +361,6 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 					m.xOff = 0
 				}
 				m.applyMode()
-				consumed = true
 			}
 		}
 	}
