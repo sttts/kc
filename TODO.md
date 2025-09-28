@@ -45,6 +45,8 @@ Current tasks
 - [ ] YAML viewer search: start with `F7`/`Ctrl+F`/`/` (documented as `F7`+`F` in function bar); `F2` to continue to next match; highlight matches.
 - [ ] Pods detail: entering a pod shows container list (containers + initContainers). Under each container, add a `logs` subresource. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + watch). `Esc` closes.
 - [ ] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal; `F4` edits the field in an editor modal. Handle binary secret data gracefully.
+  - [x] Attach precise ViewProvider implementations for container spec and config key values (no breadcrumb string matching).
+  - [ ] Logs: implement a logs viewer (follow mode, search). Wire container “logs” entries to open it.
 - [ ] `F4` Edit: launch `kubectl edit` for the current object; refresh on successful apply.
 - [ ] Function key bar: dynamic and context-aware (grey out unavailable actions per location/object).
 
@@ -54,6 +56,24 @@ Current tasks
 ## Table View Enhancements
 - [x] Namespaces: prefer server‑side Table with header + aligned columns.
 - [ ] Horizontal scroll: when columns exceed panel width, support column‑wise scrolling with Left/Right keys; gate on “no typed input” (same Enter routing gating).
+
+## Table Component (internal/table)
+- [ ] Define public model interfaces (no SetCell):
+  - [ ] `type Row interface { Columns() (id string, cells []string, styles []*lipgloss.Style, exists bool) }`
+  - [ ] `type List interface { Lines(top, num int) []Row; Above(rowID string, num int) []Row; Below(rowID string, num int) []Row }`
+- [ ] Implement virtualization/windowing to support 10s of thousands of rows (render only visible rows).
+- [ ] Implement two modes:
+  - [ ] Fit mode: pre-truncate ASCII to target widths, then style; no horizontal scroll.
+  - [ ] Left/Right mode: no pre-truncate; support horizontal panning with arrow keys.
+- [ ] Width management: measure plain ASCII widths; compute target widths; avoid slicing ANSI sequences.
+- [ ] Selector line behavior: visible only when focused; if the selected row disappears, move selection to the next row (or previous if no next).
+- [ ] Selection toggling: handle `Ctrl+T` and `Insert` with toggle semantics; render selected rows with selection style.
+- [ ] High reusability: expose configuration options (columns, borders, header style, selection style, vertical separators; allow “no border”).
+- [ ] Dynamic content: efficiently update from `List` provider; keep stable IDs for cursor stability; minimal diff/reflow.
+- [ ] Bubble Tea v2 compliance: ensure imports use `/v2` for bubbletea, bubbles, and lipgloss; run `go mod tidy`.
+- [ ] Header styling: good defaults with full override capability (lipgloss styles).
+- [ ] Tests: unit tests for width calc, truncation, selector clamping, selection toggles, and mode switching.
+- [ ] Example: add a small runnable example under `examples/table` demonstrating both modes and selection.
 
 ## Milestone 3 — Terminal Follows Navigation
 - Terminal context manager for the integrated PTY session.
