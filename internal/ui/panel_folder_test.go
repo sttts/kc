@@ -20,7 +20,7 @@ func TestEnterBackFromNamespacesFolder(t *testing.T) {
     p.SetFolder(f, true)
     p.UseFolder(true)
     backCalls := 0
-    p.SetFolderNavHandler(func(back bool, next nav.Folder) {
+    p.SetFolderNavHandler(func(back bool, _ string, next nav.Folder) {
         if back { backCalls++ }
     })
     // sync and select the back item
@@ -45,7 +45,7 @@ func TestEnterFromNamespacesIntoGroups(t *testing.T) {
     p.SetFolder(nsFolder, true)
     p.UseFolder(true)
     var gotNext nav.Folder
-    p.SetFolderNavHandler(func(back bool, next nav.Folder) { if !back { gotNext = next } })
+    p.SetFolderNavHandler(func(back bool, _ string, next nav.Folder) { if !back { gotNext = next } })
     // Select the first real row (index 1 due to back row at 0)
     p.syncFromFolder()
     p.selected = 1
@@ -55,3 +55,55 @@ func TestEnterFromNamespacesIntoGroups(t *testing.T) {
     }
 }
 
+func TestSelectionRestoredOnBack(t *testing.T) {
+    p := NewPanel("")
+    // Build a root folder with enterable namespaces row
+    groups := mkTestFolder("groups", "pods")
+    rows := []table.Row{
+        nav.NewSimpleItem("contexts", []string{"contexts"}, nav.WhiteStyle()),
+        nav.NewEnterableItem("namespaces", []string{"namespaces"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle()),
+    }
+    root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, rows)
+
+    // Wire navigator-like handler
+    navg := nav.NewNavigator(root)
+    p.SetFolder(root, false)
+    p.UseFolder(true)
+    p.SetFolderNavHandler(func(back bool, selID string, next nav.Folder) {
+        if back {
+            navg.Back()
+        } else if next != nil {
+            navg.SetSelectionID(selID)
+            navg.Push(next)
+        }
+        cur := navg.Current()
+        hasBack := navg.HasBack()
+        p.SetFolder(cur, hasBack)
+        if back {
+            id := navg.CurrentSelectionID()
+            if id != "" { p.SelectByRowID(id) } else { p.ResetSelectionTop() }
+        } else {
+            p.ResetSelectionTop()
+        }
+    })
+
+    // Select namespaces in root and enter
+    p.syncFromFolder()
+    idxNamespaces := -1
+    for i := range p.items { if p.items[i].Name == "namespaces" { idxNamespaces = i; break } }
+    if idxNamespaces < 0 { t.Fatalf("namespaces row not found in root items: %+v", p.items) }
+    p.selected = idxNamespaces
+    _ = p.enterItem() // into groups
+    if navg.Current().Title() != "groups" { t.Fatalf("expected to be in groups, got %s", navg.Current().Title()) }
+
+    // Now back; selection should restore to namespaces in root
+    p.selected = 0 // ensure on back row
+    _ = p.enterItem() // back
+    if navg.Current().Title() != "/" { t.Fatalf("expected to be back at root, got %s", navg.Current().Title()) }
+    // find namespaces index again
+    p.syncFromFolder()
+    want := -1
+    for i := range p.items { if p.items[i].Name == "namespaces" { want = i; break } }
+    if want < 0 { t.Fatalf("namespaces row not found after back: %+v", p.items) }
+    if p.selected != want { t.Fatalf("expected selection restored to %d, got %d", want, p.selected) }
+}
