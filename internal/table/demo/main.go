@@ -8,7 +8,6 @@ import (
     "time"
 
     table "github.com/sttts/kc/internal/table"
-    ttable "github.com/charmbracelet/bubbles/v2/table"
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/charmbracelet/lipgloss/v2"
 )
@@ -16,8 +15,8 @@ import (
 type app struct{ bt table.BigTable }
 
 func newApp(provider string) app {
-    cols := make([]ttable.Column, 20)
-    for c := 0; c < 20; c++ { cols[c] = ttable.Column{Title: fmt.Sprintf("Col%02d", c+1), Width: 18} }
+    cols := make([]table.Column, 20)
+    for c := 0; c < 20; c++ { cols[c] = table.Column{Title: fmt.Sprintf("Col%02d", c+1), Width: 18} }
     // Build a demo List provider with ASCII cells and per-cell styles.
     base := makeBaseRows(1000, 20) // ASCII text only
     colStyles := []*lipgloss.Style{
@@ -60,6 +59,15 @@ func newApp(provider string) app {
         list = table.NewSliceList(rows)
     }
     bt := table.NewBigTable(cols, list, 100, 28)
+    // Apply Norton Commander-inspired color scheme
+    st := table.DefaultStyles()
+    // Classic NC: blue background, light gray text, cyan selection, yellow headers
+    st.Outer = st.Outer.Background(lipgloss.Color("#0000AA")).Padding(0, 1)
+    st.Cell = st.Cell.Foreground(lipgloss.Color("#C0C0C0")).Background(lipgloss.Color("#0000AA"))
+    st.Header = st.Header.Foreground(lipgloss.Color("#FFFF00")).Background(lipgloss.Color("#0000AA"))
+    st.Footer = st.Footer.Foreground(lipgloss.Color("#C0C0C0")).Background(lipgloss.Color("#0000AA")).Faint(false)
+    st.Selector = lipgloss.NewStyle().Background(lipgloss.Color("#00AAAA")).Foreground(lipgloss.Color("#000000"))
+    bt.SetStyles(st)
     return app{bt: bt}
 }
 
@@ -159,4 +167,3 @@ func makeBaseRows(nRows, nCols int) [][]string {
 }
 
 func ptrStyle(s lipgloss.Style) *lipgloss.Style { return &s }
-
