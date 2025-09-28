@@ -1238,10 +1238,37 @@ func (a *App) buildContextsFolder() navui.Folder {
 // Cluster-scoped resources will be added incrementally.
 func (a *App) buildRootFolder() navui.Folder {
     sty := navui.GreenStyle()
-    enter := func() (navui.Folder, error) { return a.buildContextsFolder(), nil }
-    it := navui.NewEnterableItem("contexts", []string{"contexts"}, enter, sty)
-    rows := []table.Row{it}
-    return navui.NewSliceFolder("/", "root", []table.Column{{Title: "Name"}}, rows)
+    rows := make([]table.Row, 0, 8)
+    // Row: contexts (enterable). Panel prefixes '/' for enterable items; keep cell plain.
+    enterContexts := func() (navui.Folder, error) { return a.buildContextsFolder(), nil }
+    rows = append(rows, navui.NewEnterableItem("contexts", []string{"contexts", ""}, enterContexts, sty))
+    // Row: namespaces (enterable) with count
+    nsCount := a.countClusterScoped(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
+    rows = append(rows, navui.NewEnterableItem("namespaces", []string{"namespaces", fmt.Sprintf("%d", nsCount)}, func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }, sty))
+    // Cluster-scoped resources with counts (excluding namespaces)
+    if infos, err := a.resMgr.GetResourceInfos(); err == nil {
+        for _, info := range infos {
+            if info.Namespaced { continue }
+            if info.Resource == "namespaces" { continue }
+            // must support list
+            hasList := false
+            for _, v := range info.Verbs { if v == "list" { hasList = true; break } }
+            if !hasList { continue }
+            c := a.countClusterScoped(info.GVK)
+            rows = append(rows, navui.NewSimpleItem(info.Resource, []string{info.Resource, fmt.Sprintf("%d", c)}, sty))
+        }
+    }
+    // Columns: leading space in Name for header alignment, plus Count
+    return navui.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}, {Title: "Count"}}, rows)
+}
+
+// countClusterScoped returns the number of cluster-scoped objects for a given GVK.
+func (a *App) countClusterScoped(gvk schema.GroupVersionKind) int {
+    gvr, err := a.resMgr.GVKToGVR(gvk)
+    if err != nil { return 0 }
+    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
+    if err != nil { return 0 }
+    return len(lst.Items)
 }
 
 // handleFolderNav processes back/forward navigation from panels and updates both panels.

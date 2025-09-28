@@ -140,18 +140,26 @@ func (p *Panel) syncFromFolder() {
     cols := nav.ColumnsToTitles(p.folder.Columns())
     rows := p.folder.Lines(0, p.folder.Len())
     cells := nav.RowsToCells(rows)
-    if p.folderHasBack {
-        cells = append([][]string{{".."}}, cells...)
-    }
+    // Prepare headers and rows
     p.tableHeaders = cols
-    p.tableRows = cells
-    // Build a minimal items slice aligned to rows so selection works.
-    items := make([]Item, len(cells))
+    // Build items aligned to rows and mark enterable where applicable
+    items := make([]Item, 0, len(cells)+1)
+    tableRows := make([][]string, 0, len(cells)+1)
+    if p.folderHasBack {
+        items = append(items, Item{Name: "..", Type: ItemTypeDirectory, Enterable: true})
+        tableRows = append(tableRows, []string{".."})
+    }
     for i := range cells {
         name := ""
         if len(cells[i]) > 0 { name = cells[i][0] }
-        items[i] = Item{Name: name, Type: ItemTypeResource}
+        enter := false
+        if i < len(rows) {
+            if _, ok := rows[i].(nav.Enterable); ok { enter = true }
+        }
+        items = append(items, Item{Name: name, Type: ItemTypeResource, Enterable: enter})
+        tableRows = append(tableRows, cells[i])
     }
+    p.tableRows = tableRows
     p.items = items
 }
 
@@ -416,16 +424,17 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 	// Render visible items
 	var lines []string
 	// Render table header first when applicable (object lists or resource-group lists)
-	if p.tableRows != nil && (p.shouldRenderTable() || p.isGroupListView()) && (((strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4) || p.currentPath == "/namespaces") || p.isGroupListView()) {
-		p.columnWidths = p.computeColumnWidths(p.tableHeaders, p.tableRows, p.width-2)
-		header := p.formatRow(p.tableHeaders, p.columnWidths)
-		// Add one-char prefix to align with type column in rows
-		prefixed := " " + header
-		if len(prefixed) > p.width {
-			prefixed = prefixed[:p.width]
-		}
-		lines = append(lines, PanelTableHeaderStyle.Width(p.width).Render(prefixed))
-	}
+    if p.tableRows != nil && (p.shouldRenderTable() || p.isGroupListView()) && (((strings.HasPrefix(p.currentPath, "/namespaces/") && len(strings.Split(p.currentPath, "/")) >= 4) || p.currentPath == "/namespaces") || p.isGroupListView()) {
+        p.columnWidths = p.computeColumnWidths(p.tableHeaders, p.tableRows, p.width-2)
+        header := p.formatRow(p.tableHeaders, p.columnWidths)
+        // Add one-char prefix to align with type column in rows unless header already has it
+        prefixed := header
+        if !strings.HasPrefix(header, " ") { prefixed = " " + header }
+        if len(prefixed) > p.width {
+            prefixed = prefixed[:p.width]
+        }
+        lines = append(lines, PanelTableHeaderStyle.Width(p.width).Render(prefixed))
+    }
 	for i := start; i < end; i++ {
 		item := p.items[i]
 		line := p.renderItem(item, i == p.selected && isFocused)
