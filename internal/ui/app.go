@@ -17,6 +17,8 @@ import (
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	"github.com/sttts/kc/pkg/navigation"
+	navui "github.com/sttts/kc/internal/navigation"
+	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/pkg/resources"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -1179,6 +1181,22 @@ func (a *App) initData() error {
 	// Provide contexts count to panels for root display
 	a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	a.rightPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
+	// Preview: Use folder-backed rendering for root contexts using internal/navigation
+	{
+		cs := a.kubeMgr.GetContexts()
+		rows := make([]table.Row, 0, len(cs))
+		sty := navui.GreenStyle()
+		for _, c := range cs {
+			row := table.SimpleRow{ID: c.Name}
+			row.SetColumn(0, c.Name, sty)
+			rows = append(rows, row)
+		}
+		folder := navui.NewContextsFolder(rows)
+		a.leftPanel.SetFolder(folder, false)
+		a.rightPanel.SetFolder(folder, false)
+		a.leftPanel.UseFolder(true)
+		a.rightPanel.UseFolder(true)
+	}
 	return nil
 }
 
