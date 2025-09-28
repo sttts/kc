@@ -1,14 +1,13 @@
 package table
 
 import (
-	"fmt"
-	"strings"
+    "fmt"
+    "strings"
 
-	viewport "github.com/charmbracelet/bubbles/v2/viewport"
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
-	lgtable "github.com/charmbracelet/lipgloss/v2/table"
-	"github.com/muesli/reflow/truncate"
+    tea "github.com/charmbracelet/bubbletea/v2"
+    "github.com/charmbracelet/lipgloss/v2"
+    lgtable "github.com/charmbracelet/lipgloss/v2/table"
+    "github.com/muesli/reflow/truncate"
 )
 
 // GridMode controls how the table renders horizontally.
@@ -27,9 +26,8 @@ const (
 // tables backed by a List provider. It is optimized for very large datasets
 // via windowed rendering and maintains selection stability using row IDs.
 type BigTable struct {
-	vp   viewport.Model
-	mode GridMode
-	w, h int
+    mode GridMode
+    w, h int
 
 	cols []Column // base titles (ASCII)
 	list List     // data provider
@@ -47,16 +45,23 @@ type BigTable struct {
 	xOff       int                 // horizontal offset (scroll) in cells across all columns
 	hStep      int                 // horizontal step for left/right
 
-	headerRow string // sticky header row (rendered outside viewport)
-	bodyRow   string // rendered body content cached
+    headerRow string // sticky header row (rendered outside viewport)
+    bodyRow   string // rendered body content cached
 
-	styles     Styles // external styles
-	borderMode int    // current border variant (deprecated; use configurers)
+    styles     Styles // external styles
+    truncTail string // tail used when truncating in FIT mode (default: "")
 
-	truncTail string // tail used when truncating in FIT mode (default: "")
+    // Header/body tables holding direct border configuration
+    header *lgtable.Table
+    body   *lgtable.Table
 
-	headerCfg func(*lgtable.Table)
-	bodyCfg   func(*lgtable.Table)
+    // Minimal flags needed for layout decisions (height, spacing)
+    bTop    bool // header top border
+    bBottom bool // body bottom border
+    bLeft   bool
+    bRight  bool
+    bColumn bool
+    bHeader bool // header underline
 }
 
 // Styles groups all externally configurable styles.
@@ -95,32 +100,32 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 		desired[i] = cols[i].Width
 	}
 
-	vp := viewport.New(viewport.WithWidth(max(20, w)), viewport.WithHeight(max(6, h)))
-	vp.SoftWrap = false
-	// Disable viewport's internal horizontal panning; we implement ANSI-safe
-	// horizontal slicing ourselves.
-	vp.SetHorizontalStep(0)
-
-	bt := BigTable{
-		vp:         vp,
-		mode:       ModeScroll,
-		w:          max(20, w),
-		h:          max(6, h),
-		cols:       append([]Column(nil), cols...),
-		list:       list,
-		desired:    desired,
-		selected:   make(map[string]struct{}),
-		selStyle:   lipgloss.NewStyle().Background(lipgloss.Color("12")).Foreground(lipgloss.Color("0")),
-		top:        0,
-		cursor:     0,
-		focusedID:  "",
-		widthCache: initWidthCache(cols),
-		xOff:       0,
-		hStep:      8,
-		styles:     DefaultStyles(),
-		borderMode: 0,
-		truncTail:  "",
-	}
+    bt := BigTable{
+        mode:       ModeScroll,
+        w:          max(20, w),
+        h:          max(6, h),
+        cols:       append([]Column(nil), cols...),
+        list:       list,
+        desired:    desired,
+        selected:   make(map[string]struct{}),
+        selStyle:   lipgloss.NewStyle().Background(lipgloss.Color("12")).Foreground(lipgloss.Color("0")),
+        top:        0,
+        cursor:     0,
+        focusedID:  "",
+        widthCache: initWidthCache(cols),
+        xOff:       0,
+        hStep:      8,
+        styles:     DefaultStyles(),
+        truncTail:  "",
+        header:     lgtable.New().Wrap(false),
+        body:       lgtable.New().Wrap(false),
+        bTop:        false,
+        bBottom:     false,
+        bLeft:       false,
+        bRight:      false,
+        bColumn:     false,
+        bHeader:     false,
+    }
 	bt.applyMode()
 	bt.sync()
 	return bt
@@ -135,11 +140,80 @@ func (m *BigTable) SetSize(w, h int) {
 	if h < 6 {
 		h = 6
 	}
-	m.w, m.h = w, h
-	m.vp.SetWidth(w)
-	m.vp.SetHeight(h)
-	m.applyMode()
-	m.sync()
+    m.w, m.h = w, h
+    m.applyMode()
+    m.sync()
+}
+
+// --- Border configuration (1:1 with lipgloss/table) ---
+
+func (m *BigTable) Border(b lipgloss.Border) *BigTable {
+    m.header = m.header.Border(b)
+    m.body = m.body.Border(b)
+    m.rebuildWindow()
+    return m
+}
+
+// BorderTop applies above the header only.
+func (m *BigTable) BorderTop(v bool) *BigTable {
+    m.bTop = v
+    m.header = m.header.BorderTop(v)
+    m.body = m.body.BorderTop(false)
+    m.rebuildWindow()
+    return m
+}
+
+// BorderBottom applies to body only (footer line).
+func (m *BigTable) BorderBottom(v bool) *BigTable {
+    m.bBottom = v
+    m.header = m.header.BorderBottom(false)
+    m.body = m.body.BorderBottom(v)
+    m.rebuildWindow()
+    return m
+}
+
+func (m *BigTable) BorderLeft(v bool) *BigTable {
+    m.bLeft = v
+    m.header = m.header.BorderLeft(v)
+    m.body = m.body.BorderLeft(v)
+    m.rebuildWindow()
+    return m
+}
+
+func (m *BigTable) BorderRight(v bool) *BigTable {
+    m.bRight = v
+    m.header = m.header.BorderRight(v)
+    m.body = m.body.BorderRight(v)
+    m.rebuildWindow()
+    return m
+}
+
+func (m *BigTable) BorderRow(v bool) *BigTable {
+    m.body = m.body.BorderRow(v)
+    m.rebuildWindow()
+    return m
+}
+
+func (m *BigTable) BorderColumn(v bool) *BigTable {
+    m.bColumn = v
+    m.header = m.header.BorderColumn(v)
+    m.body = m.body.BorderColumn(v)
+    m.rebuildWindow()
+    return m
+}
+
+func (m *BigTable) BorderHeader(v bool) *BigTable {
+    m.bHeader = v
+    m.header = m.header.BorderHeader(v)
+    m.rebuildWindow()
+    return m
+}
+
+func (m *BigTable) BorderStyle(s lipgloss.Style) *BigTable {
+    m.header = m.header.BorderStyle(s)
+    m.body = m.body.BorderStyle(s)
+    m.rebuildWindow()
+    return m
 }
 
 // SetMode switches between ModeScroll and ModeFit and refreshes the view.
@@ -197,9 +271,9 @@ func (m *BigTable) CurrentID() (string, bool) {
 // messages to the internal bubbles components. It returns a batchable pair of
 // commands for external composition.
 func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
-	var c1, c2 tea.Cmd
-	var consumed bool
-	switch v := msg.(type) {
+    var c1, c2 tea.Cmd
+    var consumed bool
+    switch v := msg.(type) {
 	case tea.KeyMsg:
 		switch v.String() {
 		case "ctrl+t", "insert":
@@ -299,24 +373,9 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 				consumed = true
 			}
 		}
-	}
-	if !consumed {
-		m.vp, c1 = m.vp.Update(msg)
-	}
-	// Avoid forwarding movement keys—we control cursor explicitly.
-	switch v := msg.(type) {
-	case tea.KeyMsg:
-		switch v.String() {
-		case "up", "k", "down", "j", "pgup", "pgdown", "home", "end", "ctrl+t", "insert", "left", "right":
-			// handled
-		default:
-			// nothing
-		}
-	default:
-		// nothing
-	}
-	m.sync()
-	return c1, c2
+    }
+    m.sync()
+    return c1, c2
 }
 
 // View renders the component.
@@ -342,23 +401,7 @@ func (m *BigTable) refreshRowsOnly() { m.rebuildWindow() }
 func (m *BigTable) rebuildWindow() {
 	// Compute how many data rows are visible and the total body height.
 	rowsVisible := m.bodyRowsHeight()
-	// Recompute header/border accounting to get the viewport body height.
-	_, _, hline, _ := m.borderFlags()
-	reserved := 1
-	if hline {
-		reserved++
-	}
-	// Overhead lines drawn by the body (borders).
-	outside, _, _, _ := m.borderFlags()
-	overhead := 0
-    // Only bottom border is drawn by the body; top border is drawn with the header.
-    if outside {
-        overhead++
-    }
-	bodyHeight := rowsVisible + overhead
-	if bodyHeight < 1 {
-		bodyHeight = 1
-	}
+    // rowsVisible already accounts for header and border lines.
 	n := m.list.Len()
 	if n < 0 {
 		n = 0
@@ -389,151 +432,81 @@ func (m *BigTable) rebuildWindow() {
 			}
 		}
 	}
-	// Build lipgloss table content. Only set Height when outside borders are on;
-	// otherwise leave it unset to avoid lipgloss/table adding an overflow row.
-	var t *lgtable.Table
-    if outside {
-        // Reserve space for body rows plus bottom border.
-        t = lgtable.New().Wrap(false).Height(rowsVisible + 1)
-    } else {
-        t = lgtable.New().Wrap(false)
-    }
-	if m.bodyCfg != nil {
-		m.bodyCfg(t)
-	} else {
-		m.configureBodyBorders(t)
-	}
+    // Use persistent body table holding direct border configuration.
+    t := m.body
 	if m.mode == ModeFit {
 		desired := make([]int, len(m.cols))
 		for i := range desired {
 			desired[i] = max(m.widthCache[i], m.desired[i])
 		}
 		target := computeFitWidths(m.w, desired, 3)
-		ht := lgtable.New().Wrap(false)
-		if m.headerCfg != nil {
-			m.headerCfg(ht)
-		} else {
-			m.configureHeaderBorders(ht)
-		}
+        ht := m.header
 		headers := make([]string, len(m.cols))
-		// spacing only when no outside and no inner verticals
-		outside, vcol, _, _ := m.borderFlags()
+        // spacing only when no outside verticals and no inner verticals
+        outsideVertical := m.bLeft || m.bRight
+        vcol := m.bColumn
 		tt := append([]int(nil), target...)
-		if !outside && !vcol {
-			for i := 0; i < len(tt)-1; i++ {
-				if tt[i] > 0 {
-					tt[i]--
-				}
-			}
-		}
+        if !outsideVertical && !vcol {
+            for i := 0; i < len(tt)-1; i++ {
+                if tt[i] > 0 {
+                    tt[i]--
+                }
+            }
+        }
 		for i, c := range m.cols {
 			headers[i] = m.truncPad(c.Title, tt[i])
 		}
-		if !outside && !vcol {
-			for i := 0; i < len(headers)-1; i++ {
-				headers[i] += " "
-			}
-		}
+        if !outsideVertical && !vcol {
+            for i := 0; i < len(headers)-1; i++ {
+                headers[i] += " "
+            }
+        }
 		ht.Headers(headers...)
 		ht.Width(m.w)
 		ht.StyleFunc(func(row, col int) lipgloss.Style { return m.styles.Header })
 		m.headerRow = strings.TrimRight(ht.Render(), "\n")
 		trRows := truncateRowsWithTail(m.window, tt, m.truncTail)
-		if !outside && !vcol {
-			trRows = addSpacing(trRows)
-		}
-		if !vcol && !hline {
-			// Manual render when no inner verticals; frame rows if outside.
-			raw := renderRowsStyled(trRows, m.styles, m.cursor-m.top, m.selected)
-			if outside {
-				b := lipgloss.NormalBorder()
-				if _, _, _, dbl := m.borderFlags(); dbl { b = lipgloss.DoubleBorder() }
-				inner := m.w - 2; if inner < 0 { inner = 0 }
-				lines := strings.Split(raw, "\n")
-				for i := range lines {
-					pad := inner - lipgloss.Width(lines[i]); if pad > 0 { lines[i] += strings.Repeat(" ", pad) }
-					lines[i] = b.Left + lines[i] + b.Right
-				}
-				bottom := b.BottomLeft + strings.Repeat(b.Bottom, inner) + b.BottomRight
-				m.bodyRow = strings.Join(lines, "\n") + "\n" + bottom
-			} else {
-				m.bodyRow = raw
-			}
-			// Track focused ID and return
-			if row := m.list.Lines(m.cursor, 1); len(row) == 1 {
-				id, _, _, ok := row[0].Columns()
-				if ok {
-					m.focusedID = id
-				}
-			}
-			return
-		}
-		t = t.Rows(rowsToStringRows(trRows)...)
-		t.Width(m.w)
+        if !outsideVertical && !vcol {
+            trRows = addSpacing(trRows)
+        }
+        t = t.Rows(rowsToStringRows(trRows)...)
+        t.Width(m.w)
 	} else {
 		full := make([]int, len(m.cols))
 		for i := range full {
 			full[i] = max(m.widthCache[i], m.desired[i])
 		}
 		offs, target := computeScrollWindowFrozen(full, 2, m.xOff, m.w)
-		ht := lgtable.New().Wrap(false)
-		if m.headerCfg != nil {
-			m.headerCfg(ht)
-		} else {
-			m.configureHeaderBorders(ht)
-		}
+        ht := m.header
 		headers := make([]string, len(m.cols))
-		outside, vcol, _, _ := m.borderFlags()
+        outsideVertical := m.bLeft || m.bRight
+        vcol := m.bColumn
 		tt := append([]int(nil), target...)
-		if !outside && !vcol {
-			for i := 0; i < len(tt)-1; i++ {
-				if tt[i] > 0 {
-					tt[i]--
-				}
-			}
-		}
+        if !outsideVertical && !vcol {
+            for i := 0; i < len(tt)-1; i++ {
+                if tt[i] > 0 {
+                    tt[i]--
+                }
+            }
+        }
 		for i, c := range m.cols {
 			headers[i] = m.truncPad(c.Title, tt[i])
 		}
-		if !outside && !vcol {
-			for i := 0; i < len(headers)-1; i++ {
-				headers[i] += " "
-			}
-		}
+        if !outsideVertical && !vcol {
+            for i := 0; i < len(headers)-1; i++ {
+                headers[i] += " "
+            }
+        }
 		ht.Headers(headers...)
 		ht.Width(m.w)
 		ht.StyleFunc(func(row, col int) lipgloss.Style { return m.styles.Header })
 		m.headerRow = strings.TrimRight(ht.Render(), "\n")
 		sliced := sliceRowsWindow(m.window, offs, tt)
-		if !outside && !vcol {
-			sliced = addSpacing(sliced)
-		}
-		if !vcol && !hline {
-			raw := renderRowsStyled(sliced, m.styles, m.cursor-m.top, m.selected)
-			if outside {
-				b := lipgloss.NormalBorder()
-				if _, _, _, dbl := m.borderFlags(); dbl { b = lipgloss.DoubleBorder() }
-				inner := m.w - 2; if inner < 0 { inner = 0 }
-				lines := strings.Split(raw, "\n")
-				for i := range lines {
-					pad := inner - lipgloss.Width(lines[i]); if pad > 0 { lines[i] += strings.Repeat(" ", pad) }
-					lines[i] = b.Left + lines[i] + b.Right
-				}
-				bottom := b.BottomLeft + strings.Repeat(b.Bottom, inner) + b.BottomRight
-				m.bodyRow = strings.Join(lines, "\n") + "\n" + bottom
-			} else {
-				m.bodyRow = raw
-			}
-			if row := m.list.Lines(m.cursor, 1); len(row) == 1 {
-				id, _, _, ok := row[0].Columns()
-				if ok {
-					m.focusedID = id
-				}
-			}
-			return
-		}
-		t = t.Rows(rowsToStringRows(sliced)...)
-		t.Width(m.w)
+        if !outsideVertical && !vcol {
+            sliced = addSpacing(sliced)
+        }
+        t = t.Rows(rowsToStringRows(sliced)...)
+        t.Width(m.w)
 	}
 	stylesPerRow := captureStyles(m.window)
 	selected := m.selected
@@ -560,19 +533,8 @@ func (m *BigTable) rebuildWindow() {
 		}
 		return st
 	})
-	// Cache body rows without trimming content; ensure no trailing newline.
-	m.bodyRow = strings.TrimRight(t.Render(), "\n")
-	// Manually append bottom border when outside border is enabled.
-	if outside {
-		b := lipgloss.NormalBorder()
-		if _, _, _, dbl := m.borderFlags(); dbl {
-			b = lipgloss.DoubleBorder()
-		}
-		inner := m.w - 2
-		if inner < 0 { inner = 0 }
-		bottom := b.BottomLeft + strings.Repeat(b.Bottom, inner) + b.BottomRight
-		m.bodyRow = m.bodyRow + "\n" + bottom
-	}
+    // Cache body rows without trimming content; ensure no trailing newline.
+    m.bodyRow = strings.TrimRight(t.Render(), "\n")
 	// Track focused ID for stability across updates.
 	if row := m.list.Lines(m.cursor, 1); len(row) == 1 {
 		id, _, _, ok := row[0].Columns()
@@ -587,24 +549,22 @@ func (m *BigTable) applyMode() { m.rebuildWindow() }
 // bodyRowsHeight returns the number of data rows visible within the viewport
 // after subtracting sticky header lines and any body border lines.
 func (m *BigTable) bodyRowsHeight() int {
-	outside, _, hline, _ := m.borderFlags()
-	reserved := 1
-	if hline { reserved++ }
-	if outside { reserved++ } // header's top border
-	bodyHeight := m.h - reserved
-	if bodyHeight < 1 {
-		bodyHeight = 1
-	}
-	overhead := 0
-	// Only bottom border remains in the body when outside borders are enabled.
-	if outside {
-		overhead++
-	}
-	rows := bodyHeight - overhead
-	if rows < 1 {
-		rows = 1
-	}
-	return rows
+    // Reserve lines: sticky header, optional top border, optional header underline, optional bottom border
+    reserved := 1
+    if m.bTop {
+        reserved++
+    }
+    if m.bHeader {
+        reserved++
+    }
+    if m.bBottom {
+        reserved++
+    }
+    rows := m.h - reserved
+    if rows < 1 {
+        rows = 1
+    }
+    return rows
 }
 
 // Border mode configuration
@@ -615,100 +575,7 @@ func (m *BigTable) bodyRowsHeight() int {
 // 4: verticals + header underline
 // 5: verticals + header + outside
 // 6: double outside + single inside (verticals + header)
-func (m *BigTable) configureHeaderBorders(t *lgtable.Table) {
-	outside, vcol, hline, dbl := m.borderFlags()
-	t.BorderRow(false)
-	t.BorderHeader(hline)
-	// Draw top border on the header so it appears above the sticky header line.
-	t.BorderTop(outside)
-	t.BorderBottom(false)
-	t.BorderLeft(outside)
-	t.BorderRight(outside)
-	// In outside-only mode, draw header column separators for clarity.
-	if outside && !vcol {
-		t.BorderColumn(true)
-	} else {
-		t.BorderColumn(vcol)
-	}
-	b := buildBorder(outside, vcol, dbl)
-	// When outside is off but header underline is on, draw a full-width rule
-	// using the normal border's Top and Middle glyphs.
-	if !outside && hline {
-		nb := lipgloss.NormalBorder()
-		b.Top = nb.Top
-		if vcol {
-			b.Middle = nb.Middle
-		} else {
-			b.Middle = nb.Top
-		}
-	}
-	t.Border(b)
-	t.BorderStyle(m.styles.Border.Inherit(m.styles.Header))
-}
-
-func (m *BigTable) configureBodyBorders(t *lgtable.Table) {
-    outside, vcol, _, dbl := m.borderFlags()
-    t.BorderRow(false)
-    t.BorderHeader(false)
-    // Do not draw the top border on the body; the header draws it to sit above the sticky header line.
-    t.BorderTop(false)
-    t.BorderLeft(outside)
-    t.BorderRight(outside)
-    // Draw bottom border manually to avoid Height interactions.
-    t.BorderBottom(false)
-	t.BorderColumn(vcol || (outside && !vcol))
-	b := buildBorder(outside, vcol, dbl)
-	t.Border(b)
-	t.BorderStyle(m.styles.Border.Inherit(m.styles.Cell))
-}
-
-func buildBorder(outside, vcol, dbl bool) lipgloss.Border {
-	var b lipgloss.Border
-	if outside {
-		if dbl {
-			b = lipgloss.DoubleBorder()
-		} else {
-			b = lipgloss.NormalBorder()
-		}
-	} else {
-		b = lipgloss.NormalBorder()
-		// remove outside
-		b.Top = ""
-		b.Bottom = ""
-		b.Left = ""
-		b.Right = ""
-		b.TopLeft = ""
-		b.TopRight = ""
-		b.BottomLeft = ""
-		b.BottomRight = ""
-	}
-	// When outside is off and vcol is false we rely on addSpacing in content.
-	return b
-}
-
-func (m *BigTable) borderFlags() (outside bool, vcol bool, hline bool, dbl bool) {
-	switch m.borderMode % 8 {
-	case 0:
-		return false, false, false, false
-	case 1:
-		return true, false, false, false
-	case 2:
-		return false, true, false, false
-	case 3:
-		return false, false, true, false
-	case 4:
-		return false, true, true, false
-	case 5:
-		return true, true, true, false
-	case 6:
-		return true, true, true, true
-	default:
-		return false, false, false, false
-	}
-}
-
-// CycleBorderMode increments the border mode.
-func (m *BigTable) CycleBorderMode() { m.borderMode = (m.borderMode + 1) % 8; m.rebuildWindow() }
+// Deprecated border mode API removed; use Border* setters instead.
 
 // --- sizing helpers (measure only plain ASCII) ---
 
@@ -954,31 +821,9 @@ func captureStyles(rows []Row) [][]*lipgloss.Style {
 	return out
 }
 
-func hasKey(m map[string]struct{}, k string) bool { _, ok := m[k]; return ok }
+// hasKey helper no longer used
 
-// renderRowsStyled composes rows with per-cell styles and selection overlay,
-// joining cells as-is (they may already include spacing) and lines with \n.
-func renderRowsStyled(rows []Row, st Styles, focus int, selected map[string]struct{}) string {
-	var b strings.Builder
-	for r := range rows {
-		id, cells, styles, _ := rows[r].Columns()
-		sel := r == focus || hasKey(selected, id)
-		for c := range cells {
-			cs := st.Cell
-			if c < len(styles) && styles[c] != nil {
-				cs = (*styles[c]).Inherit(cs)
-			}
-			if sel {
-				cs = st.Selector.Inherit(cs)
-			}
-			b.WriteString(cs.Render(cells[c]))
-		}
-		if r+1 < len(rows) {
-			b.WriteByte('\n')
-		}
-	}
-	return b.String()
-}
+// manual styled rendering no longer used; lgtable handles rows consistently
 
 // addSpacing appends a trailing space to all but the last column cells to act
 // as a column separator when no vertical border is drawn.

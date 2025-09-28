@@ -39,8 +39,7 @@ func TestView_25x6_NoBorders_BottomShowsLastRow(t *testing.T) {
 	cols := []Column{{Title: "A", Width: 8}}
 	list := mkSimpleList(8)              // rows id-0001..id-0008
 	bt := NewBigTable(cols, list, 25, 6) // 6 lines total (1 sticky header + 5 rows)
-	bt.SetMode(ModeScroll)
-	bt.borderMode = 0 // no borders, no underline
+    bt.SetMode(ModeScroll)
 
 	// Move to bottom and rebuild
 	bt.cursor = list.Len() - 1 // id-0008
@@ -66,8 +65,9 @@ func TestView_25x6_OutsideOnly_BottomBorderVisible(t *testing.T) {
 	cols := []Column{{Title: "A", Width: 8}}
 	list := mkSimpleList(8)
 	bt := NewBigTable(cols, list, 25, 6)
-	bt.SetMode(ModeScroll)
-	bt.borderMode = 1 // outside only
+    bt.SetMode(ModeScroll)
+    // outside only: header top + body bottom + left/right
+    bt.BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true)
 
 	bt.cursor = list.Len() - 1
 	bt.rebuildWindow()
