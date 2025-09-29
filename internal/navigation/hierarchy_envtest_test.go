@@ -6,6 +6,7 @@ import (
     "time"
 
     kccluster "github.com/sttts/kc/internal/cluster"
+    kctesting "github.com/sttts/kc/internal/testing"
     corev1 "k8s.io/api/core/v1"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/apimachinery/pkg/runtime"
@@ -13,16 +14,6 @@ import (
     crclient "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/envtest"
 )
-
-// waitUntil polls f until it returns true or times out.
-func waitUntil(t *testing.T, d time.Duration, f func() bool) {
-    deadline := time.Now().Add(d)
-    for time.Now().Before(deadline) {
-        if f() { return }
-        time.Sleep(50 * time.Millisecond)
-    }
-    t.Fatalf("condition not met within %s", d)
-}
 
 func TestHierarchyEnvtest(t *testing.T) {
     t.Parallel()
@@ -56,7 +47,7 @@ func TestHierarchyEnvtest(t *testing.T) {
     // 1) Root
     root := NewRootFolder(deps)
     // Wait until namespaces are visible
-    waitUntil(t, 5*time.Second, func() bool { return root.Len() > 0 })
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return root.Len() > 0 })
     rows := root.Lines(0, root.Len())
     foundNamespaces := false
     for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/namespaces" { foundNamespaces = true; break } }
@@ -64,7 +55,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 
     // 2) Enter /namespaces
     nsFolder := NewNamespacesFolder(deps)
-    waitUntil(t, 5*time.Second, func() bool { return nsFolder.Len() > 0 })
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len() > 0 })
     rows = nsFolder.Lines(0, nsFolder.Len())
     foundTestns := false
     for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/testns" { foundTestns = true; break } }
@@ -72,7 +63,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 
     // 3) Enter groups for testns
     grp := NewNamespacedGroupsFolder(deps, "testns")
-    waitUntil(t, 5*time.Second, func() bool { return grp.Len() > 0 })
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return grp.Len() > 0 })
     rows = grp.Lines(0, grp.Len())
     hasCM, hasSec := false, false
     for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 { if cells[0] == "/configmaps" { hasCM = true }; if cells[0] == "/secrets" { hasSec = true } } }
@@ -81,7 +72,7 @@ func TestHierarchyEnvtest(t *testing.T) {
     // 4) Enter objects: configmaps
     gvrCM := schema.GroupVersionResource{Group:"", Version:"v1", Resource:"configmaps"}
     objs := NewNamespacedObjectsFolder(deps, gvrCM, "testns")
-    waitUntil(t, 5*time.Second, func() bool { return objs.Len() > 0 })
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len() > 0 })
     rows = objs.Lines(0, objs.Len())
     foundCM1 := false
     for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "cm1" { foundCM1 = true; break } }
@@ -89,7 +80,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 
     // 5) Enter cm1 keys
     keys := NewConfigMapKeysFolder(deps, "testns", "cm1")
-    waitUntil(t, 5*time.Second, func() bool { return keys.Len() >= 2 })
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len() >= 2 })
     rows = keys.Lines(0, keys.Len())
     hasA, hasB := false, false
     for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 { if cells[0] == "a" { hasA = true }; if cells[0] == "b" { hasB = true } } }
@@ -98,10 +89,9 @@ func TestHierarchyEnvtest(t *testing.T) {
     // 6) Cluster-scoped objects: nodes
     gvrNodes := schema.GroupVersionResource{Group:"", Version:"v1", Resource:"nodes"}
     nodes := NewClusterObjectsFolder(deps, gvrNodes)
-    waitUntil(t, 5*time.Second, func() bool { return nodes.Len() > 0 })
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nodes.Len() > 0 })
     rows = nodes.Lines(0, nodes.Len())
     foundN1 := false
     for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "n1" { foundN1 = true; break } }
     if !foundN1 { t.Fatalf("nodes: n1 not found") }
 }
-
