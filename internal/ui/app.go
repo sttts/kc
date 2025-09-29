@@ -18,10 +18,7 @@ import (
 	"github.com/sttts/kc/pkg/kubeconfig"
 	"github.com/sttts/kc/pkg/navigation"
 	navui "github.com/sttts/kc/internal/navigation"
-	table "github.com/sttts/kc/internal/table"
 	kccluster "github.com/sttts/kc/internal/cluster"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
     metamapper "k8s.io/apimachinery/pkg/api/meta"
     yaml "sigs.k8s.io/yaml"
@@ -1225,6 +1222,7 @@ func (a *App) initData() error {
 }
 
 // buildNamespacesFolder creates a Folder listing namespaces for the current context.
+/* legacy UI builders: namespaces/groups/objects are now provided by navigation folders
 func (a *App) buildNamespacesFolder() navui.Folder {
     // Discover Namespace GVR
     gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
@@ -1395,11 +1393,12 @@ func (a *App) namespaceExists(ns string) bool {
 // If ns is empty, uses "default". If the namespace does not exist, navigates to root.
 func (a *App) goToNamespace(ns string) {
     if ns == "" { ns = "default" }
-    root := a.buildRootFolder()
+    deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name}
+    root := navui.NewRootFolder(deps)
     a.navigator = navui.NewNavigator(root)
     if a.namespaceExists(ns) {
-        a.navigator.Push(a.buildNamespacesFolder())
-        a.navigator.Push(a.buildNamespacedGroupsFolder(ns))
+        a.navigator.Push(navui.NewNamespacesFolder(deps))
+        a.navigator.Push(navui.NewNamespacedGroupsFolder(deps, ns))
     }
     cur := a.navigator.Current()
     hasBack := a.navigator.HasBack()
@@ -1473,6 +1472,7 @@ func (a *App) buildClusterObjectsFolder(gvr schema.GroupVersionResource) navui.F
     }
     return navui.NewObjectsFolder(a.currentCtx.Name, gvr, "", rows)
 }
+*/
 
 
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.

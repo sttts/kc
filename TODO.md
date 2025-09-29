@@ -28,6 +28,39 @@ Hierarchy refactor and tests
 - [ ] Programmatic goto (namespaces): implement simple Enter‑driven path stepping for `/namespaces/<ns>` without builders.
 - [ ] Envtest integration tests: start apiserver, seed ns/configmap/secret/node; verify walking Root → Namespaces → Groups → Objects → Keys; Back to parent; cluster‑scoped list. Tests only import navigation/resources/table (no UI).
 
+Detailed next steps (post‑compaction anchors)
+- [ ] Replace legacy folder builders in `internal/ui/app.go` (buildNamespacesFolder/buildNamespacedGroupsFolder/buildNamespacedObjectsFolder/buildClusterObjectsFolder) with the new self‑sufficient folders:
+  - Root: `nav.NewRootFolder(nav.Deps{Cl:a.cl, Ctx:a.ctx, CtxName:a.currentCtx.Name})` [done]
+  - Namespaces: `nav.NewNamespacesFolder(deps)`
+  - Groups: `nav.NewNamespacedGroupsFolder(deps, ns)`
+  - Objects (namespaced/cluster): `nav.NewNamespacedObjectsFolder(deps, gvr, ns)` / `nav.NewClusterObjectsFolder(deps, gvr)`
+  - Virtual children (pods/configmaps/secrets): use the GVR→child registry; no string comparisons.
+- [ ] Programmatic goto for namespaces without builders:
+  - Parse target `/namespaces/<ns>`; compose Enter steps by scanning rows for the ID and calling `Enter()`.
+  - Fallbacks: missing ns ⇒ root. On success, set navigator selection to the `/<ns>` row ID.
+- [ ] Live updates via controller‑runtime cache informers (no custom Store):
+  - For each folder that should refresh on changes, use `cl.GetCache().GetInformer(ctx, &unstructured.Unstructured{Object: {"apiVersion": gv, "kind": kind}})` to obtain a shared informer.
+  - Hook Add/Update/Delete to invalidate the folder’s cached list (e.g., set `once` to zero or refresh `list` in a thread‑safe manner) and trigger UI refresh.
+  - Ensure all informers use the app’s `ctx` (no `Background()`).
+- [ ] Envtest tests (internal/navigation/hierarchy_envtest_test.go):
+  - Start envtest; build `cl := kccluster.New(cfg)` and `deps := nav.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}`
+  - Seed: ns `testns`; cm `cm1` with keys `a`, `b`; secret `sec1` with keys `x`, `y`; node `n1`.
+  - Walk:
+    1) f := nav.NewRootFolder(deps) ⇒ assert rows include `/namespaces` and at least one cluster‑scoped resource (e.g., `nodes`).
+    2) Enter `/namespaces` ⇒ assert `testns` present.
+    3) Enter `testns` groups ⇒ assert `/configmaps` and `/secrets` with correct counts.
+    4) Enter `/configmaps` ⇒ assert `cm1` present.
+    5) Enter `cm1` ⇒ assert keys `a`, `b`.
+    6) Use `Navigator` + `WithBack` to test back navigation.
+    7) Cluster objects for `nodes` ⇒ assert `n1` present.
+- [ ] App shutdown & ctx:
+  - Ensure `app.cancel()` and `clPool.Stop()` are called on exit (done) and that all folder informers share `app.ctx`.
+- [ ] Registry defaults:
+  - Verify `internal/navigation/registry_defaults.go` covers pods/configmaps/secrets; add more (e.g., deployments→replicasets) if desired.
+- [ ] Config:
+  - Make `kubernetes.clusters.ttl` (metav1.Duration) editable and documented.
+- [ ] Style: keep imports consistent (use `kccluster` alias for internal cluster, upstream packages with natural aliases).
+
 ## Milestone 2 — UI Navigation on the Model
 - Panel adapter reads model nodes; implements `Enter`, `Back(..)`, breadcrumbs, and `..` entries.
 - Live updates: diff -> list model -> minimal reflow; preserve scroll and cursor when possible.
