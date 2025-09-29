@@ -1189,11 +1189,11 @@ func (a *App) initData() error {
 		// Non-fatal; still allow UI
 		fmt.Printf("Warning: load context resources: %v\n", err)
 	}
-	// Wire panel data sources
-	tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
-		return a.resMgr.ListTableByGVR(ctx, gvr, ns)
-	}
-    // datasources removed; panel uses folder-backed rendering only
+    // Server-side Table helper (used in folder rendering later)
+    tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
+        return a.cl.ListTableByGVR(ctx, gvr, ns)
+    }
+    _ = tableFn // placeholder until folders consume it
 	// Discovery-backed catalog
     if infos, err := a.cl.GetResourceInfos(); err == nil {
         a.leftPanel.SetResourceCatalog(infos)
