@@ -179,3 +179,48 @@ func TestContextNamespaceWalk(t *testing.T) {
     for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 { seen[cells[0]] = true } }
     if !seen["a"] || !seen["b"] { t.Fatalf("cm1 keys: expected a and b, got %+v", seen) }
 }
+
+// TestStartupSelectionRestore simulates the app's startup navigation
+// (root -> namespaces -> namespaced groups) and verifies that going back
+// restores the previous selection IDs (namespace, then "/namespaces").
+func TestStartupSelectionRestore(t *testing.T) {
+    t.Parallel()
+    testEnv := &envtest.Environment{}
+    cfg, err := testEnv.Start()
+    if err != nil || cfg == nil { t.Fatalf("start envtest: %v", err) }
+    defer func(){ _ = testEnv.Stop() }()
+
+    scheme := runtime.NewScheme(); _ = corev1.AddToScheme(scheme)
+    cli, err := crclient.New(cfg, crclient.Options{Scheme: scheme})
+    if err != nil { t.Fatalf("new client: %v", err) }
+    ctx := context.TODO()
+    if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil { t.Fatalf("create ns: %v", err) }
+
+    cl, err := kccluster.New(cfg)
+    if err != nil { t.Fatalf("kccluster: %v", err) }
+    go cl.Start(ctx)
+    deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+
+    root := NewContextRootFolder(deps)
+    nav := NewNavigator(root)
+    // Simulate app startup sequence
+    nav.SetSelectionID("namespaces")
+    nav.Push(NewNamespacesFolder(deps))
+    nav.SetSelectionID("testns")
+    nav.Push(NewNamespacedGroupsFolder(deps, "testns"))
+
+    // Back to namespaces, selection should be "testns"
+    if cur := nav.Back(); cur == nil || cur.Title() != "namespaces" {
+        t.Fatalf("expected namespaces after first back, got %v", cur)
+    }
+    if sel := nav.CurrentSelectionID(); sel != "testns" {
+        t.Fatalf("expected selection 'testns', got %q", sel)
+    }
+    // Back to context root, selection should be "/namespaces"
+    if cur := nav.Back(); cur == nil || cur.Title() != "contexts/"+deps.CtxName {
+        t.Fatalf("expected context root after second back, got %v", cur)
+    }
+    if sel := nav.CurrentSelectionID(); sel != "namespaces" {
+        t.Fatalf("expected selection 'namespaces', got %q", sel)
+    }
+}
