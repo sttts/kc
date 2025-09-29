@@ -8,7 +8,11 @@ import (
 // helper to make a trivial folder with a title and one name column
 func mkFolder(title, key string, names ...string) Folder {
     rows := make([]table.Row, 0, len(names))
-    for _, n := range names { rows = append(rows, NewSimpleItem(n, []string{n}, WhiteStyle())) }
+    base := []string{}
+    if title != "/" && title != "" { base = append(base, title) }
+    for _, n := range names {
+        rows = append(rows, NewSimpleItem(n, []string{n}, append(append([]string(nil), base...), n), WhiteStyle()))
+    }
     return NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, rows)
 }
 
@@ -38,4 +42,3 @@ func TestNavigator_BackFromContextNamespacesGoesToContexts(t *testing.T) {
         t.Fatalf("expected to be back at contexts, got %v", cur)
     }
 }
-

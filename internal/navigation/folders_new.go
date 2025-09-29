@@ -22,6 +22,8 @@ type BaseFolder struct {
     once  sync.Once
     list  *table.SliceList
     init  func()
+    // absolute breadcrumb path segments for this folder
+    path []string
     // optional metadata for object list folders
     gvr       schema.GroupVersionResource
     namespace string
@@ -32,6 +34,16 @@ type BaseFolder struct {
 }
 
 func (b *BaseFolder) Columns() []table.Column { return b.cols }
+
+// Title returns a systematic title for object-list folders using their
+// metadata (namespace + resource). Non-object folders should override Title.
+func (b *BaseFolder) Title() string {
+    if b.hasMeta {
+        if b.namespace != "" { return "namespaces/" + b.namespace + "/" + b.gvr.Resource }
+        return b.gvr.Resource
+    }
+    return ""
+}
 
 // table.List implementation delegates to the lazily-populated list.
 func (b *BaseFolder) ensure() {
@@ -77,7 +89,7 @@ func (b *BaseFolder) ObjectListMeta() (schema.GroupVersionResource, string, bool
 // RootFolder lists contexts, namespaces, and cluster-scoped resource groups.
 type RootFolder struct{ BaseFolder }
 func NewRootFolder(deps Deps) *RootFolder {
-    f := &RootFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}}}
+    f := &RootFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}, path: []string{}}}
     f.init = func(){ f.populate() }
     return f
 }
@@ -86,8 +98,8 @@ func (f *RootFolder) Key() string   { return "root" }
 
 // NamespacesFolder lists namespaces.
 type NamespacesFolder struct{ BaseFolder }
-func NewNamespacesFolder(deps Deps) *NamespacesFolder {
-    f := &NamespacesFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, gvr: schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, hasMeta: true}}
+func NewNamespacesFolder(deps Deps, basePath []string) *NamespacesFolder {
+    f := &NamespacesFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, gvr: schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, hasMeta: true, path: append([]string(nil), basePath...)}}
     f.init = func(){ f.populate() }
     return f
 }
@@ -96,8 +108,8 @@ func (f *NamespacesFolder) Key() string   { return depsKey(f.deps, "namespaces")
 
 // NamespacedGroupsFolder lists namespaced resource groups for a namespace.
 type NamespacedGroupsFolder struct{ BaseFolder; ns string }
-func NewNamespacedGroupsFolder(deps Deps, ns string) *NamespacedGroupsFolder {
-    f := &NamespacedGroupsFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}}, ns: ns}
+func NewNamespacedGroupsFolder(deps Deps, ns string, basePath []string) *NamespacedGroupsFolder {
+    f := &NamespacedGroupsFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}, path: append([]string(nil), basePath...)}, ns: ns}
     f.init = func(){ f.populate() }
     return f
 }
@@ -106,18 +118,17 @@ func (f *NamespacedGroupsFolder) Key() string   { return depsKey(f.deps, "namesp
 
 // NamespacedObjectsFolder lists namespaced objects for a GVR + namespace.
 type NamespacedObjectsFolder struct{ BaseFolder }
-func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, ns string) *NamespacedObjectsFolder {
-    f := &NamespacedObjectsFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, gvr: gvr, namespace: ns, hasMeta: true}}
+func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, ns string, basePath []string) *NamespacedObjectsFolder {
+    f := &NamespacedObjectsFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, gvr: gvr, namespace: ns, hasMeta: true, path: append([]string(nil), basePath...)}}
     f.init = func(){ f.populate() }
     return f
 }
-func (f *NamespacedObjectsFolder) Title() string { return f.gvr.Resource }
 func (f *NamespacedObjectsFolder) Key() string   { return depsKey(f.deps, "namespaces/"+f.namespace+"/"+f.gvr.Resource) }
 
 // ClusterObjectsFolder lists cluster-scoped objects for a GVR.
 type ClusterObjectsFolder struct{ BaseFolder }
-func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource) *ClusterObjectsFolder {
-    f := &ClusterObjectsFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, gvr: gvr, hasMeta: true}}
+func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource, basePath []string) *ClusterObjectsFolder {
+    f := &ClusterObjectsFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, gvr: gvr, hasMeta: true, path: append([]string(nil), basePath...)}}
     f.init = func(){ f.populate() }
     return f
 }
@@ -126,8 +137,8 @@ func (f *ClusterObjectsFolder) Key() string   { return depsKey(f.deps, f.gvr.Res
 
 // PodContainersFolder lists containers + initContainers for a pod.
 type PodContainersFolder struct{ BaseFolder; ns, pod string }
-func NewPodContainersFolder(deps Deps, ns, pod string) *PodContainersFolder {
-    f := &PodContainersFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}}, ns: ns, pod: pod}
+func NewPodContainersFolder(deps Deps, ns, pod string, basePath []string) *PodContainersFolder {
+    f := &PodContainersFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, path: append([]string(nil), basePath...)}, ns: ns, pod: pod}
     f.init = func(){ f.populate() }
     return f
 }
@@ -136,23 +147,31 @@ func (f *PodContainersFolder) Key() string   { return depsKey(f.deps, "namespace
 
 // ConfigMapKeysFolder lists data keys for a ConfigMap.
 type ConfigMapKeysFolder struct{ BaseFolder; ns, name string }
-func NewConfigMapKeysFolder(deps Deps, ns, name string) *ConfigMapKeysFolder {
-    f := &ConfigMapKeysFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}}, ns: ns, name: name}
+func NewConfigMapKeysFolder(deps Deps, ns, name string, basePath []string) *ConfigMapKeysFolder {
+    f := &ConfigMapKeysFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, path: append([]string(nil), basePath...)}, ns: ns, name: name}
     f.init = func(){ f.populate() }
     return f
 }
 func (f *ConfigMapKeysFolder) Title() string { return "data" }
 func (f *ConfigMapKeysFolder) Key() string   { return depsKey(f.deps, "namespaces/"+f.ns+"/configmaps/"+f.name+"/data") }
+// Parent returns the coordinates of the owning ConfigMap
+func (f *ConfigMapKeysFolder) Parent() (schema.GroupVersionResource, string, string) {
+    return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}, f.ns, f.name
+}
 
 // SecretKeysFolder lists data keys for a Secret.
 type SecretKeysFolder struct{ BaseFolder; ns, name string }
-func NewSecretKeysFolder(deps Deps, ns, name string) *SecretKeysFolder {
-    f := &SecretKeysFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}}, ns: ns, name: name}
+func NewSecretKeysFolder(deps Deps, ns, name string, basePath []string) *SecretKeysFolder {
+    f := &SecretKeysFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, path: append([]string(nil), basePath...)}, ns: ns, name: name}
     f.init = func(){ f.populate() }
     return f
 }
 func (f *SecretKeysFolder) Title() string { return "data" }
 func (f *SecretKeysFolder) Key() string   { return depsKey(f.deps, "namespaces/"+f.ns+"/secrets/"+f.name+"/data") }
+// Parent returns the coordinates of the owning Secret
+func (f *SecretKeysFolder) Parent() (schema.GroupVersionResource, string, string) {
+    return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}, f.ns, f.name
+}
 
 // depsKey composes a stable Folder key from deps.CtxName and a relative path.
 func depsKey(d Deps, rel string) string { return d.CtxName + "/" + rel }
@@ -174,10 +193,12 @@ func (f *RootFolder) populate() {
     nameSty := WhiteStyle()
     // Contexts entry (if provided)
     if f.deps.ListContexts != nil {
-        rows = append(rows, NewEnterableItemStyled("contexts", []string{"/contexts", "", ""}, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewContextsFolder(f.deps), nil }))
+        base := append(append([]string(nil), f.path...), "contexts")
+        rows = append(rows, NewEnterableItemStyled("contexts", []string{"/contexts", "", ""}, base, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewContextsFolder(f.deps, base), nil }))
     }
     // Namespaces entry
-    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", ""}, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps), nil }))
+    nsBase := append(append([]string(nil), f.path...), "namespaces")
+    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", ""}, nsBase, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps, nsBase), nil }))
     // Cluster-scoped resources
     if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
         // Filter and sort by resource name (plural)
@@ -194,7 +215,8 @@ func (f *RootFolder) populate() {
             if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, ""); err == nil { n = len(lst.Items) }
             // Use a unique GVR-based ID (group/version/resource) to avoid collisions (e.g., events).
             id := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
-            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr), nil }))
+            base := append(append([]string(nil), f.path...), info.Resource)
+            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, base, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr, base), nil }))
         }
     }
     f.list = table.NewSliceList(rows)
@@ -203,8 +225,8 @@ func (f *RootFolder) populate() {
 // ContextRootFolder shows a context-scoped root, equivalent to "/" but under /contexts/<ctx>.
 type ContextRootFolder struct{ BaseFolder }
 
-func NewContextRootFolder(deps Deps) *ContextRootFolder {
-    f := &ContextRootFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}}}
+func NewContextRootFolder(deps Deps, basePath []string) *ContextRootFolder {
+    f := &ContextRootFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}, path: append([]string(nil), basePath...)}}
     f.init = func(){ f.populate() }
     return f
 }
@@ -216,7 +238,8 @@ func (f *ContextRootFolder) populate() {
     rows := make([]table.Row, 0, 64)
     nameSty := WhiteStyle()
     // Namespaces entry within the context
-    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", ""}, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps), nil }))
+    nsBase := append(append([]string(nil), f.path...), "namespaces")
+    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", ""}, nsBase, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps, nsBase), nil }))
     // Cluster-scoped resources for this context
     if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
         filtered := make([]kccluster.ResourceInfo, 0, len(infos))
@@ -231,7 +254,8 @@ func (f *ContextRootFolder) populate() {
             n := 0
             if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, ""); err == nil { n = len(lst.Items) }
             id := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
-            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr), nil }))
+            base := append(append([]string(nil), f.path...), info.Resource)
+            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, base, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr, base), nil }))
         }
     }
     f.list = table.NewSliceList(rows)
@@ -239,8 +263,8 @@ func (f *ContextRootFolder) populate() {
 
 // ContextsFolder lists available contexts (if provided in Deps).
 type ContextsFolder struct{ BaseFolder }
-func NewContextsFolder(deps Deps) *ContextsFolder {
-    f := &ContextsFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}}}
+func NewContextsFolder(deps Deps, basePath []string) *ContextsFolder {
+    f := &ContextsFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, path: append([]string(nil), basePath...)}}
     f.init = func() { f.populate() }
     return f
 }
@@ -255,9 +279,10 @@ func (f *ContextsFolder) populate() {
         for _, n := range names {
             if f.deps.EnterContext != nil {
                 name := n
-                rows = append(rows, NewEnterableItem(name, []string{name}, func() (Folder, error) { return f.deps.EnterContext(name) }, nameSty))
+                base := append(append([]string(nil), f.path...), name)
+                rows = append(rows, NewEnterableItem(name, []string{name}, base, func() (Folder, error) { return f.deps.EnterContext(name, base) }, nameSty))
             } else {
-                rows = append(rows, NewSimpleItem(n, []string{n}, nameSty))
+                rows = append(rows, NewSimpleItem(n, []string{n}, append(append([]string(nil), f.path...), n), nameSty))
             }
         }
     }
@@ -272,7 +297,10 @@ func (f *NamespacesFolder) populate() {
     // Ensure we watch namespace changes (debounced refresh in UI) using GVR
     f.watchGVR(gvr)
     rows := make([]table.Row, 0, len(lst.Items))
-    for i := range lst.Items { ns := lst.Items[i].GetName(); rows = append(rows, NewEnterableItem(ns, []string{"/"+ns}, func() (Folder, error) { return NewNamespacedGroupsFolder(f.deps, ns), nil }, nameSty)) }
+    for i := range lst.Items { ns := lst.Items[i].GetName();
+        base := append(append([]string(nil), f.path...), ns)
+        rows = append(rows, NewEnterableItem(ns, []string{"/"+ns}, base, func() (Folder, error) { return NewNamespacedGroupsFolder(f.deps, ns, base), nil }, nameSty))
+    }
     f.list = table.NewSliceList(rows)
 }
 
@@ -290,7 +318,8 @@ func (f *NamespacedGroupsFolder) populate() {
         if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, f.ns); err == nil { n = len(lst.Items) }
         // Use GVR-based unique ID; do not dim Group column in namespaced groups.
         id := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
-        rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewNamespacedObjectsFolder(f.deps, gvr, f.ns), nil }))
+        base := append(append([]string(nil), f.path...), info.Resource)
+        rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, base, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewNamespacedObjectsFolder(f.deps, gvr, f.ns, base), nil }))
     }
     f.list = table.NewSliceList(rows)
 }
@@ -307,9 +336,10 @@ func (f *NamespacedObjectsFolder) populate() {
     for _, nm := range names {
         if ctor, ok := childFor(f.gvr); ok {
             ns := f.namespace; name := nm
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return ctor(f.deps, ns, name), nil }, nameSty))
+            base := append(append([]string(nil), f.path...), nm)
+            rows = append(rows, NewEnterableItem(nm, []string{nm}, base, func() (Folder, error) { return ctor(f.deps, ns, name, base), nil }, nameSty))
         } else {
-            rows = append(rows, NewSimpleItem(nm, []string{nm}, nameSty))
+            rows = append(rows, NewSimpleItem(nm, []string{nm}, append(append([]string(nil), f.path...), nm), nameSty))
         }
     }
     f.list = table.NewSliceList(rows)
@@ -327,9 +357,10 @@ func (f *ClusterObjectsFolder) populate() {
     for _, nm := range names {
         if ctor, ok := childFor(f.gvr); ok {
             name := nm
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return ctor(f.deps, "", name), nil }, nameSty))
+            base := append(append([]string(nil), f.path...), nm)
+            rows = append(rows, NewEnterableItem(nm, []string{nm}, base, func() (Folder, error) { return ctor(f.deps, "", name, base), nil }, nameSty))
         } else {
-            rows = append(rows, NewSimpleItem(nm, []string{nm}, nameSty))
+            rows = append(rows, NewSimpleItem(nm, []string{nm}, append(append([]string(nil), f.path...), nm), nameSty))
         }
     }
     f.list = table.NewSliceList(rows)
@@ -343,8 +374,8 @@ func (f *PodContainersFolder) populate() {
     var pod corev1.Pod
     if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &pod); err != nil { f.list = newEmptyList(); return }
     rows := make([]table.Row, 0, 8)
-    for _, c := range pod.Spec.Containers { if c.Name != "" { rows = append(rows, NewSimpleItem(c.Name, []string{c.Name}, nameSty)) } }
-    for _, c := range pod.Spec.InitContainers { if c.Name != "" { rows = append(rows, NewSimpleItem(c.Name, []string{c.Name}, nameSty)) } }
+    for _, c := range pod.Spec.Containers { if c.Name != "" { rows = append(rows, NewSimpleItem(c.Name, []string{c.Name}, append(append([]string(nil), f.path...), c.Name), nameSty)) } }
+    for _, c := range pod.Spec.InitContainers { if c.Name != "" { rows = append(rows, NewSimpleItem(c.Name, []string{c.Name}, append(append([]string(nil), f.path...), c.Name), nameSty)) } }
     f.list = table.NewSliceList(rows)
 }
 
@@ -359,7 +390,7 @@ func (f *ConfigMapKeysFolder) populate() {
     keys := make([]string, 0, len(cm.Data))
     for k := range cm.Data { keys = append(keys, k) }
     sort.Strings(keys)
-    for _, k := range keys { rows = append(rows, NewSimpleItem(k, []string{k}, nameSty)) }
+    for _, k := range keys { rows = append(rows, NewSimpleItem(k, []string{k}, append(append([]string(nil), f.path...), k), nameSty)) }
     f.list = table.NewSliceList(rows)
 }
 
@@ -374,6 +405,6 @@ func (f *SecretKeysFolder) populate() {
     keys := make([]string, 0, len(sec.Data))
     for k := range sec.Data { keys = append(keys, k) }
     sort.Strings(keys)
-    for _, k := range keys { rows = append(rows, NewSimpleItem(k, []string{k}, nameSty)) }
+    for _, k := range keys { rows = append(rows, NewSimpleItem(k, []string{k}, append(append([]string(nil), f.path...), k), nameSty)) }
     f.list = table.NewSliceList(rows)
 }

@@ -34,7 +34,7 @@ Every location is backed by exact identities (GVR), never heuristic breadcrumb p
   - Owns the core navigation model: `Item`, `Enterable`, `Folder`, `Back`.
   - Folders are self‑sufficient: each lazily populates rows from injected dependencies and `Enterable.Enter()` returns the next Folder.
   - `WithBack(f, hasBack)` injects a synthetic “..” row for presentation.
-  - Depends on `pkg/resources` and `internal/table`.
+  - Depends on `internal/cluster` and `internal/table`.
 
 - `internal/ui/view` (modular viewers)
   - `ViewProvider` — provides `BuildView() (title, body string, err error)` for `F3`.
@@ -54,6 +54,7 @@ Every location is backed by exact identities (GVR), never heuristic breadcrumb p
 type Item interface {
     table.Row        // Columns() (id, cells, styles, exists)
     Details() string // concise info shown in status/footer
+    Path() []string  // absolute path segments, excluding leading "/"
 }
 
 // ObjectItem is implemented by items that represent actual Kubernetes objects.
@@ -76,6 +77,7 @@ type Viewable interface {
 Notes:
 - Items expose their table shape directly via `table.Row`, unifying all list rendering.
 - `Details()` is a short, non-tabular description for status lines.
+- `Path()` is the canonical breadcrumb path for this row (e.g., ["namespaces","ns1","pods","web-0"]). Panels/viewers render it with "/"+strings.Join(path, "/").
 - Row styling is set per-cell via the `styles` returned from `Columns()`. Default: make all cells green here; selection/other modes can override.
 - `ObjectItem` provides precise identity via accessors instead of brittle paths.
 
@@ -138,7 +140,7 @@ Usage boundaries:
 - On Enter:
   - If the selected row implements `Back`, the app pops to the previous Folder and restores its `SelectedID`.
   - Else if it implements `Enterable`, the app pushes the new Folder and resets `SelectedID`.
-- Breadcrumbs are derived from the stack of Folder titles.
+- Breadcrumbs are computed from navigator state (see “Breadcrumbs and Paths”).
 
 Interface sketch (markers only):
 
@@ -159,44 +161,55 @@ Notes:
 1. App creates a `Navigator` with the root `Folder` (Deps injected).
 2. Panel shows `WithBack(Current(), HasBack())` and routes keys.
 3. Enter pushes the next Folder returned by the selected `Enterable` row. Back pops.
-4. Viewers use GVR/ns/rowID from the current Folder to fetch content.
+4. Viewers use GVR/ns/rowID from the current Folder to fetch content; titles use `item.Path()` when available (fallback: GVR/ns path).
 
 ## Self‑Sufficient Folders
 
 - Dependencies: Folders receive an immutable `Deps` struct with:
-  - `ResMgr *resources.Manager` (GVK↔GVR + optional server‑side Table)
-  - `Store resources.StoreProvider` (List/Get via controller‑runtime caches)
+  - `Cl *internal/cluster.Cluster` (controller‑runtime client + cache + RESTMapper)
+  - `Ctx context.Context`
   - `CtxName string` (for keys/titles)
-- Constructors (UI‑agnostic) live in `internal/navigation`:
+  - `ListContexts func() []string` (optional; used for contexts listing)
+  - `EnterContext func(name string, basePath []string) (Folder, error)` (optional; builds a context‑scoped root)
+- Constructors (UI‑agnostic) live in `internal/navigation` and carry base path segments:
   - `NewRootFolder(deps)`
-  - `NewNamespacesFolder(deps)`
-  - `NewNamespacedGroupsFolder(deps, ns)`
-  - `NewNamespacedObjectsFolder(deps, gvr, ns)`
-  - `NewClusterObjectsFolder(deps, gvr)`
-  - `NewPodContainersFolder(deps, ns, pod)`
-  - `NewConfigMapKeysFolder(deps, ns, name)`
-  - `NewSecretKeysFolder(deps, ns, name)`
+  - `NewContextsFolder(deps, basePath []string)`
+  - `NewContextRootFolder(deps, basePath []string)`
+  - `NewNamespacesFolder(deps, basePath []string)`
+  - `NewNamespacedGroupsFolder(deps, ns, basePath []string)`
+  - `NewNamespacedObjectsFolder(deps, gvr, ns, basePath []string)`
+  - `NewClusterObjectsFolder(deps, gvr, basePath []string)`
+  - `NewPodContainersFolder(deps, ns, pod, basePath []string)`
+  - `NewConfigMapKeysFolder(deps, ns, name, basePath []string)`
+  - `NewSecretKeysFolder(deps, ns, name, basePath []string)`
 - Lazy population: first access to `Lines/Len/Find` triggers a single populate pass that builds
   a `table.SliceList` of rows. Rows are `table.Row` values (typically `SimpleRow`/`EnterableItem`).
-- Enterable rows: items that can be entered implement `Enterable` and return the exact next Folder with `deps` already bound.
+- Enterable rows: items that can be entered implement `Enterable` and return the exact next Folder with `deps` already bound. Rows and child folders get a propagated `path []string` so breadcrumbs remain consistent at every level.
 - Back: The “..” entry is injected by `WithBack(f, hasBack)` as a presentational wrapper. The underlying Folder remains pure data.
 
 ## Programmatic Navigation
 
-- Paths are UX‑level, not a data source. Programmatic navigation (“goto”) composes Enter calls:
-  - Example: `/namespaces/<ns>` → `root.Enter("/namespaces").Enter("/"+ns)`.
+- Paths are UX‑level, not a data source. Programmatic navigation composes Enter calls and sets selection IDs on the navigator:
+  - Example: `/namespaces/<ns>` → `nav.SetSelectionID("namespaces"); nav.Push(NewNamespacesFolder(deps, ["namespaces"]))`; then `nav.SetSelectionID(ns); nav.Push(NewNamespacedGroupsFolder(deps, ns, ["namespaces",ns]))`.
   - Validation (missing ns/resource/object) falls back to the nearest valid parent.
 - The App owns a `Navigator`; `GoToNamespace(ns)` builds a clean stack using Enterable rows and updates the panels with `WithBack(Current(), HasBack())`.
+
+## Breadcrumbs and Paths
+
+- Rule: the first column of each selected row is the path segment. Enterable rows display a UI leading “/”; navigation trims it for the logical segment.
+- `Navigator.Path()` walks the navigator stack, finds each parent frame’s selected row, collects its first column (after trimming one leading “/”), ignores the synthetic back row, and joins segments with a leading "/". Root is just `/`.
+- Items expose `Path() []string` carrying their absolute segments so viewers/modal titles don’t need to inspect navigator state.
+- Panels set their header from `nav.Path()`; viewers prefer `item.Path()` and fall back to GVR/ns when needed.
 
 ## Testing (Envtest)
 
 - Use controller‑runtime envtest to start an API server and seed fixtures (ns/configmap/secret/node).
-- Build `resources.Manager` + StoreProvider from envtest `rest.Config`.
+- Build cluster + cache from envtest `rest.Config` via `internal/cluster`.
 - Create `Deps` and walk the hierarchy via Folders only (no UI imports):
   1. Root → assert rows include `/contexts`, `/namespaces`.
   2. Enter `/namespaces` → assert `/<ns>` present.
   3. Enter `/<ns>` (groups) → assert `/configmaps`, `/secrets` with counts.
-  4. Enter `/configmaps` → assert `cm1`.
+  4. Enter `/configmaps` → assert `/cm1`.
   5. Enter `cm1` → assert keys `a`, `b`.
   6. Back using `Navigator` + `WithBack` → verify parent restored.
   7. Cluster objects (`nodes`) → assert `n1`.
