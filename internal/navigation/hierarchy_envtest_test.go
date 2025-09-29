@@ -92,7 +92,7 @@ func TestHierarchyEnvtest(t *testing.T) {
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len() > 0 })
     rows = objs.Lines(0, objs.Len())
     foundCM1 := false
-    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "cm1" { foundCM1 = true; break } }
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/cm1" { foundCM1 = true; break } }
     if !foundCM1 { t.Fatalf("objects: cm1 not found") }
 
     // 5) Enter cm1 keys
