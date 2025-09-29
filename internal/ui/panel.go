@@ -140,8 +140,20 @@ func (p *Panel) ResetSelectionTop() {
 // This does not alter legacy behaviors beyond rendering headers/rows from the
 // folder for preview purposes. Selection/enter logic remains unchanged.
 func (p *Panel) SetFolder(f nav.Folder, hasBack bool) {
-    p.folder = f
+    // Wrap with back-row synthetic folder for presentation
+    eff := nav.WithBack(f, hasBack)
+    p.folder = eff
     p.folderHasBack = hasBack
+    // Update path title for breadcrumbs
+    if f != nil {
+        t := f.Title()
+        if t == "/" {
+            p.currentPath = "/"
+        } else {
+            // always render with leading slash
+            if strings.HasPrefix(t, "/") { p.currentPath = t } else { p.currentPath = "/" + t }
+        }
+    }
     // Initialize or refresh BigTable from folder columns and data when enabled
     if p.useFolder && p.folder != nil {
         cols := p.folder.Columns()
@@ -211,15 +223,14 @@ func (p *Panel) SelectByRowID(id string) {
     if !p.useFolder || p.folder == nil || id == "" { p.ResetSelectionTop(); return }
     // Ensure items reflect current folder
     p.syncFromFolder()
-    // Find the absolute row index in the folder
+    // Find the absolute row index in the (wrapped) folder
     rows := p.folder.Lines(0, p.folder.Len())
     idx := -1
     for i := range rows { rid, _, _, _ := rows[i].Columns(); if rid == id { idx = i; break } }
     // Fallback
     if idx < 0 { p.ResetSelectionTop(); return }
-    // Adjust for back row
+    // Wrapped folder already includes back row at index 0; selection index equals row index
     sel := idx
-    if p.folderHasBack || (p.folder != nil && p.folder.Title() != "/") { sel = idx + 1 }
     if sel < 0 { sel = 0 }
     if sel >= len(p.items) { sel = len(p.items) - 1 }
     p.selected = sel
@@ -238,6 +249,8 @@ func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next nav.Fol
 // Legacy live data sources removed; folders drive listings now.
 
 // SetPodsDataSource retained for compatibility; prefer SetGenericDataSourceFactory.
+// Legacy shim type and setter for backwards compatibility.
+type PodsDataSource struct{}
 func (p *Panel) SetPodsDataSource(ds *PodsDataSource) { /* deprecated */ }
 
 // SetResourceCatalog injects the namespaced resource catalog (plural -> GVK).
@@ -1411,16 +1424,7 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
             } else if len(parts) == 2 {
                 // Cluster-scoped resource objects: "/<resource>"
                 res := parts[1]
-                var gvk schema.GroupVersionKind
-                found := false
-                for _, info := range p.clusterInfos {
-                    if info.Resource == res {
-                        gvk = info.GVK
-                        found = true
-                        break
-                    }
-                }
-                _ = gvk
+                _ = res
 			} else if len(parts) >= 4 {
 				ns := parts[2]
 				res := parts[3]

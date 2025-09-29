@@ -3,7 +3,6 @@ package navigation
 import (
     "fmt"
     "path/filepath"
-    "sort"
     "strings"
 
     "github.com/sttts/kc/pkg/kubeconfig"
@@ -150,14 +149,10 @@ func (m *Manager) GetState() *NavigationState {
 
 // NavigateTo navigates to a specific node
 func (m *Manager) NavigateTo(node *Node) error {
-	m.state.SetCurrentNode(node)
+    m.state.SetCurrentNode(node)
 
-	// Load resources if this is a namespace node
-	if node.Type == NodeTypeNamespace {
-		return m.LoadNamespaceResources(node.Name)
-	}
-
-	return nil
+    // Legacy resource loading removed.
+    return nil
 }
 
 // GetCurrentNode returns the current navigation node

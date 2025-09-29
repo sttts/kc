@@ -9,7 +9,6 @@ import (
     "github.com/sttts/kc/pkg/kubeconfig"
     kccluster "github.com/sttts/kc/internal/cluster"
     corev1 "k8s.io/api/core/v1"
-    "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func main() {
@@ -54,12 +53,7 @@ func main() {
     go cl.Start(ctx)
 
 	// Register a pod handler
-	podHandler := handlers.NewPodHandler()
-	podGVK := schema.GroupVersionKind{
-		Group:   "",
-		Version: "v1",
-		Kind:    "Pod",
-	}
+    podHandler := handlers.NewPodHandler()
     // Handlers are demo-only; keep registration out in real app
     _ = podHandler
 
@@ -130,13 +124,13 @@ func main() {
 	// Show supported resources
 	fmt.Println("\nSupported resource types:")
     supportedResources, err := cl.GetResourceInfos()
-	if err != nil {
-		log.Printf("Failed to get supported resources: %v", err)
-	} else {
-		for _, gvk := range supportedResources {
-			fmt.Printf("  - %s\n", gvk.String())
-		}
-	}
+    if err != nil {
+        log.Printf("Failed to get supported resources: %v", err)
+    } else {
+        for _, info := range supportedResources {
+            fmt.Printf("  - %s (%s/%s)\n", info.Resource, info.GVK.Group, info.GVK.Version)
+        }
+    }
 
 	fmt.Println("\nResource manager demo completed!")
 }
