@@ -214,7 +214,14 @@ func (f *ContextsFolder) populate() {
     if f.deps.ListContexts != nil {
         names := f.deps.ListContexts()
         sort.Strings(names)
-        for _, n := range names { rows = append(rows, NewSimpleItem(n, []string{n}, nameSty)) }
+        for _, n := range names {
+            if f.deps.EnterContext != nil {
+                name := n
+                rows = append(rows, NewEnterableItem(name, []string{name}, func() (Folder, error) { return f.deps.EnterContext(name) }, nameSty))
+            } else {
+                rows = append(rows, NewSimpleItem(n, []string{n}, nameSty))
+            }
+        }
     }
     f.list = table.NewSliceList(rows)
 }

@@ -1257,13 +1257,36 @@ func (a *App) goToNamespace(ns string) {
 	if ns == "" {
 		ns = "default"
 	}
-	deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name, ListContexts: func() []string {
-		out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+	deps := navui.Deps{
+		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+		ListContexts: func() []string {
+			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+			for _, c := range a.kubeMgr.GetContexts() {
+				out = append(out, c.Name)
+			}
+			return out
+		},
+	}
+	// set EnterContext after deps to avoid forward reference
+	deps.EnterContext = func(name string) (navui.Folder, error) {
+		var target *kubeconfig.Context
 		for _, c := range a.kubeMgr.GetContexts() {
-			out = append(out, c.Name)
+			if c.Name == name {
+				target = c
+				break
+			}
 		}
-		return out
-	}}
+		if target == nil {
+			return nil, fmt.Errorf("context %q not found", name)
+		}
+		key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
+		cl, err := a.clPool.Get(a.ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: deps.ListContexts}
+		return navui.NewNamespacesFolder(ndeps), nil
+	}
 	root := navui.NewRootFolder(deps)
 	a.navigator = navui.NewNavigator(root)
 	if a.namespaceExists(ns) {
@@ -1286,19 +1309,39 @@ func (a *App) goToNamespace(ns string) {
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
 func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
 	if a.navigator == nil {
-		deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name, ListContexts: func() []string {
-			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-			for _, c := range a.kubeMgr.GetContexts() {
-				out = append(out, c.Name)
-			}
-			return out
-		}}
+		deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+			ListContexts: func() []string {
+				out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+				for _, c := range a.kubeMgr.GetContexts() {
+					out = append(out, c.Name)
+				}
+				return out
+			},
+			EnterContext: func(name string) (navui.Folder, error) {
+				var target *kubeconfig.Context
+				for _, c := range a.kubeMgr.GetContexts() {
+					if c.Name == name {
+						target = c
+						break
+					}
+				}
+				if target == nil {
+					return nil, fmt.Errorf("context %q not found", name)
+				}
+				key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
+				cl, err := a.clPool.Get(a.ctx, key)
+				if err != nil {
+					return nil, err
+				}
+				ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: nil, EnterContext: nil}
+				return navui.NewNamespacesFolder(ndeps), nil
+			},
+		}
 		a.navigator = navui.NewNavigator(navui.NewRootFolder(deps))
 	}
 	if back {
 		a.navigator.Back()
 	} else if next != nil {
-		// Remember current selection before entering next
 		a.navigator.SetSelectionID(selID)
 		a.navigator.Push(next)
 	}
@@ -1306,7 +1349,6 @@ func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
 	hasBack := a.navigator.HasBack()
 	a.leftPanel.SetFolder(cur, hasBack)
 	a.rightPanel.SetFolder(cur, hasBack)
-	// Restore selection when going back; otherwise default focus to top
 	if back {
 		id := a.navigator.CurrentSelectionID()
 		if id != "" {
