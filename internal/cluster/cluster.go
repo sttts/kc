@@ -4,6 +4,7 @@ import (
     "context"
     "encoding/json"
     "fmt"
+    "strings"
     "time"
 
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,6 +20,7 @@ import (
     crcache "sigs.k8s.io/controller-runtime/pkg/cache"
     crclient "sigs.k8s.io/controller-runtime/pkg/client"
     crcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // Cluster is a thin extension around controller-runtime's Cluster that exposes
@@ -153,11 +155,11 @@ func (c *Cluster) GVKToGVR(gvk schema.GroupVersionKind) (schema.GroupVersionReso
 }
 
 // ListByGVR lists objects using the cache-backed client and returns an UnstructuredList.
-func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*metav1.UnstructuredList, error) {
+func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*unstructured.UnstructuredList, error) {
     _ = c.ensureDiscovery()
     k, err := c.RESTMapper().KindFor(gvr)
     if err != nil { return nil, err }
-    ul := &metav1.UnstructuredList{}
+    ul := &unstructured.UnstructuredList{}
     ul.SetGroupVersionKind(schema.GroupVersionKind{Group: k.Group, Version: k.Version, Kind: k.Kind + "List"})
     if namespace != "" {
         if err := c.GetClient().List(ctx, ul, crclient.InNamespace(namespace)); err != nil { return nil, err }
@@ -168,11 +170,11 @@ func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource
 }
 
 // GetByGVR fetches one object as Unstructured using the cache-backed client.
-func (c *Cluster) GetByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*metav1.Unstructured, error) {
+func (c *Cluster) GetByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
     _ = c.ensureDiscovery()
     k, err := c.RESTMapper().KindFor(gvr)
     if err != nil { return nil, err }
-    u := &metav1.Unstructured{}
+    u := &unstructured.Unstructured{}
     u.SetGroupVersionKind(k)
     key := crclient.ObjectKey{Namespace: namespace, Name: name}
     if err := c.GetClient().Get(ctx, key, u); err != nil { return nil, err }
