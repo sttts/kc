@@ -21,12 +21,9 @@ Every location is backed by exact identities (GVR), never heuristic breadcrumb p
 
 ## Packages and Responsibilities
 
-- `pkg/resources`
-  - Discovery and resource client utilities.
-  - `Manager` provides:
-    - `ListTableByGVR(ctx, gvr, ns)` to fetch server‑side Table.
-    - Mapping helpers are internal-only; navigation uses GVR end-to-end.
-  - Store provider and cluster pool (list/watch via controller‑runtime cache).
+- `internal/cluster`
+  - Thin extension of controller‑runtime `Cluster` with a self‑updating `RESTMapper` and discovery cache.
+  - Exposes `RESTMapper()` and `ListTableByGVR(...)` helpers used by Folders and viewers.
 
 - `internal/ui` (TUI composition)
   - `App` orchestrates panels, modals, and terminal.
