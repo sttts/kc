@@ -1,12 +1,12 @@
 # Table Component (internal/table)
 
-An importable, high-performance table component built on Bubble Tea v2. It supports massive datasets, two horizontal modes, per‑cell styling, stable selection, and swappable data providers.
+An importable, high-performance table component built on Bubble Tea v2. It supports massive datasets, two render modes, per‑cell styling, stable selection, and swappable data providers.
 
 ## Design & Features
-- Modes: Scroll (no pre-truncation, horizontal pan) and Fit (ASCII truncate to width, then style).
+- Modes: Auto (lipgloss.table decides widths) and Fit (constrain columns to fit width; no manual ASCII slicing).
 - Scale: Virtualized rendering — only visible rows are rendered; suitable for tens of thousands of rows.
 - Model-driven: The table consumes a `List` of `Row` items with stable IDs; no `SetCell` API.
-- Styling: Every cell renders through a `lipgloss.Style`; header and borders are customizable.
+- Styling: Every cell renders through a `lipgloss.Style`; column headers and inner vertical separators are customizable. No outside frame or header underline.
 - Selection: Multi-select via stable row IDs; selection overlay style independent from focus.
 - Stability: Selector moves to next when the focused row disappears, else previous; selection prunes vanished IDs.
 - Providers: Slice-backed (`SliceList`) and doubly linked (`LinkedList`), both storing `Row`. `SimpleRow` is a reusable `Row` implementation.
@@ -30,11 +30,9 @@ An importable, high-performance table component built on Bubble Tea v2. It suppo
 - Configure styles via `Styles` and `SetStyles`:
   ```go
   st := table.DefaultStyles()
-  st.Outer = st.Outer.Padding(0, 2)                                 // outer frame
-  st.Header = st.Header.Bold(true).Foreground(lipgloss.Color("#8F8")) // top header + column headers
-  st.Footer = st.Footer.Faint(true)                                  // bottom footer line
+  st.Header = st.Header.Bold(true).Foreground(lipgloss.Color("#8F8"))
   st.Selector = lipgloss.NewStyle().Background(lipgloss.Color("12")).Foreground(lipgloss.Color("0"))
-  st.Cell = lipgloss.NewStyle()                                      // base cell style (inherited)
+  st.Cell = lipgloss.NewStyle()
   bt.SetStyles(st)
   ```
 - Per-cell styles: return `[]*lipgloss.Style` from your `Row.Columns()`; each cell’s style inherits from `Styles.Cell` and the selection overlay.
@@ -42,8 +40,8 @@ An importable, high-performance table component built on Bubble Tea v2. It suppo
 
 ## Testing
 - Package tests: `go test ./internal/table -v`
-- Covers: truncation width, selection overlay, provider ops, selector stability, and horizontal pan.
+- Covers: selection overlay, provider ops, selector stability, and render height for Auto/Fit.
 
 ## Notes
 - Always import v2 packages: `github.com/charmbracelet/bubbletea/v2`, `github.com/charmbracelet/bubbles/v2/...`, `github.com/charmbracelet/lipgloss/v2`.
-- Rows are ASCII only; ANSI is produced by styles. Truncation happens on ASCII first, then styles are applied.
+- Rows are ASCII only; ANSI is produced by styles. No custom ASCII truncation is performed by the component.

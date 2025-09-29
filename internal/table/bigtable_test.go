@@ -2,7 +2,6 @@ package table
 
 import (
     "fmt"
-    "strings"
     "testing"
     "github.com/charmbracelet/lipgloss/v2"
 )
@@ -33,17 +32,7 @@ func mkList(n, cols int) *SliceList {
 
 func pad2(i int) string { return fmt.Sprintf("%02d", i) }
 
-func TestScrollModeHorizontalPan(t *testing.T) {
-    cols := mkCols(20, 18)
-    list := mkList(5, 20)
-    bt := NewBigTable(cols, list, 50, 10)
-    bt.SetMode(ModeScroll)
-    // Ensure view is free from replacement runes while panned
-    s := bt.View()
-    if strings.ContainsRune(s, '\uFFFD') {
-        t.Fatalf("view contains replacement rune while panned: %q", s)
-    }
-}
+// Horizontal panning is no longer supported; only Auto/Fit modes remain.
 
 func TestRepositionOnDataChange_NextThenPrev(t *testing.T) {
     cols := mkCols(3, 6)

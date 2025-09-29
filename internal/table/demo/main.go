@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
-	table "github.com/sttts/kc/internal/table"
+    tea "github.com/charmbracelet/bubbletea/v2"
+    "github.com/charmbracelet/lipgloss/v2"
+    table "github.com/sttts/kc/internal/table"
 )
 
 type app struct{
@@ -76,8 +76,8 @@ func newApp(provider string) app {
 	st.Header = st.Header.Foreground(lipgloss.Color("#FFFF00")).Background(lipgloss.Color("#0000AA"))
 	st.Selector = lipgloss.NewStyle().Background(lipgloss.Color("#00AAAA")).Foreground(lipgloss.Color("#000000"))
 	bt.SetStyles(st)
-    // start with no borders
-    bt.BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).BorderColumn(false).BorderHeader(false)
+    // start with no inner separators (no outside borders are ever rendered)
+    bt.BorderVertical(false)
     return app{bt: bt, bstate: 0}
 }
 
@@ -132,38 +132,10 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
         case "b":
-            // Cycle border presets:
-            // 0 none
-            // 1 outside only
-            // 2 verticals only
-            // 3 header underline only
-            // 4 verticals + underline
-            // 5 outside + verticals + underline
-            // 6 double outside + verticals + underline
-            a.bstate = (a.bstate + 1) % 7
-            // reset base
-            a.bt.Border(lipgloss.NormalBorder()).
-                BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false).
-                BorderColumn(false).BorderHeader(false)
-            switch a.bstate {
-            case 0:
-                // none
-            case 1:
-                a.bt.BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true)
-            case 2:
-                a.bt.BorderColumn(true)
-            case 3:
-                a.bt.BorderHeader(true)
-            case 4:
-                a.bt.BorderColumn(true).BorderHeader(true)
-            case 5:
-                a.bt.BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true).
-                    BorderColumn(true).BorderHeader(true)
-            case 6:
-                a.bt.Border(lipgloss.DoubleBorder()).
-                    BorderTop(true).BorderBottom(true).BorderLeft(true).BorderRight(true).
-                    BorderColumn(true).BorderHeader(true)
-            }
+            // Cycle inner border presets only (no outside frame, no underline)
+            // 0: none, 1: verticals
+            a.bstate = (a.bstate + 1) % 2
+            a.bt.BorderVertical(a.bstate == 1)
             return a, nil
 		}
     case tea.WindowSizeMsg:
@@ -175,12 +147,10 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a app) View() string {
-    modes := []string{
-        "none", "outside", "verticals", "underline", "verticals+underline", "outside+verticals+underline", "double+verticals+underline",
-    }
+    modes := []string{"none", "verticals"}
     cur := modes[a.bstate]
     help := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A8FF60")).Render(
-        fmt.Sprintf("Left/Right | Up/Down | PgUp/PgDn | Home/End | m: mode(FIT/SCROLL) | b: border(%s) | i: insert | d/Del: delete | t: provider", cur),
+        fmt.Sprintf("Up/Down | PgUp/PgDn | Home/End | m: mode(Auto/Fit) | b: borders(%s) | i: insert | d/Del: delete | t: provider", cur),
     )
     return strings.Join([]string{help, a.bt.View()}, "\n")
 }
