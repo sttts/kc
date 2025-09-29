@@ -19,18 +19,9 @@ type SliceFolder struct {
 
 var _ Folder = (*SliceFolder)(nil)
 
-// Transitional aliases to align with design terminology while keeping
-// implementation unchanged for now.
-type ObjectFolder = SliceFolder
-type ResourceFolder = SliceFolder
-type ContextsFolder = SliceFolder
-
-// Specialized folders for non-GVR child listings (containers, data keys).
-// These are not ObjectFolders (no direct API objects), but they implement
-// Folder and carry rows that are enterable/viewable as appropriate.
-type PodContainersFolder = SliceFolder
-type ConfigMapKeysFolder = SliceFolder
-type SecretKeysFolder = SliceFolder
+// Note: legacy alias types and specialized constructors have been removed in
+// favor of concrete folders in folders_new.go. This file now only provides
+// a generic SliceFolder used in tests and simple cases.
 
 // NewSliceFolder builds a Folder from rows and columns with title/key metadata.
 func NewSliceFolder(title, key string, cols []table.Column, rows []table.Row) *SliceFolder {
@@ -56,61 +47,4 @@ func (f *SliceFolder) Below(rowID string, num int) []table.Row { return f.list.B
 func (f *SliceFolder) Len() int { return f.list.Len() }
 func (f *SliceFolder) Find(rowID string) (int, table.Row, bool) { return f.list.Find(rowID) }
 
-// Constructors for common folders -------------------------------------------------
-
-// NewContextsFolder lists available contexts. Key is simply "contexts".
-func NewContextsFolder(rows []table.Row) *ContextsFolder {
-    return NewSliceFolder("contexts", "contexts", []table.Column{{Title: " Name"}}, rows)
-}
-
-// NewNamespacesFolder lists namespaces for a given context.
-func NewNamespacesFolder(contextName string, rows []table.Row) *ObjectFolder {
-    key := contextName + "/namespaces"
-    sf := NewSliceFolder("namespaces", key, []table.Column{{Title: " Name"}}, rows)
-    // Namespaces are cluster-scoped core/v1
-    sf.gvr = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-    sf.namespace = ""
-    sf.hasMeta = true
-    return sf
-}
-
-// NewGroupFolder lists objects for a GVR (namespaced or cluster-scoped).
-func NewGroupFolder(contextName string, gvr schema.GroupVersionResource, namespace, title string, rows []table.Row) *ResourceFolder {
-    key := contextName + "/" + gvr.String()
-    if namespace != "" { key = contextName + "/namespaces/" + namespace + "/" + gvr.Resource }
-    // Typical columns: Name, Group (dim), Count (right-aligned) – callers choose.
-    return NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, rows)
-}
-
-// NewObjectsFolder lists concrete objects of the given GVR in a namespace.
-func NewObjectsFolder(contextName string, gvr schema.GroupVersionResource, namespace string, rows []table.Row) *ObjectFolder {
-    title := gvr.Resource
-    key := contextName + "/" + gvr.String()
-    if namespace != "" { key = contextName + "/namespaces/" + namespace + "/" + gvr.Resource }
-    sf := NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, rows)
-    sf.gvr = gvr
-    sf.namespace = namespace
-    sf.hasMeta = true
-    return sf
-}
-
-// NewPodContainersFolder lists containers + initContainers for a pod.
-func NewPodContainersFolder(contextName, namespace, pod string, rows []table.Row) *PodContainersFolder {
-    title := "containers"
-    key := contextName + "/namespaces/" + namespace + "/pods/" + pod + "/containers"
-    return NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, rows)
-}
-
-// NewConfigMapKeysFolder lists data keys for a ConfigMap.
-func NewConfigMapKeysFolder(contextName, namespace, name string, rows []table.Row) *ConfigMapKeysFolder {
-    title := "data"
-    key := contextName + "/namespaces/" + namespace + "/configmaps/" + name + "/data"
-    return NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, rows)
-}
-
-// NewSecretKeysFolder lists data keys for a Secret.
-func NewSecretKeysFolder(contextName, namespace, name string, rows []table.Row) *SecretKeysFolder {
-    title := "data"
-    key := contextName + "/namespaces/" + namespace + "/secrets/" + name + "/data"
-    return NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, rows)
-}
+// Constructors removed (see note above).

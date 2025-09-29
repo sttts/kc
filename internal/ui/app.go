@@ -17,12 +17,11 @@ import (
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	navui "github.com/sttts/kc/internal/navigation"
-	kccluster "github.com/sttts/kc/internal/cluster"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    kccluster "github.com/sttts/kc/internal/cluster"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	metamapper "k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	yaml "sigs.k8s.io/yaml"
+    metamapper "k8s.io/apimachinery/pkg/api/meta"
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    yaml "sigs.k8s.io/yaml"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
@@ -1186,24 +1185,16 @@ func (a *App) initData() error {
 	if a.currentCtx == nil {
 		return fmt.Errorf("no current context found")
 	}
-	// Build resources manager and start cluster/cache
-	cfg, err := a.kubeMgr.CreateClientConfig(a.currentCtx)
-	if err != nil {
-		return fmt.Errorf("client config: %w", err)
-	}
+    // Prepare app context and cluster pool; cluster will be started via pool.Get
 	a.ctx, a.cancel = context.WithCancel(context.TODO())
 	a.clPool = kccluster.NewPool(2 * time.Minute)
 	a.clPool.Start()
 	k := kccluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
-	a.cl, err = a.clPool.Get(a.ctx, k)
+	cl, err := a.clPool.Get(a.ctx, k)
 	if err != nil {
 		return fmt.Errorf("cluster pool get: %w", err)
 	}
-	// Server-side Table helper (used in folder rendering later)
-	tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
-		return a.cl.ListTableByGVR(ctx, gvr, ns)
-	}
-	_ = tableFn // placeholder until folders consume it
+	a.cl = cl
 	// Discovery-backed catalog
 	if infos, err := a.cl.GetResourceInfos(); err == nil {
 		a.leftPanel.SetResourceCatalog(infos)
@@ -1251,11 +1242,10 @@ func (a *App) goToNamespace(ns string) {
 		a.navigator.Push(navui.NewNamespacesFolder(deps))
 		a.navigator.Push(navui.NewNamespacedGroupsFolder(deps, ns))
 	}
-	cur := a.navigator.Current()
-	hasBack := a.navigator.HasBack()
-	wrap := navui.WithBack(cur, hasBack)
-	a.leftPanel.SetFolder(wrap, hasBack)
-	a.rightPanel.SetFolder(wrap, hasBack)
+    cur := a.navigator.Current()
+    hasBack := a.navigator.HasBack()
+    a.leftPanel.SetFolder(cur, hasBack)
+    a.rightPanel.SetFolder(cur, hasBack)
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
 	handler := func(back bool, selID string, next navui.Folder) { a.handleFolderNav(back, selID, next) }
@@ -1278,11 +1268,10 @@ func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
 		a.navigator.SetSelectionID(selID)
 		a.navigator.Push(next)
 	}
-	cur := a.navigator.Current()
-	hasBack := a.navigator.HasBack()
-	wrap := navui.WithBack(cur, hasBack)
-	a.leftPanel.SetFolder(wrap, hasBack)
-	a.rightPanel.SetFolder(wrap, hasBack)
+    cur := a.navigator.Current()
+    hasBack := a.navigator.HasBack()
+    a.leftPanel.SetFolder(cur, hasBack)
+    a.rightPanel.SetFolder(cur, hasBack)
 	// Restore selection when going back; otherwise default focus to top
 	if back {
 		id := a.navigator.CurrentSelectionID()

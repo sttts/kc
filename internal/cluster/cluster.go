@@ -3,7 +3,6 @@ package cluster
 import (
     "context"
     "encoding/json"
-    "fmt"
     "strings"
     "time"
 
@@ -17,7 +16,6 @@ import (
     "k8s.io/client-go/kubernetes/scheme"
     "k8s.io/client-go/rest"
     "k8s.io/client-go/restmapper"
-    crcache "sigs.k8s.io/controller-runtime/pkg/cache"
     crclient "sigs.k8s.io/controller-runtime/pkg/client"
     crcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -79,7 +77,7 @@ func (c *Cluster) ensureDiscovery() error {
     if err != nil { return err }
     cached := memory.NewMemCacheClient(dc)
     base := restmapper.NewDeferredDiscoveryRESTMapper(cached)
-    expander := restmapper.NewShortcutExpander(base, dc)
+    expander := restmapper.NewShortcutExpander(base, dc, func(string){})
     dyn, err := dynamic.NewForConfig(c.GetConfig())
     if err != nil { return err }
     c.disco = cached

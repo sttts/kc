@@ -4,7 +4,6 @@ import (
     "context"
     table "github.com/sttts/kc/internal/table"
     kccluster "github.com/sttts/kc/internal/cluster"
-    "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Deps bundles the dependencies required by Folders to populate their rows.

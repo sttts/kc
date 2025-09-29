@@ -18,9 +18,8 @@ func Eventually(t testing.TB, timeout, interval time.Duration, condition func() 
         if time.Now().After(deadline) {
             m := "condition not met within timeout"
             if len(msg) > 0 && msg[0] != "" { m = msg[0] }
-            t.Fatalf(m)
+            t.Fatalf("%s", m)
         }
         time.Sleep(interval)
     }
 }
-
