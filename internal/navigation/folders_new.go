@@ -192,8 +192,11 @@ func (f *RootFolder) populate() {
 // Namespaces: list namespaces, each enterable
 func (f *NamespacesFolder) populate() {
     nameSty := WhiteStyle()
-    gvr, err := f.deps.Cl.GVKToGVR(schema.GroupVersionKind{Group:"", Version:"v1", Kind:"Namespace"}); if err != nil { f.list = newEmptyList(); return }
+    gvk := schema.GroupVersionKind{Group:"", Version:"v1", Kind:"Namespace"}
+    gvr, err := f.deps.Cl.GVKToGVR(gvk); if err != nil { f.list = newEmptyList(); return }
     lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, ""); if err != nil { f.list = newEmptyList(); return }
+    // Ensure we watch namespace changes (debounced refresh in UI)
+    f.watchGVK(gvk)
     rows := make([]table.Row, 0, len(lst.Items))
     for i := range lst.Items { ns := lst.Items[i].GetName(); rows = append(rows, NewEnterableItem(ns, []string{"/"+ns}, func() (Folder, error) { return NewNamespacedGroupsFolder(f.deps, ns), nil }, nameSty)) }
     f.list = table.NewSliceList(rows)
@@ -221,9 +224,13 @@ func (f *NamespacedGroupsFolder) populate() {
 func (f *NamespacedObjectsFolder) populate() {
     nameSty := WhiteStyle()
     lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, f.gvr, f.namespace); if err != nil { f.list = newEmptyList(); return }
-    rows := make([]table.Row, 0, len(lst.Items))
-    for i := range lst.Items {
-        nm := lst.Items[i].GetName()
+    if k, err := f.deps.Cl.RESTMapper().KindFor(f.gvr); err == nil { f.watchGVK(k) }
+    // Sort names
+    names := make([]string, 0, len(lst.Items))
+    for i := range lst.Items { names = append(names, lst.Items[i].GetName()) }
+    sort.Strings(names)
+    rows := make([]table.Row, 0, len(names))
+    for _, nm := range names {
         if ctor, ok := childFor(f.gvr); ok {
             ns := f.namespace; name := nm
             rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return ctor(f.deps, ns, name), nil }, nameSty))
@@ -237,9 +244,13 @@ func (f *NamespacedObjectsFolder) populate() {
 func (f *ClusterObjectsFolder) populate() {
     nameSty := WhiteStyle()
     lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, f.gvr, ""); if err != nil { f.list = newEmptyList(); return }
-    rows := make([]table.Row, 0, len(lst.Items))
-    for i := range lst.Items {
-        nm := lst.Items[i].GetName()
+    if k, err := f.deps.Cl.RESTMapper().KindFor(f.gvr); err == nil { f.watchGVK(k) }
+    // Sort names
+    names := make([]string, 0, len(lst.Items))
+    for i := range lst.Items { names = append(names, lst.Items[i].GetName()) }
+    sort.Strings(names)
+    rows := make([]table.Row, 0, len(names))
+    for _, nm := range names {
         if ctor, ok := childFor(f.gvr); ok {
             name := nm
             rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return ctor(f.deps, "", name), nil }, nameSty))
@@ -252,7 +263,9 @@ func (f *ClusterObjectsFolder) populate() {
 
 func (f *PodContainersFolder) populate() {
     nameSty := WhiteStyle()
-    gvr, err := f.deps.Cl.GVKToGVR(schema.GroupVersionKind{Group:"", Version:"v1", Kind:"Pod"}); if err != nil { f.list = newEmptyList(); return }
+    gvk := schema.GroupVersionKind{Group:"", Version:"v1", Kind:"Pod"}
+    gvr, err := f.deps.Cl.GVKToGVR(gvk); if err != nil { f.list = newEmptyList(); return }
+    f.watchGVK(gvk)
     obj, err := f.deps.Cl.GetByGVR(f.deps.Ctx, gvr, f.ns, f.pod); if err != nil || obj == nil { f.list = newEmptyList(); return }
     var pod corev1.Pod
     if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &pod); err != nil { f.list = newEmptyList(); return }
@@ -264,22 +277,32 @@ func (f *PodContainersFolder) populate() {
 
 func (f *ConfigMapKeysFolder) populate() {
     nameSty := WhiteStyle()
-    gvr, err := f.deps.Cl.GVKToGVR(schema.GroupVersionKind{Group:"", Version:"v1", Kind:"ConfigMap"}); if err != nil { f.list = newEmptyList(); return }
+    gvk := schema.GroupVersionKind{Group:"", Version:"v1", Kind:"ConfigMap"}
+    gvr, err := f.deps.Cl.GVKToGVR(gvk); if err != nil { f.list = newEmptyList(); return }
+    f.watchGVK(gvk)
     obj, err := f.deps.Cl.GetByGVR(f.deps.Ctx, gvr, f.ns, f.name); if err != nil || obj == nil { f.list = newEmptyList(); return }
     var cm corev1.ConfigMap
     if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &cm); err != nil { f.list = newEmptyList(); return }
     rows := make([]table.Row, 0, 16)
-    for k := range cm.Data { rows = append(rows, NewSimpleItem(k, []string{k}, nameSty)) }
+    keys := make([]string, 0, len(cm.Data))
+    for k := range cm.Data { keys = append(keys, k) }
+    sort.Strings(keys)
+    for _, k := range keys { rows = append(rows, NewSimpleItem(k, []string{k}, nameSty)) }
     f.list = table.NewSliceList(rows)
 }
 
 func (f *SecretKeysFolder) populate() {
     nameSty := WhiteStyle()
-    gvr, err := f.deps.Cl.GVKToGVR(schema.GroupVersionKind{Group:"", Version:"v1", Kind:"Secret"}); if err != nil { f.list = newEmptyList(); return }
+    gvk := schema.GroupVersionKind{Group:"", Version:"v1", Kind:"Secret"}
+    gvr, err := f.deps.Cl.GVKToGVR(gvk); if err != nil { f.list = newEmptyList(); return }
+    f.watchGVK(gvk)
     obj, err := f.deps.Cl.GetByGVR(f.deps.Ctx, gvr, f.ns, f.name); if err != nil || obj == nil { f.list = newEmptyList(); return }
     var sec corev1.Secret
     if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &sec); err != nil { f.list = newEmptyList(); return }
     rows := make([]table.Row, 0, 16)
-    for k := range sec.Data { rows = append(rows, NewSimpleItem(k, []string{k}, nameSty)) }
+    keys := make([]string, 0, len(sec.Data))
+    for k := range sec.Data { keys = append(keys, k) }
+    sort.Strings(keys)
+    for _, k := range keys { rows = append(rows, NewSimpleItem(k, []string{k}, nameSty)) }
     f.list = table.NewSliceList(rows)
 }
