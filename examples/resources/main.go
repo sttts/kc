@@ -7,7 +7,7 @@ import (
 
     "github.com/sttts/kc/pkg/handlers"
     "github.com/sttts/kc/pkg/kubeconfig"
-    icluster "github.com/sttts/kc/internal/cluster"
+    kccluster "github.com/sttts/kc/internal/cluster"
     corev1 "k8s.io/api/core/v1"
     "k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -48,7 +48,7 @@ func main() {
 	}
 
     // Create a cluster
-    cl, err := icluster.New(config)
+    cl, err := kccluster.New(config)
     if err != nil { log.Fatalf("cluster: %v", err) }
     ctx := context.TODO()
     go cl.Start(ctx)
