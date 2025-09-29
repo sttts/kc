@@ -50,6 +50,10 @@ type BigTable struct {
     // Horizontal scroll state for ModeScroll (character-based, ASCII-safe).
     xOff  int // horizontal offset in characters across the full row
     hStep int // step size for left/right navigation
+
+    // Focus state: when unfocused, the selector highlight is hidden.
+    // The outer component is responsible for routing keys to the focused table.
+    focused bool
 }
 
 // Styles groups all externally configurable styles.
@@ -99,6 +103,7 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
         bColumn:    false,
         xOff:       0,
         hStep:      4,
+        focused:    true,
     }
     bt.applyMode()
     return bt
@@ -377,7 +382,7 @@ func (m *BigTable) rebuildWindow() {
                 st = (*stylesPerRow[row][col]).Inherit(st)
             }
             id, _, _, _ := m.window[row].Columns()
-            if row == (m.cursor-m.top) {
+            if m.focused && row == (m.cursor-m.top) {
                 st = m.styles.Selector.Inherit(st)
             }
             if _, ok := selected[id]; ok {
@@ -410,7 +415,7 @@ func (m *BigTable) rebuildWindow() {
                 st = (*stylesPerRow[row][col]).Inherit(st)
             }
             id, _, _, _ := m.window[row].Columns()
-            if row == (m.cursor-m.top) {
+            if m.focused && row == (m.cursor-m.top) {
                 st = m.styles.Selector.Inherit(st)
             }
             if _, ok := selected[id]; ok {
@@ -431,6 +436,18 @@ func (m *BigTable) rebuildWindow() {
 }
 
 func (m *BigTable) applyMode() { m.rebuildWindow() }
+
+// Focus sets the table as focused (selector visible on the focused row).
+func (m *BigTable) Focus() { m.focused = true; m.rebuildWindow() }
+
+// Blur sets the table as unfocused (selector hidden).
+func (m *BigTable) Blur() { m.focused = false; m.rebuildWindow() }
+
+// SetFocused toggles focus explicitly and returns the receiver for chaining.
+func (m *BigTable) SetFocused(v bool) *BigTable { if m.focused != v { m.focused = v; m.rebuildWindow() }; return m }
+
+// Focused reports whether the table is focused.
+func (m *BigTable) Focused() bool { return m.focused }
 
 // bodyRowsHeight returns the number of data rows visible within the viewport
 // after subtracting sticky header lines.
