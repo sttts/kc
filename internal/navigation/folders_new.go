@@ -180,20 +180,12 @@ func (f *NamespacedObjectsFolder) populate() {
     nameSty := WhiteStyle()
     lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, f.gvr, f.namespace); if err != nil { f.list = newEmptyList(); return }
     rows := make([]table.Row, 0, len(lst.Items))
-    res := f.gvr.Resource
     for i := range lst.Items {
         nm := lst.Items[i].GetName()
-        switch res {
-        case "pods":
-            ns := f.namespace; pod := nm
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return NewPodContainersFolder(f.deps, ns, pod), nil }, nameSty))
-        case "configmaps":
+        if ctor, ok := childFor(f.gvr); ok {
             ns := f.namespace; name := nm
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return NewConfigMapKeysFolder(f.deps, ns, name), nil }, nameSty))
-        case "secrets":
-            ns := f.namespace; name := nm
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return NewSecretKeysFolder(f.deps, ns, name), nil }, nameSty))
-        default:
+            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return ctor(f.deps, ns, name), nil }, nameSty))
+        } else {
             rows = append(rows, NewSimpleItem(nm, []string{nm}, nameSty))
         }
     }
@@ -204,20 +196,12 @@ func (f *ClusterObjectsFolder) populate() {
     nameSty := WhiteStyle()
     lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, f.gvr, ""); if err != nil { f.list = newEmptyList(); return }
     rows := make([]table.Row, 0, len(lst.Items))
-    res := f.gvr.Resource
     for i := range lst.Items {
         nm := lst.Items[i].GetName()
-        switch res {
-        case "pods":
-            pod := nm
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return NewPodContainersFolder(f.deps, "", pod), nil }, nameSty))
-        case "configmaps":
+        if ctor, ok := childFor(f.gvr); ok {
             name := nm
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return NewConfigMapKeysFolder(f.deps, "", name), nil }, nameSty))
-        case "secrets":
-            name := nm
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return NewSecretKeysFolder(f.deps, "", name), nil }, nameSty))
-        default:
+            rows = append(rows, NewEnterableItem(nm, []string{nm}, func() (Folder, error) { return ctor(f.deps, "", name), nil }, nameSty))
+        } else {
             rows = append(rows, NewSimpleItem(nm, []string{nm}, nameSty))
         }
     }
