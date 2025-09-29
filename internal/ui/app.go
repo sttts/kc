@@ -49,8 +49,7 @@ type App struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	currentCtx *kubeconfig.Context
-	viewConfig *ViewConfig
-	resCatalog map[string]schema.GroupVersionKind
+    viewConfig *ViewConfig
 	cfg        *appconfig.Config
 	// Theme dialog state
 	prevTheme           string
@@ -70,8 +69,7 @@ func NewApp() *App {
 		showTerminal: false,
 		allResources: make([]schema.GroupVersionKind, 0),
 		escPressed:   false,
-		viewConfig:   NewViewConfig(),
-		resCatalog:   make(map[string]schema.GroupVersionKind),
+        viewConfig:   NewViewConfig(),
 	}
 
 	// Register modals
@@ -784,12 +782,27 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 		a.modalManager.Show("yaml_viewer")
 		return nil
 	}
-	// Fetch object via controller-runtime dynamic client using RESTMapper
-	// Map GVK to GVR, then Get
-	gvr, err := a.cl.GVKToGVR(gvk)
-	if err != nil {
-		return nil
-	}
+    // Build GVR from current folder meta when available; fallback to typed GVK + resource plural
+    var gvr schema.GroupVersionResource
+    if path == "/namespaces" && item.Type == ItemTypeNamespace {
+        gvr = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
+    } else {
+        // Prefer folder meta (authoritative)
+        if a.navigator != nil {
+            if cur := a.navigator.Current(); cur != nil {
+                type metaProv interface{ ObjectListMeta() (schema.GroupVersionResource, string, bool) }
+                if mp, ok := cur.(metaProv); ok {
+                    if mgvr, _, ok2 := mp.ObjectListMeta(); ok2 {
+                        gvr = mgvr
+                    }
+                }
+            }
+        }
+        // Fallback: derive from typed GVK + resource plural
+        if gvr.Resource == "" {
+            gvr = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
+        }
+    }
 	obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, name)
 	if err != nil {
 		return nil
@@ -1204,20 +1217,13 @@ func (a *App) initData() error {
 		return fmt.Errorf("cluster pool get: %w", err)
 	}
 	a.cl = cl
-	// Discovery-backed catalog
-	if infos, err := a.cl.GetResourceInfos(); err == nil {
-		a.leftPanel.SetResourceCatalog(infos)
-		a.rightPanel.SetResourceCatalog(infos)
-		// populate app-level resource catalog for lookups
-		a.resCatalog = make(map[string]schema.GroupVersionKind)
-		for _, info := range infos {
-			if info.Namespaced {
-				a.resCatalog[info.Resource] = info.GVK
-			}
-		}
-	} else {
-		fmt.Printf("Warning: discovery resources: %v\n", err)
-	}
+    // Discovery-backed catalog (for panel displays)
+    if infos, err := a.cl.GetResourceInfos(); err == nil {
+        a.leftPanel.SetResourceCatalog(infos)
+        a.rightPanel.SetResourceCatalog(infos)
+    } else {
+        fmt.Printf("Warning: discovery resources: %v\n", err)
+    }
 	// Legacy generic data sources removed; folders provide data directly
 	a.leftPanel.SetViewConfig(a.viewConfig)
 	a.rightPanel.SetViewConfig(a.viewConfig)

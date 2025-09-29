@@ -87,7 +87,7 @@ func (f *RootFolder) Key() string   { return "root" }
 // NamespacesFolder lists namespaces.
 type NamespacesFolder struct{ BaseFolder }
 func NewNamespacesFolder(deps Deps) *NamespacesFolder {
-    f := &NamespacesFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}}}
+    f := &NamespacesFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, gvr: schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, hasMeta: true}}
     f.init = func(){ f.populate() }
     return f
 }
@@ -184,7 +184,7 @@ func (f *RootFolder) populate() {
         }
         sort.Slice(filtered, func(i, j int) bool { return filtered[i].Resource < filtered[j].Resource })
         for _, info := range filtered {
-            gvr, err := f.deps.Cl.GVKToGVR(info.GVK); if err != nil { continue }
+            gvr := schema.GroupVersionResource{Group: info.GVK.Group, Version: info.GVK.Version, Resource: info.Resource}
             n := 0
             if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, ""); err == nil { n = len(lst.Items) }
             // Use a unique GVR-based ID (group/version/resource) to avoid collisions (e.g., events).
@@ -198,8 +198,7 @@ func (f *RootFolder) populate() {
 // Namespaces: list namespaces, each enterable
 func (f *NamespacesFolder) populate() {
     nameSty := WhiteStyle()
-    gvk := schema.GroupVersionKind{Group:"", Version:"v1", Kind:"Namespace"}
-    gvr, err := f.deps.Cl.GVKToGVR(gvk); if err != nil { f.list = newEmptyList(); return }
+    gvr := schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}
     lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, ""); if err != nil { f.list = newEmptyList(); return }
     // Ensure we watch namespace changes (debounced refresh in UI) using GVR
     f.watchGVR(gvr)
@@ -217,7 +216,7 @@ func (f *NamespacedGroupsFolder) populate() {
     for _, info := range infos { if info.Namespaced && verbsInclude(info.Verbs, "list") { filtered = append(filtered, info) } }
     sort.Slice(filtered, func(i, j int) bool { return filtered[i].Resource < filtered[j].Resource })
     for _, info := range filtered {
-        gvr, err := f.deps.Cl.GVKToGVR(info.GVK); if err != nil { continue }
+        gvr := schema.GroupVersionResource{Group: info.GVK.Group, Version: info.GVK.Version, Resource: info.Resource}
         n := 0
         if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, f.ns); err == nil { n = len(lst.Items) }
         // Use GVR-based unique ID; do not dim Group column in namespaced groups.
@@ -269,8 +268,7 @@ func (f *ClusterObjectsFolder) populate() {
 
 func (f *PodContainersFolder) populate() {
     nameSty := WhiteStyle()
-    gvk := schema.GroupVersionKind{Group:"", Version:"v1", Kind:"Pod"}
-    gvr, err := f.deps.Cl.GVKToGVR(gvk); if err != nil { f.list = newEmptyList(); return }
+    gvr := schema.GroupVersionResource{Group:"", Version:"v1", Resource:"pods"}
     f.watchGVR(gvr)
     obj, err := f.deps.Cl.GetByGVR(f.deps.Ctx, gvr, f.ns, f.pod); if err != nil || obj == nil { f.list = newEmptyList(); return }
     var pod corev1.Pod
@@ -283,8 +281,7 @@ func (f *PodContainersFolder) populate() {
 
 func (f *ConfigMapKeysFolder) populate() {
     nameSty := WhiteStyle()
-    gvk := schema.GroupVersionKind{Group:"", Version:"v1", Kind:"ConfigMap"}
-    gvr, err := f.deps.Cl.GVKToGVR(gvk); if err != nil { f.list = newEmptyList(); return }
+    gvr := schema.GroupVersionResource{Group:"", Version:"v1", Resource:"configmaps"}
     f.watchGVR(gvr)
     obj, err := f.deps.Cl.GetByGVR(f.deps.Ctx, gvr, f.ns, f.name); if err != nil || obj == nil { f.list = newEmptyList(); return }
     var cm corev1.ConfigMap
@@ -299,8 +296,7 @@ func (f *ConfigMapKeysFolder) populate() {
 
 func (f *SecretKeysFolder) populate() {
     nameSty := WhiteStyle()
-    gvk := schema.GroupVersionKind{Group:"", Version:"v1", Kind:"Secret"}
-    gvr, err := f.deps.Cl.GVKToGVR(gvk); if err != nil { f.list = newEmptyList(); return }
+    gvr := schema.GroupVersionResource{Group:"", Version:"v1", Resource:"secrets"}
     f.watchGVR(gvr)
     obj, err := f.deps.Cl.GetByGVR(f.deps.Ctx, gvr, f.ns, f.name); if err != nil || obj == nil { f.list = newEmptyList(); return }
     var sec corev1.Secret
