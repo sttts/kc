@@ -1,15 +1,16 @@
 package main
 
 import (
-	"fmt"
-	"math/rand"
-	"os"
-	"strings"
-	"time"
+    "fmt"
+    "math/rand"
+    "os"
+    "strings"
+    "time"
 
     tea "github.com/charmbracelet/bubbletea/v2"
     "github.com/charmbracelet/lipgloss/v2"
     table "github.com/sttts/kc/internal/table"
+    "github.com/sttts/kc/pkg/appconfig"
 )
 
 type app struct{
@@ -68,14 +69,20 @@ func newApp(provider string) app {
 	default:
 		list = table.NewSliceList(rows)
 	}
-	bt := table.NewBigTable(cols, list, 100, 28)
+    bt := table.NewBigTable(cols, list, 100, 28)
 	// Apply Norton Commander-inspired color scheme (table only)
 	st := table.DefaultStyles()
 	// Classic NC inside the table: light gray text, cyan selection, yellow headers
 	st.Cell = st.Cell.Foreground(lipgloss.Color("#C0C0C0")).Background(lipgloss.Color("#0000AA"))
 	st.Header = st.Header.Foreground(lipgloss.Color("#FFFF00")).Background(lipgloss.Color("#0000AA"))
 	st.Selector = lipgloss.NewStyle().Background(lipgloss.Color("#00AAAA")).Foreground(lipgloss.Color("#000000"))
-	bt.SetStyles(st)
+    bt.SetStyles(st)
+    // Load config and apply horizontal scroll step if configured.
+    if cfg, err := appconfig.Load(); err == nil {
+        if cfg.Panel.Scrolling.Horizontal.Step > 0 {
+            bt.SetHorizontalStep(cfg.Panel.Scrolling.Horizontal.Step)
+        }
+    }
     // start with no inner separators (no outside borders are ever rendered)
     bt.BorderVertical(false)
     return app{bt: bt, bstate: 0}
