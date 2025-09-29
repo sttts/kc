@@ -155,12 +155,16 @@ func TestContextNamespaceWalk(t *testing.T) {
         if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { grp = f }; break }
     } }
     if grp == nil { t.Fatalf("enter groups for testns failed") }
-    // Enter configmaps group
+    // Enter configmaps group; verify proper "/" prefix and core group displayed as "v1"
     var objs Folder
     rows = grp.Lines(0, grp.Len())
-    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/configmaps" {
-        if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { objs = f }; break }
-    } }
+    for _, r := range rows {
+        _, cells, _, _ := r.Columns()
+        if len(cells) > 1 && cells[0] == "/configmaps" {
+            if cells[1] != "v1" { t.Fatalf("expected group column 'v1' for core resources, got %q", cells[1]) }
+            if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { objs = f }; break }
+        }
+    }
     if objs == nil { t.Fatalf("enter configmaps objects failed") }
     // Enter cm1 keys
     var keys Folder

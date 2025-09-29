@@ -160,9 +160,10 @@ func depsKey(d Deps, rel string) string { return d.CtxName + "/" + rel }
 // --------- population helpers ---------
 
 func groupVersionString(gvk schema.GroupVersionKind) string {
-    g := gvk.Group
-    if g == "" { g = "core" }
-    return g + "/" + gvk.Version
+    if gvk.Group == "" {
+        return gvk.Version
+    }
+    return gvk.Group + "/" + gvk.Version
 }
 
 func verbsInclude(vs []string, want string) bool { for _, v := range vs { if strings.EqualFold(v, want) { return true } }; return false }
