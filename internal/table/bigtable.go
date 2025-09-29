@@ -490,11 +490,12 @@ func (m *BigTable) visibleColumnsAll() []int {
 func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
     n := len(m.cols)
     if n == 0 || vw <= 0 { return nil, nil, nil }
+    // Compute dynamic base widths from current header titles and visible rows.
+    base := m.computeScrollBaseWidths()
     // Precompute total width including separators to clamp xOff.
     total := 0
     for i := 0; i < n; i++ {
-        w := m.cols[i].Width
-        if w <= 0 { w = 14 }
+        w := base[i]
         total += w
         if m.bColumn && i > 0 { total += 1 }
     }
@@ -526,8 +527,7 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
             }
         }
 
-        w := m.cols[i].Width
-        if w <= 0 { w = 14 }
+        w := base[i]
 
         // Skip columns fully left of the viewport.
         if pos+w <= xOff {
@@ -556,13 +556,41 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
     if len(idx) == 0 {
         // Nothing visible, force showing the last column tail.
         i := n - 1
-        w := m.cols[i].Width
-        if w <= 0 { w = 14 }
+        w := base[i]
         cut := 0
         if w > vw { cut = w - vw }
         return []int{i}, []int{cut}, []int{min(vw, w)}
     }
     return idx, cuts, widths
+}
+
+// computeScrollBaseWidths returns per-column widths based on current header
+// titles and the visible rows window (ASCII lengths). This adapts to the data
+// being shown in the viewport without scanning the entire dataset.
+func (m *BigTable) computeScrollBaseWidths() []int {
+    n := len(m.cols)
+    if n == 0 { return nil }
+    w := make([]int, n)
+    // Start from header title widths.
+    for i := 0; i < n; i++ {
+        if m.cols[i].Title != "" {
+            if l := len(m.cols[i].Title); l > w[i] { w[i] = l }
+        }
+    }
+    // Include visible rows.
+    for _, r := range m.window {
+        _, cells, _, _ := r.Columns()
+        for i := 0; i < n; i++ {
+            var s string
+            if i < len(cells) { s = cells[i] }
+            if l := len(s); l > w[i] { w[i] = l }
+        }
+    }
+    // Ensure a sensible minimum width of 1 per column.
+    for i := 0; i < n; i++ {
+        if w[i] < 1 { w[i] = 1 }
+    }
+    return w
 }
 
 func asciiSlicePad(s string, start, width int) string {
