@@ -166,10 +166,11 @@ func TestContextNamespaceWalk(t *testing.T) {
         }
     }
     if objs == nil { t.Fatalf("enter configmaps objects failed") }
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len() > 0 })
     // Enter cm1 keys
     var keys Folder
     rows = objs.Lines(0, objs.Len())
-    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "cm1" {
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/cm1" {
         if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { keys = f }; break }
     } }
     if keys == nil { t.Fatalf("enter cm1 keys failed") }
@@ -298,6 +299,7 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
         }
     }
     if objs == nil { t.Fatalf("enter configmaps objects failed") }
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len() > 0 })
     // Remember group selection and enter objects
     nav.SetSelectionID(groupID)
     nav.Push(objs)
@@ -306,7 +308,7 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
     // Ensure a keys folder can be constructed by calling Enterable on cm1 row
     rows = nav.Current().Lines(0, nav.Current().Len())
     var keys Folder
-    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "cm1" { if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { keys = f }; break } } }
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/cm1" { if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { keys = f }; break } } }
     if keys == nil { t.Fatalf("enter cm1 keys failed") }
     nav.Push(keys)
     // Back to objects; selection should be cm1
