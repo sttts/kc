@@ -62,6 +62,9 @@ type Styles struct {
     Selector lipgloss.Style
     Cell     lipgloss.Style
     Border   lipgloss.Style
+    // Marked applies to rows toggled via Ctrl+T/Insert (multi-select).
+    // It should not generally change the background; prefer fg/bold changes.
+    Marked   lipgloss.Style
 }
 
 // DefaultStyles returns a set of defaults for the table.
@@ -71,6 +74,7 @@ func DefaultStyles() Styles {
         Selector: lipgloss.NewStyle().Background(lipgloss.Cyan).Foreground(lipgloss.Black),
         Cell:     lipgloss.NewStyle(),
         Border:   lipgloss.NewStyle().Foreground(lipgloss.Yellow),
+        Marked:   lipgloss.NewStyle().Foreground(lipgloss.Yellow).Bold(true),
     }
 }
 
@@ -236,7 +240,15 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
                 } else {
                     m.selected[id] = struct{}{}
                 }
-                m.refreshRowsOnly()
+                // Move cursor down after toggling and keep visible
+                if m.cursor+1 < m.list.Len() {
+                    m.cursor++
+                    vis := m.bodyRowsHeight()
+                    if m.cursor >= m.top+vis {
+                        m.top = max(0, m.cursor-(vis-1))
+                    }
+                }
+                m.rebuildWindow()
             }
         case "up", "k":
             if m.cursor > 0 {
@@ -349,6 +361,7 @@ func (m *BigTable) rebuildWindow() {
 
     // Single lipgloss table: headers + data rows; no outside borders or underline.
     t := lgtable.New().Wrap(false).Height(m.h).Width(m.w).WithOverflowRow(false)
+    // Use lipgloss.table column borders when enabled via m.bColumn.
     t = t.Border(lipgloss.NormalBorder()).BorderStyle(m.styles.Border)
     t = t.BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false)
     t = t.BorderHeader(false).BorderRow(false).BorderColumn(m.bColumn)
@@ -382,11 +395,13 @@ func (m *BigTable) rebuildWindow() {
                 st = (*stylesPerRow[row][col]).Inherit(st)
             }
             id, _, _, _ := m.window[row].Columns()
-            if m.focused && row == (m.cursor-m.top) {
+            // Row-level overlays
+            focusedRow := m.focused && row == (m.cursor-m.top)
+            if focusedRow {
                 st = m.styles.Selector.Inherit(st)
             }
             if _, ok := selected[id]; ok {
-                st = m.styles.Selector.Inherit(st)
+                st = m.styles.Marked.Inherit(st)
             }
             return st
         })
@@ -415,11 +430,12 @@ func (m *BigTable) rebuildWindow() {
                 st = (*stylesPerRow[row][col]).Inherit(st)
             }
             id, _, _, _ := m.window[row].Columns()
-            if m.focused && row == (m.cursor-m.top) {
+            focusedRow := m.focused && row == (m.cursor-m.top)
+            if focusedRow {
                 st = m.styles.Selector.Inherit(st)
             }
             if _, ok := selected[id]; ok {
-                st = m.styles.Selector.Inherit(st)
+                st = m.styles.Marked.Inherit(st)
             }
             return st
         })
@@ -482,6 +498,8 @@ func rowsToStringRowsSubset(rows []Row, idx []int) [][]string {
     }
     return out
 }
+
+// (no custom interleaved separator columns)
 
 // captureStyles extracts per-cell styles for visible rows to use in StyleFunc.
 func captureStylesSubset(rows []Row, idx []int) [][]*lipgloss.Style {
