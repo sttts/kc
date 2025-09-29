@@ -1367,40 +1367,8 @@ func (a *App) buildContextsFolder() navui.Folder {
 // For now, it includes a single "contexts" row that opens the contexts listing.
 // Cluster-scoped resources will be added incrementally.
 func (a *App) buildRootFolder() navui.Folder {
-    nameSty := navui.WhiteStyle()
-    greenSty := navui.GreenStyle()
-    rows := make([]table.Row, 0, 16)
-    // Columns: Name, Group (dim), Count
-    cols := []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}
-    // Row: contexts (enterable) with count of contexts
-    enterContexts := func() (navui.Folder, error) { return a.buildContextsFolder(), nil }
-    ctxCount := len(a.kubeMgr.GetContexts())
-    rows = append(rows, navui.NewEnterableItemStyled("contexts", []string{"/contexts", "", fmt.Sprintf("%d", ctxCount)}, []*lipgloss.Style{greenSty, nil, nil}, enterContexts))
-    // Row: namespaces (default context) with count and group
-    nsCount := a.countClusterScoped(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
-    rows = append(rows, navui.NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", fmt.Sprintf("%d", nsCount)}, []*lipgloss.Style{nameSty, nil, nil}, func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }))
-    // Namespaces are accessible under contexts; not listed at root.
-    // Cluster-scoped resources with counts (excluding namespaces)
-    if infos, err := a.resMgr.GetResourceInfos(); err == nil {
-        for _, info := range infos {
-            if info.Namespaced { continue }
-            if info.Resource == "namespaces" { continue }
-            // must support list
-            hasList := false
-            for _, v := range info.Verbs { if v == "list" { hasList = true; break } }
-            if !hasList { continue }
-            c := a.countClusterScoped(info.GVK)
-            gv := info.GVK.Group
-            if gv == "" { gv = "core" }
-            gv = gv + "/" + info.GVK.Version
-            gvr, err := a.clus.GVKToGVR(info.GVK)
-            if err != nil { continue }
-            g := gvr
-            enter := func() (navui.Folder, error) { return a.buildClusterObjectsFolder(g), nil }
-            rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{"/" + info.Resource, gv, fmt.Sprintf("%d", c)}, []*lipgloss.Style{nameSty, nil, nil}, enter))
-        }
-    }
-    return navui.NewSliceFolder("/", "root", cols, rows)
+    deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name}
+    return navui.NewRootFolder(deps)
 }
 
 // countClusterScoped returns the number of cluster-scoped objects for a given GVK.

@@ -1,6 +1,7 @@
 package navigation
 
 import (
+    "context"
     table "github.com/sttts/kc/internal/table"
     icluster "github.com/sttts/kc/internal/cluster"
     "k8s.io/apimachinery/pkg/runtime/schema"
@@ -11,6 +12,8 @@ import (
 type Deps struct {
     // Cluster provides client/cache, RESTMapper and discovery helpers.
     Cl *icluster.Cluster
+    // Ctx is the context for all cluster operations.
+    Ctx context.Context
     // CtxName is the human label for the current context (for Folder titles/keys).
     CtxName string
 }
