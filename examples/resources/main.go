@@ -25,24 +25,24 @@ func main() {
 		return
 	}
 
-	// Get the first context
-	contexts := kubeconfigManager.GetContexts()
+    // Get the first kubeconfig context
+    contexts := kubeconfigManager.GetContexts()
 	if len(contexts) == 0 {
 		fmt.Println("No contexts found")
 		return
 	}
 
-	ctx := contexts[0]
-	fmt.Printf("Using context: %s\n", ctx.Name)
+    kctx := contexts[0]
+    fmt.Printf("Using context: %s\n", kctx.Name)
 
 	// Create a client for the context (not used in this example)
-	_, err = kubeconfigManager.CreateClient(ctx)
+    _, err = kubeconfigManager.CreateClient(kctx)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
 
 	// Get the client config
-	config, err := kubeconfigManager.CreateClientConfig(ctx)
+    config, err := kubeconfigManager.CreateClientConfig(kctx)
 	if err != nil {
 		log.Fatalf("Failed to create client config: %v", err)
 	}
@@ -50,8 +50,8 @@ func main() {
     // Create a cluster
     cl, err := icluster.New(config)
     if err != nil { log.Fatalf("cluster: %v", err) }
-    ctx2 := context.TODO()
-    go cl.Start(ctx2)
+    ctx := context.TODO()
+    go cl.Start(ctx)
 
 	// Register a pod handler
 	podHandler := handlers.NewPodHandler()
@@ -69,7 +69,7 @@ func main() {
 	// List pods using the client directly
 	fmt.Println("\nListing pods...")
 	podList := &corev1.PodList{}
-    err = cl.GetClient().List(ctx2, podList)
+    err = cl.GetClient().List(ctx, podList)
 	if err != nil {
 		log.Printf("Failed to list pods: %v", err)
 	} else {
@@ -87,7 +87,7 @@ func main() {
 	// List namespaces using the client directly
 	fmt.Println("\nListing namespaces...")
 	namespaceList := &corev1.NamespaceList{}
-    err = cl.GetClient().List(ctx2, namespaceList)
+    err = cl.GetClient().List(ctx, namespaceList)
 	if err != nil {
 		log.Printf("Failed to list namespaces: %v", err)
 	} else {
