@@ -6,7 +6,7 @@ import (
     "sync"
     "fmt"
     "strings"
-    metamapper "k8s.io/apimachinery/pkg/api/meta"
+    "github.com/charmbracelet/lipgloss/v2"
 )
 
 // BaseFolder provides lazy population scaffolding for concrete folders.

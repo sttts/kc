@@ -19,7 +19,7 @@ import (
 	"github.com/sttts/kc/pkg/navigation"
 	navui "github.com/sttts/kc/internal/navigation"
 	table "github.com/sttts/kc/internal/table"
-	icluster "github.com/sttts/kc/internal/cluster"
+	kccluster "github.com/sttts/kc/internal/cluster"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -45,8 +45,8 @@ type App struct {
 	escPressed bool
 	// Data providers
 	kubeMgr        *kubeconfig.Manager
-    cl             *icluster.Cluster
-    clPool         *icluster.Pool
+    cl             *kccluster.Cluster
+    clPool         *kccluster.Pool
     ctx            context.Context
     cancel         context.CancelFunc
 	navMgr         *navigation.Manager
@@ -1172,9 +1172,9 @@ func (a *App) initData() error {
 		return fmt.Errorf("client config: %w", err)
 	}
     a.ctx, a.cancel = context.WithCancel(context.TODO())
-    a.clPool = icluster.NewPool(2 * time.Minute)
+    a.clPool = kccluster.NewPool(2 * time.Minute)
     a.clPool.Start()
-    k := icluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
+    k := kccluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
     a.cl, err = a.clPool.Get(a.ctx, k)
     if err != nil { return fmt.Errorf("cluster pool get: %w", err) }
 	// Store provider and pool (2m TTL)
