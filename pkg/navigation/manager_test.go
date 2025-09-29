@@ -134,15 +134,5 @@ users:
 // Note: End-to-end grouping tests would require a live cluster or extensive fakes.
 // Here we only ensure that calling LoadNamespaceResources on an empty manager
 // does not panic and creates no nodes when resourceManager is nil.
-func TestLoadNamespaceResources_NoManager(t *testing.T) {
-	nsNode := NewNode(NodeTypeNamespace, "default", "default")
-	root := NewNode(NodeTypeDirectory, "root", "root")
-	root.AddChild(nsNode)
-
-	mgr := &Manager{state: &NavigationState{Root: root}}
-	if err := mgr.LoadNamespaceResources("default"); err == nil {
-		// Without a resource manager configured, we expect an error pathway
-		// to return early; if it returns nil, that's incorrect for this setup.
-		t.Fatalf("expected error without resource manager, got nil")
-	}
-}
+// Legacy resource-loading methods were removed; hierarchy manager now only
+// builds kubeconfig/context directories. No resource-manager tests remain here.

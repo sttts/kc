@@ -16,12 +16,13 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
-	"github.com/sttts/kc/pkg/navigation"
 	navui "github.com/sttts/kc/internal/navigation"
 	kccluster "github.com/sttts/kc/internal/cluster"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-    metamapper "k8s.io/apimachinery/pkg/api/meta"
-    yaml "sigs.k8s.io/yaml"
+	metamapper "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	yaml "sigs.k8s.io/yaml"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
@@ -41,22 +42,20 @@ type App struct {
 	// Esc sequence tracking
 	escPressed bool
 	// Data providers
-	kubeMgr        *kubeconfig.Manager
-    cl             *kccluster.Cluster
-    clPool         *kccluster.Pool
-    ctx            context.Context
-    cancel         context.CancelFunc
-	navMgr         *navigation.Manager
-	currentCtx     *kubeconfig.Context
-	viewConfig     *ViewConfig
-	resCatalog     map[string]schema.GroupVersionKind
-	genericFactory func(schema.GroupVersionKind) *GenericDataSource
-	cfg            *appconfig.Config
-    // Theme dialog state
-    prevTheme           string
-    suppressThemeRevert bool
-    // New navigation (folder-backed) using a Navigator
-    navigator           *navui.Navigator
+	kubeMgr    *kubeconfig.Manager
+	cl         *kccluster.Cluster
+	clPool     *kccluster.Pool
+	ctx        context.Context
+	cancel     context.CancelFunc
+	currentCtx *kubeconfig.Context
+	viewConfig *ViewConfig
+	resCatalog map[string]schema.GroupVersionKind
+	cfg        *appconfig.Config
+	// Theme dialog state
+	prevTheme           string
+	suppressThemeRevert bool
+	// New navigation (folder-backed) using a Navigator
+	navigator *navui.Navigator
 }
 
 // NewApp creates a new application instance
@@ -289,10 +288,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // shouldRouteToPanel determines if a key should be routed to the panel based on terminal state
 func (a *App) shouldRouteToPanel(key string) bool {
-    // Always route these keys to terminal
-    terminalKeys := []string{
-        "space", // Never go to panels
-    }
+	// Always route these keys to terminal
+	terminalKeys := []string{
+		"space", // Never go to panels
+	}
 
 	for _, termKey := range terminalKeys {
 		if key == termKey {
@@ -300,15 +299,15 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		}
 	}
 
-    // Always route these keys to panels (others handled below)
-    panelKeys := []string{
-        // Navigation keys
-        "up", "down", // Navigate items (left/right handled conditionally below)
-        "home", "end", // Navigate to beginning/end
-        "pgup", "pgdown", // Page up/down
-        // Panel control keys
-        "tab",    // Switch panels
-        "ctrl+o", // Toggle fullscreen
+	// Always route these keys to panels (others handled below)
+	panelKeys := []string{
+		// Navigation keys
+		"up", "down", // Navigate items (left/right handled conditionally below)
+		"home", "end", // Navigate to beginning/end
+		"pgup", "pgdown", // Page up/down
+		// Panel control keys
+		"tab",    // Switch panels
+		"ctrl+o", // Toggle fullscreen
 		// Selection keys
 		"ctrl+t", "insert", // Toggle selection
 		"*",      // Invert selection
@@ -327,22 +326,22 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		}
 	}
 
-    // Special handling for Enter key
-    if key == "enter" {
-        // Check if terminal has non-empty input
-        if a.terminal != nil && a.terminal.HasInput() {
-            return false // Route Enter to terminal if user is typing
-        }
-        return true // Route Enter to panels if terminal is empty
-    }
+	// Special handling for Enter key
+	if key == "enter" {
+		// Check if terminal has non-empty input
+		if a.terminal != nil && a.terminal.HasInput() {
+			return false // Route Enter to terminal if user is typing
+		}
+		return true // Route Enter to panels if terminal is empty
+	}
 
-    // Special handling for Left/Right: route to panels only when terminal input is empty
-    if key == "left" || key == "right" {
-        if a.terminal != nil && a.terminal.HasInput() {
-            return false // typing → keep in terminal
-        }
-        return true
-    }
+	// Special handling for Left/Right: route to panels only when terminal input is empty
+	if key == "left" || key == "right" {
+		if a.terminal != nil && a.terminal.HasInput() {
+			return false // typing → keep in terminal
+		}
+		return true
+	}
 
 	// Special handling for + and - keys (glob patterns)
 	if key == "+" || key == "-" {
@@ -402,10 +401,10 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 		contentHeight = 1
 	}
 
-    // Panel content height must match the frame interior (frameHeight-2).
-    // contentHeight already equals (panelHeight-2), so subtract one more to account for the frame's top/bottom.
-    a.leftPanel.SetDimensions(contentWidth, contentHeight-2)
-    a.rightPanel.SetDimensions(contentWidth, contentHeight-2)
+	// Panel content height must match the frame interior (frameHeight-2).
+	// contentHeight already equals (panelHeight-2), so subtract one more to account for the frame's top/bottom.
+	a.leftPanel.SetDimensions(contentWidth, contentHeight-2)
+	a.rightPanel.SetDimensions(contentWidth, contentHeight-2)
 	leftContentView := a.leftPanel.ViewContentOnlyFocused(a.activePanel == 0)
 	rightContentView := a.rightPanel.ViewContentOnlyFocused(a.activePanel == 1)
 
@@ -669,48 +668,62 @@ func (a *App) editItem() tea.Cmd {
 
 // openYAMLForSelection fetches the selected object and opens a YAML viewer modal.
 func (a *App) openYAMLForSelection() tea.Cmd {
-    // Determine active panel and current selection
-    p := a.leftPanel
-    if a.activePanel == 1 {
-        p = a.rightPanel
-    }
-    // Folder-backed path: use Folder meta and row ID
-    if p.useFolder && p.folder != nil {
-        // compute row index, skipping back row
-        idx := p.selected
-        if (p.folderHasBack || p.folder.Title() != "/") && idx == 0 {
-            return nil
-        }
-        if p.folderHasBack || p.folder.Title() != "/" { idx-- }
-        if idx < 0 || idx >= p.folder.Len() { return nil }
-        rows := p.folder.Lines(0, p.folder.Len())
-        id, _, _, ok := rows[idx].Columns()
-        if !ok { return nil }
-        // Extract object-list metadata
-        type metaProv interface{ ObjectListMeta() (schema.GroupVersionResource, string, bool) }
-        if mp, ok := p.folder.(metaProv); ok {
-            gvr, ns, mok := mp.ObjectListMeta()
-            if mok {
-    obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, id)
-                if err != nil || obj == nil { return nil }
-                unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-                yb, _ := yaml.Marshal(obj.Object)
-                theme := "dracula"
-                if a.cfg != nil && a.cfg.Viewer.Theme != "" { theme = a.cfg.Viewer.Theme }
-                viewer := NewYAMLViewer(id, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
-                viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-                title := p.GetCurrentPath()
-                if !strings.HasSuffix(title, "/"+id) { title = title + "/" + id }
-                modal := NewModal(title, viewer)
-                modal.SetDimensions(a.width, a.height)
-                modal.SetCloseOnSingleEsc(false)
-                a.modalManager.Register("yaml_viewer", modal)
-                a.modalManager.Show("yaml_viewer")
-                return nil
-            }
-        }
-        return nil
-    }
+	// Determine active panel and current selection
+	p := a.leftPanel
+	if a.activePanel == 1 {
+		p = a.rightPanel
+	}
+	// Folder-backed path: use Folder meta and row ID
+	if p.useFolder && p.folder != nil {
+		// compute row index, skipping back row
+		idx := p.selected
+		if (p.folderHasBack || p.folder.Title() != "/") && idx == 0 {
+			return nil
+		}
+		if p.folderHasBack || p.folder.Title() != "/" {
+			idx--
+		}
+		if idx < 0 || idx >= p.folder.Len() {
+			return nil
+		}
+		rows := p.folder.Lines(0, p.folder.Len())
+		id, _, _, ok := rows[idx].Columns()
+		if !ok {
+			return nil
+		}
+		// Extract object-list metadata
+		type metaProv interface {
+			ObjectListMeta() (schema.GroupVersionResource, string, bool)
+		}
+		if mp, ok := p.folder.(metaProv); ok {
+			gvr, ns, mok := mp.ObjectListMeta()
+			if mok {
+				obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, id)
+				if err != nil || obj == nil {
+					return nil
+				}
+				unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+				yb, _ := yaml.Marshal(obj.Object)
+				theme := "dracula"
+				if a.cfg != nil && a.cfg.Viewer.Theme != "" {
+					theme = a.cfg.Viewer.Theme
+				}
+				viewer := NewYAMLViewer(id, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
+				viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
+				title := p.GetCurrentPath()
+				if !strings.HasSuffix(title, "/"+id) {
+					title = title + "/" + id
+				}
+				modal := NewModal(title, viewer)
+				modal.SetDimensions(a.width, a.height)
+				modal.SetCloseOnSingleEsc(false)
+				a.modalManager.Register("yaml_viewer", modal)
+				a.modalManager.Show("yaml_viewer")
+				return nil
+			}
+		}
+		return nil
+	}
 	item := p.GetCurrentItem()
 	if item == nil || item.Name == ".." {
 		return nil
@@ -729,14 +742,16 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 		}
 	} else {
 		// Prefer typed GVK carried by item; otherwise resolve via RESTMapper for current cluster
-        if item.TypedGVK.Group != "" || item.TypedGVK.Kind != "" || item.TypedGVK.Version != "" {
-            gvk = item.TypedGVK
-        } else {
-            // Resolve via RESTMapper from resource plural
-            k, err := a.resMgr.RESTMapper().KindFor(schema.GroupVersionResource{Resource: res})
-            if err != nil { return nil }
-            gvk = k
-        }
+		if item.TypedGVK.Group != "" || item.TypedGVK.Kind != "" || item.TypedGVK.Version != "" {
+			gvk = item.TypedGVK
+		} else {
+			// Resolve via RESTMapper from resource plural
+			k, err := a.cl.RESTMapper().KindFor(schema.GroupVersionResource{Resource: res})
+			if err != nil {
+				return nil
+			}
+			gvk = k
+		}
 	}
 	// If item provides its own view, delegate to it
 	if item != nil && item.Viewer != nil {
@@ -761,9 +776,13 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 		a.modalManager.Show("yaml_viewer")
 		return nil
 	}
-	// Fetch object via GenericDataSource
-	ds := a.genericFactory(gvk)
-	obj, err := ds.Get(ns, name)
+	// Fetch object via controller-runtime dynamic client using RESTMapper
+	// Map GVK to GVR, then Get
+	gvr, err := a.cl.GVKToGVR(gvk)
+	if err != nil {
+		return nil
+	}
+	obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, name)
 	if err != nil {
 		return nil
 	}
@@ -1133,15 +1152,19 @@ func Run() error {
 	}()
 
 	// Ensure terminal is reset on exit
-    defer func() {
-        // Reset terminal to normal state
-        fmt.Print("\033[?1049l") // Exit alternate screen
-        fmt.Print("\033[?25h")   // Show cursor
-        fmt.Print("\033[0m")     // Reset all attributes
-        // Stop background resources
-        if app.clPool != nil { app.clPool.Stop() }
-        if app.cancel != nil { app.cancel() }
-    }()
+	defer func() {
+		// Reset terminal to normal state
+		fmt.Print("\033[?1049l") // Exit alternate screen
+		fmt.Print("\033[?25h")   // Show cursor
+		fmt.Print("\033[0m")     // Reset all attributes
+		// Stop background resources
+		if app.clPool != nil {
+			app.clPool.Stop()
+		}
+		if app.cancel != nil {
+			app.cancel()
+		}
+	}()
 
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running application: %v\n", err)
@@ -1154,7 +1177,7 @@ func Run() error {
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
 func (a *App) initData() error {
 	// Kubeconfig manager and discovery
-    a.kubeMgr = kubeconfig.NewManager()
+	a.kubeMgr = kubeconfig.NewManager()
 	if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
 		return fmt.Errorf("discover kubeconfigs: %w", err)
 	}
@@ -1168,312 +1191,137 @@ func (a *App) initData() error {
 	if err != nil {
 		return fmt.Errorf("client config: %w", err)
 	}
-    a.ctx, a.cancel = context.WithCancel(context.TODO())
-    a.clPool = kccluster.NewPool(2 * time.Minute)
-    a.clPool.Start()
-    k := kccluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
-    a.cl, err = a.clPool.Get(a.ctx, k)
-    if err != nil { return fmt.Errorf("cluster pool get: %w", err) }
-	// Store provider and pool (2m TTL)
-    // Navigation manager (legacy); will be replaced by self-sufficient folders
-    a.navMgr = navigation.NewManager(a.kubeMgr, nil)
-	// Build hierarchy and load context resources
-	if err := a.navMgr.BuildHierarchy(); err != nil {
-		return fmt.Errorf("build hierarchy: %w", err)
+	a.ctx, a.cancel = context.WithCancel(context.TODO())
+	a.clPool = kccluster.NewPool(2 * time.Minute)
+	a.clPool.Start()
+	k := kccluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
+	a.cl, err = a.clPool.Get(a.ctx, k)
+	if err != nil {
+		return fmt.Errorf("cluster pool get: %w", err)
 	}
-	if err := a.navMgr.LoadContextResources(a.currentCtx); err != nil {
-		// Non-fatal; still allow UI
-		fmt.Printf("Warning: load context resources: %v\n", err)
+	// Server-side Table helper (used in folder rendering later)
+	tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
+		return a.cl.ListTableByGVR(ctx, gvr, ns)
 	}
-    // Server-side Table helper (used in folder rendering later)
-    tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
-        return a.cl.ListTableByGVR(ctx, gvr, ns)
-    }
-    _ = tableFn // placeholder until folders consume it
+	_ = tableFn // placeholder until folders consume it
 	// Discovery-backed catalog
-    if infos, err := a.cl.GetResourceInfos(); err == nil {
-        a.leftPanel.SetResourceCatalog(infos)
-        a.rightPanel.SetResourceCatalog(infos)
-        // populate app-level resource catalog for lookups
-        a.resCatalog = make(map[string]schema.GroupVersionKind)
-        for _, info := range infos {
-            if info.Namespaced {
-                a.resCatalog[info.Resource] = info.GVK
-            }
-        }
-    } else {
-        fmt.Printf("Warning: discovery resources: %v\n", err)
-    }
-	// Generic data source factory (per-GVK)
-    // generic factory removed; folders provide data directly
-    a.leftPanel.SetViewConfig(a.viewConfig)
+	if infos, err := a.cl.GetResourceInfos(); err == nil {
+		a.leftPanel.SetResourceCatalog(infos)
+		a.rightPanel.SetResourceCatalog(infos)
+		// populate app-level resource catalog for lookups
+		a.resCatalog = make(map[string]schema.GroupVersionKind)
+		for _, info := range infos {
+			if info.Namespaced {
+				a.resCatalog[info.Resource] = info.GVK
+			}
+		}
+	} else {
+		fmt.Printf("Warning: discovery resources: %v\n", err)
+	}
+	// Legacy generic data sources removed; folders provide data directly
+	a.leftPanel.SetViewConfig(a.viewConfig)
 	a.rightPanel.SetViewConfig(a.viewConfig)
 	// Provide contexts count to panels for root display
-    a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
+	a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	a.rightPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	// Preview: Use folder-backed rendering starting at root (not contexts listing)
-    {
-        // Programmatic navigation to current namespace for both panels
-        ns := "default"
-        if a.currentCtx != nil && a.currentCtx.Namespace != "" { ns = a.currentCtx.Namespace }
-        a.goToNamespace(ns)
-    }
-    return nil
+	{
+		// Programmatic navigation to current namespace for both panels
+		ns := "default"
+		if a.currentCtx != nil && a.currentCtx.Namespace != "" {
+			ns = a.currentCtx.Namespace
+		}
+		a.goToNamespace(ns)
+	}
+	return nil
 }
 
-// buildNamespacesFolder creates a Folder listing namespaces for the current context.
-/* legacy UI builders: namespaces/groups/objects are now provided by navigation folders
-func (a *App) buildNamespacesFolder() navui.Folder {
-    // Discover Namespace GVR
-    gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
-    gvr, err := a.clus.GVKToGVR(gvk)
-    if err != nil { return navui.NewNamespacesFolder(a.currentCtx.Name, nil) }
-    lst, err := a.cl.ListByGVR(a.ctx, gvr, "")
-    if err != nil { return navui.NewNamespacesFolder(a.currentCtx.Name, nil) }
-    rows := make([]table.Row, 0, len(lst.Items))
-    sty := navui.WhiteStyle()
-    for i := range lst.Items {
-        ns := &lst.Items[i]
-        name := ns.GetName()
-        enter := func(nsName string) func() (navui.Folder, error) {
-            return func() (navui.Folder, error) { return a.buildNamespacedGroupsFolder(nsName), nil }
-        }(name)
-        it := navui.NewEnterableItem(name, []string{"/" + name}, enter, sty)
-        rows = append(rows, it)
-    }
-    return navui.NewNamespacesFolder(a.currentCtx.Name, rows)
-}
-
-// buildNamespacedGroupsFolder builds a folder of namespaced resource groups for the given namespace.
-func (a *App) buildNamespacedGroupsFolder(namespace string) navui.Folder {
-    // Columns: Name, Group, Count
-    cols := []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}
-    nameSty := navui.WhiteStyle()
-    rows := make([]table.Row, 0, 64)
-    infos, err := a.resMgr.GetResourceInfos()
-    if err != nil { return navui.NewSliceFolder("namespaces/"+namespace, a.currentCtx.Name+"/namespaces/"+namespace, cols, rows) }
-    for _, info := range infos {
-        if !info.Namespaced { continue }
-        // must support list
-        hasList := false
-        for _, v := range info.Verbs { if v == "list" { hasList = true; break } }
-        if !hasList { continue }
-        gvr, err := a.clus.GVKToGVR(info.GVK)
-        if err != nil { continue }
-        // Count namespaced objects
-        n := 0
-        if lst, err := a.cl.ListByGVR(a.ctx, gvr, namespace); err == nil { n = len(lst.Items) }
-        gv := info.GVK.Group
-        if gv == "" { gv = "core" }
-        gv = gv + "/" + info.GVK.Version
-        g := gvr // capture
-        ns := namespace
-        enter := func() (navui.Folder, error) { return a.buildNamespacedObjectsFolder(g, ns), nil }
-        // No special/dim style for Group column; let table default styling apply
-        rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{"/" + info.Resource, gv, fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, nil, nil}, enter))
-    }
-    title := "namespaces/" + namespace
-    key := a.currentCtx.Name + "/namespaces/" + namespace
-    return navui.NewSliceFolder(title, key, cols, rows)
-}
-
-// buildNamespacedObjectsFolder lists namespaced objects for a given GVR and namespace.
-func (a *App) buildNamespacedObjectsFolder(gvr schema.GroupVersionResource, namespace string) navui.Folder {
-    lst, err := a.cl.ListByGVR(a.ctx, gvr, namespace)
-    if err != nil { return navui.NewObjectsFolder(a.currentCtx.Name, gvr, namespace, nil) }
-    rows := make([]table.Row, 0, len(lst.Items))
-    sty := navui.WhiteStyle()
-    for i := range lst.Items {
-        o := &lst.Items[i]
-        name := o.GetName()
-        switch gvr.Resource {
-        case "pods":
-            ns := namespace; nm := name
-            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildPodContainersFolder(ns, nm), nil }, sty))
-        case "configmaps":
-            ns := namespace; nm := name
-            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildConfigMapKeysFolder(ns, nm), nil }, sty))
-        case "secrets":
-            ns := namespace; nm := name
-            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildSecretKeysFolder(ns, nm), nil }, sty))
-        default:
-            rows = append(rows, navui.NewSimpleItem(name, []string{name}, sty))
-        }
-    }
-    return navui.NewObjectsFolder(a.currentCtx.Name, gvr, namespace, rows)
-}
-
-// buildPodContainersFolder lists containers for a pod
-func (a *App) buildPodContainersFolder(namespace, pod string) navui.Folder {
-    gvr, err := a.clus.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
-    if err != nil { return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, nil) }
-    obj, err := a.cl.GetByGVR(a.ctx, gvr, namespace, pod)
-    if err != nil || obj == nil { return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, nil) }
-    rows := make([]table.Row, 0, 8)
-    sty := navui.WhiteStyle()
-    if arr, found, _ := unstructured.NestedSlice(obj.Object, "spec", "containers"); found {
-        for _, c := range arr { if m, ok := c.(map[string]interface{}); ok { if n, _ := m["name"].(string); n != "" { rows = append(rows, navui.NewSimpleItem(n, []string{n}, sty)) } } }
-    }
-    if arr, found, _ := unstructured.NestedSlice(obj.Object, "spec", "initContainers"); found {
-        for _, c := range arr { if m, ok := c.(map[string]interface{}); ok { if n, _ := m["name"].(string); n != "" { rows = append(rows, navui.NewSimpleItem(n, []string{n}, sty)) } } }
-    }
-    return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, rows)
-}
-
-func (a *App) buildConfigMapKeysFolder(namespace, name string) navui.Folder {
-    gvr, err := a.clus.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
-    if err != nil { return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, nil) }
-    obj, err := a.cl.GetByGVR(a.ctx, gvr, namespace, name)
-    if err != nil || obj == nil { return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, nil) }
-    rows := make([]table.Row, 0, 8)
-    sty := navui.WhiteStyle()
-    if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found { for k := range data { rows = append(rows, navui.NewSimpleItem(k, []string{k}, sty)) } }
-    return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, rows)
-}
-
-func (a *App) buildSecretKeysFolder(namespace, name string) navui.Folder {
-    gvr, err := a.clus.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"})
-    if err != nil { return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, nil) }
-    obj, err := a.cl.GetByGVR(a.ctx, gvr, namespace, name)
-    if err != nil || obj == nil { return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, nil) }
-    rows := make([]table.Row, 0, 8)
-    sty := navui.WhiteStyle()
-    if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found { for k := range data { rows = append(rows, navui.NewSimpleItem(k, []string{k}, sty)) } }
-    return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, rows)
-}
-
-// buildContextsFolder creates a Folder listing all known contexts.
-func (a *App) buildContextsFolder() navui.Folder {
-    cs := a.kubeMgr.GetContexts()
-    rows := make([]table.Row, 0, len(cs))
-    base := navui.WhiteStyle()
-    for _, c := range cs {
-        name := c.Name
-        // Entering a context opens the namespaces folder for that context.
-        enter := func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }
-        // Bold the default context name using ANSI so legacy renderer shows it.
-        cell := name
-        if a.currentCtx != nil && a.currentCtx.Name == name { cell = "\033[1m" + name + "\033[22m" }
-        st := *base
-        it := navui.NewEnterableItemStyled(name, []string{cell}, []*lipgloss.Style{&st}, enter)
-        rows = append(rows, it)
-    }
-    return navui.NewContextsFolder(rows)
-}
-
-// buildRootFolder creates the initial Folder view per hierarchy design.
-// For now, it includes a single "contexts" row that opens the contexts listing.
-// Cluster-scoped resources will be added incrementally.
-func (a *App) buildRootFolder() navui.Folder {
-    deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name}
-    return navui.NewRootFolder(deps)
-}
-
-// countClusterScoped returns the number of cluster-scoped objects for a given GVK.
-func (a *App) countClusterScoped(gvk schema.GroupVersionKind) int {
-    gvr, err := a.clus.GVKToGVR(gvk)
-    if err != nil { return 0 }
-    lst, err := a.cl.ListByGVR(a.ctx, gvr, "")
-    if err != nil { return 0 }
-    return len(lst.Items)
-}
-
-// namespaceExists returns true if the namespace exists in the current cluster.
-func (a *App) namespaceExists(ns string) bool {
-    if ns == "" { return false }
-    gvr, err := a.clus.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
-    if err != nil { return false }
-    lst, err := a.cl.ListByGVR(a.ctx, gvr, "")
-    if err != nil { return false }
-    for i := range lst.Items { if lst.Items[i].GetName() == ns { return true } }
-    return false
-}
+// Legacy builder helpers removed (replaced by self-sufficient folders).
 
 // goToNamespace programmatically navigates to /namespaces/<ns> and updates panels.
 // If ns is empty, uses "default". If the namespace does not exist, navigates to root.
 func (a *App) goToNamespace(ns string) {
-    if ns == "" { ns = "default" }
-    deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name}
-    root := navui.NewRootFolder(deps)
-    a.navigator = navui.NewNavigator(root)
-    if a.namespaceExists(ns) {
-        a.navigator.Push(navui.NewNamespacesFolder(deps))
-        a.navigator.Push(navui.NewNamespacedGroupsFolder(deps, ns))
-    }
-    cur := a.navigator.Current()
-    hasBack := a.navigator.HasBack()
-    wrap := navui.WithBack(cur, hasBack)
-    a.leftPanel.SetFolder(wrap, hasBack)
-    a.rightPanel.SetFolder(wrap, hasBack)
-    a.leftPanel.UseFolder(true)
-    a.rightPanel.UseFolder(true)
-    handler := func(back bool, selID string, next navui.Folder) { a.handleFolderNav(back, selID, next) }
-    a.leftPanel.SetFolderNavHandler(handler)
-    a.rightPanel.SetFolderNavHandler(handler)
-    a.leftPanel.ResetSelectionTop()
-    a.rightPanel.ResetSelectionTop()
+	if ns == "" {
+		ns = "default"
+	}
+	deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name}
+	root := navui.NewRootFolder(deps)
+	a.navigator = navui.NewNavigator(root)
+	if a.namespaceExists(ns) {
+		a.navigator.Push(navui.NewNamespacesFolder(deps))
+		a.navigator.Push(navui.NewNamespacedGroupsFolder(deps, ns))
+	}
+	cur := a.navigator.Current()
+	hasBack := a.navigator.HasBack()
+	wrap := navui.WithBack(cur, hasBack)
+	a.leftPanel.SetFolder(wrap, hasBack)
+	a.rightPanel.SetFolder(wrap, hasBack)
+	a.leftPanel.UseFolder(true)
+	a.rightPanel.UseFolder(true)
+	handler := func(back bool, selID string, next navui.Folder) { a.handleFolderNav(back, selID, next) }
+	a.leftPanel.SetFolderNavHandler(handler)
+	a.rightPanel.SetFolderNavHandler(handler)
+	a.leftPanel.ResetSelectionTop()
+	a.rightPanel.ResetSelectionTop()
 }
 
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
 func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
-    if a.navigator == nil {
-    a.navigator = navui.NewNavigator(a.buildRootFolder())
-    }
-    if back {
-        a.navigator.Back()
-    } else if next != nil {
-        // Remember current selection before entering next
-        a.navigator.SetSelectionID(selID)
-        a.navigator.Push(next)
-    }
-    cur := a.navigator.Current()
-    hasBack := a.navigator.HasBack()
-    wrap := navui.WithBack(cur, hasBack)
-    a.leftPanel.SetFolder(wrap, hasBack)
-    a.rightPanel.SetFolder(wrap, hasBack)
-    // Restore selection when going back; otherwise default focus to top
-    if back {
-        id := a.navigator.CurrentSelectionID()
-        if id != "" {
-            a.leftPanel.SelectByRowID(id)
-            a.rightPanel.SelectByRowID(id)
-        } else {
-            a.leftPanel.ResetSelectionTop()
-            a.rightPanel.ResetSelectionTop()
-        }
-    } else {
-        a.leftPanel.ResetSelectionTop()
-        a.rightPanel.ResetSelectionTop()
-    }
+	if a.navigator == nil {
+		deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name}
+		a.navigator = navui.NewNavigator(navui.NewRootFolder(deps))
+	}
+	if back {
+		a.navigator.Back()
+	} else if next != nil {
+		// Remember current selection before entering next
+		a.navigator.SetSelectionID(selID)
+		a.navigator.Push(next)
+	}
+	cur := a.navigator.Current()
+	hasBack := a.navigator.HasBack()
+	wrap := navui.WithBack(cur, hasBack)
+	a.leftPanel.SetFolder(wrap, hasBack)
+	a.rightPanel.SetFolder(wrap, hasBack)
+	// Restore selection when going back; otherwise default focus to top
+	if back {
+		id := a.navigator.CurrentSelectionID()
+		if id != "" {
+			a.leftPanel.SelectByRowID(id)
+			a.rightPanel.SelectByRowID(id)
+		} else {
+			a.leftPanel.ResetSelectionTop()
+			a.rightPanel.ResetSelectionTop()
+		}
+	} else {
+		a.leftPanel.ResetSelectionTop()
+		a.rightPanel.ResetSelectionTop()
+	}
 }
 
-// buildClusterObjectsFolder lists cluster-scoped objects for a given GVR.
-func (a *App) buildClusterObjectsFolder(gvr schema.GroupVersionResource) navui.Folder {
-    lst, err := a.cl.ListByGVR(a.ctx, gvr, "")
-    if err != nil { return navui.NewObjectsFolder(a.currentCtx.Name, gvr, "", nil) }
-    rows := make([]table.Row, 0, len(lst.Items))
-    sty := navui.WhiteStyle()
-    for i := range lst.Items {
-        o := &lst.Items[i]
-        name := o.GetName()
-        switch gvr.Resource {
-        case "pods":
-            nm := name
-            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildPodContainersFolder("", nm), nil }, sty))
-        case "configmaps":
-            nm := name
-            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildConfigMapKeysFolder("", nm), nil }, sty))
-        case "secrets":
-            nm := name
-            rows = append(rows, navui.NewEnterableItem(name, []string{name}, func() (navui.Folder, error) { return a.buildSecretKeysFolder("", nm), nil }, sty))
-        default:
-            rows = append(rows, navui.NewSimpleItem(name, []string{name}, sty))
-        }
-    }
-    return navui.NewObjectsFolder(a.currentCtx.Name, gvr, "", rows)
+// namespaceExists returns true if the namespace exists in the current cluster.
+func (a *App) namespaceExists(ns string) bool {
+	if ns == "" {
+		return false
+	}
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
+	gvr, err := a.cl.GVKToGVR(gvk)
+	if err != nil {
+		return false
+	}
+	lst, err := a.cl.ListByGVR(a.ctx, gvr, "")
+	if err != nil {
+		return false
+	}
+	for i := range lst.Items {
+		if lst.Items[i].GetName() == ns {
+			return true
+		}
+	}
+	return false
 }
-*/
 
+//
 
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.
 func (a *App) selectCurrentContext() *kubeconfig.Context {
@@ -1514,16 +1362,16 @@ func sameFilepath(a, b string) bool {
 }
 
 func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]interface{}, error) {
-    ds := a.genericFactory(gvk)
-    if ds == nil {
-        return nil, fmt.Errorf("no datasource for %s", gvk.String())
-    }
-    obj, err := ds.Get(namespace, name)
-    if err != nil {
-        return nil, err
-    }
-    unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-    return obj.Object, nil
+	gvr, err := a.cl.GVKToGVR(gvk)
+	if err != nil {
+		return nil, err
+	}
+	obj, err := a.cl.GetByGVR(a.ctx, gvr, namespace, name)
+	if err != nil {
+		return nil, err
+	}
+	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+	return obj.Object, nil
 }
 
 // RESTMapper exposes the app's RESTMapper to viewers for resource→GVK resolution.

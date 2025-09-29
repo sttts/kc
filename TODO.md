@@ -22,11 +22,11 @@ Current tasks
  - [ ] Table column separators vs selection: uninterrupted selector across columns. Today lipgloss.table uses a single global border style so the cyan selection bar is visually interrupted at the vertical divider. Explore upstream support in lipgloss.table for per-row column-border styling (inherit row background) or an extension hook. For now, accept the interruption and revisit later.
 - [ ] Favorites: build a favorites list of resource types (seed from discovery alias "all"); allow users to add/remove favorites to override discovery. Persist and use favorites to populate resource selectors and shortcuts.
 
-Hierarchy refactor and tests
+Hierarchy refactor and tests — ordered
 - [ ] Navigation: make Folders self‑sufficient. Each Folder lazily populates its rows from injected Deps and Enterable rows return the next Folder. Keep `WithBack` for a synthetic ".." row in presentation.
 - [ ] Extract UI‑agnostic Folder constructors into `internal/navigation` with a small `Deps` bundle (ResMgr, Store, CtxName). Remove row‑building from the UI.
 - [ ] Programmatic goto (namespaces): implement simple Enter‑driven path stepping for `/namespaces/<ns>` without builders.
-- [ ] Envtest integration tests: start apiserver, seed ns/configmap/secret/node; verify walking Root → Namespaces → Groups → Objects → Keys; Back to parent; cluster‑scoped list. Tests only import navigation/resources/table (no UI).
+- [ ] Envtest integration tests: start apiserver, seed ns/configmap/secret/node; verify walking Root → Namespaces → Groups → Objects → Keys; Back to parent; cluster‑scoped list. Tests only import navigation/internal/cluster/table (no UI).
 
 Detailed next steps (post‑compaction anchors)
 - [ ] Replace legacy folder builders in `internal/ui/app.go` (buildNamespacesFolder/buildNamespacedGroupsFolder/buildNamespacedObjectsFolder/buildClusterObjectsFolder) with the new self‑sufficient folders:
@@ -163,3 +163,6 @@ Tracking
   - [ ] Add object-list filtering (menu item) in panels; apply to current listing.
   - [ ] Implement `Ctrl+F` find in panels with highlighted match and `F2` next.
   - [ ] Add horizontal scrolling in panel object viewers similar to YAML (Left/Right, Ctrl-A/E), no wrapping.
+- [ ] Remove deprecated legacy builders from `internal/ui/app.go` (buildNamespacesFolder, buildNamespacedGroupsFolder, buildNamespacedObjectsFolder, buildClusterObjectsFolder). Confirm no references remain and delete code.
+- [ ] Wire watchers for group-level counts, or document that counts update on next access; consider caching counts with debounce.
+- [ ] Extend GVR→child registry with more defaults as needed (e.g., deployments→replicasets) and provide a public registration hook.

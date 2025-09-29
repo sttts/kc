@@ -1,37 +1,27 @@
 package navigation
 
 import (
-	"context"
-	"fmt"
-	"path/filepath"
-	"sort"
-	"strings"
+    "fmt"
+    "path/filepath"
+    "sort"
+    "strings"
 
-	"github.com/sttts/kc/pkg/kubeconfig"
-	"github.com/sttts/kc/pkg/resources"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+    "github.com/sttts/kc/pkg/kubeconfig"
 )
 
 // Manager manages the navigation hierarchy
 type Manager struct {
-	kubeconfigManager *kubeconfig.Manager
-	resourceManager   *resources.Manager
-	state             *NavigationState
-	storeProvider     resources.StoreProvider
+    kubeconfigManager *kubeconfig.Manager
+    state             *NavigationState
 }
 
 // NewManager creates a new navigation manager
-func NewManager(kubeMgr *kubeconfig.Manager, resourceMgr *resources.Manager) *Manager {
-	return &Manager{
-		kubeconfigManager: kubeMgr,
-		resourceManager:   resourceMgr,
-		state:             NewNavigationState(),
-	}
+func NewManager(kubeMgr *kubeconfig.Manager, _ interface{}) *Manager {
+    return &Manager{
+        kubeconfigManager: kubeMgr,
+        state:             NewNavigationState(),
+    }
 }
-
-// SetStoreProvider injects a resources.StoreProvider bound to the active kubeconfig+context.
-func (m *Manager) SetStoreProvider(p resources.StoreProvider) { m.storeProvider = p }
 
 // BuildHierarchy builds the complete navigation hierarchy
 func (m *Manager) BuildHierarchy() error {
@@ -100,45 +90,7 @@ func (m *Manager) buildTopLevelNodes(root *Node) error {
 	return nil
 }
 
-// LoadContextResources loads resources for a specific context
-func (m *Manager) LoadContextResources(ctx *kubeconfig.Context) error {
-	// Create resource manager for this context
-	config, err := m.kubeconfigManager.CreateClientConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create client config: %w", err)
-	}
-
-	resourceMgr, err := resources.NewManager(config)
-	if err != nil {
-		return fmt.Errorf("failed to create resource manager: %w", err)
-	}
-
-	if err := resourceMgr.Start(); err != nil {
-		return fmt.Errorf("failed to start resource manager: %w", err)
-	}
-
-	m.resourceManager = resourceMgr
-
-	// Find the context node and load its resources
-	contextNode := m.findContextNode(ctx.Name)
-	if contextNode == nil {
-		return fmt.Errorf("context node not found: %s", ctx.Name)
-	}
-
-	// Clear existing children
-	contextNode.ClearChildren()
-
-	// Add cluster-wide resources
-	clusterNode := NewNode(NodeTypeClusterResource, "Cluster Resources", "cluster")
-	contextNode.AddChild(clusterNode)
-
-	// Add namespaces
-	if err := m.loadNamespaces(contextNode); err != nil {
-		return fmt.Errorf("failed to load namespaces: %w", err)
-	}
-
-	return nil
-}
+// LoadContextResources removed: legacy resource layer no longer supported here.
 
 // findContextNode finds a context node by name
 func (m *Manager) findContextNode(contextName string) *Node {
@@ -160,86 +112,10 @@ func (m *Manager) findNodeByPath(node *Node, path string) *Node {
 	return nil
 }
 
-// loadNamespaces loads namespace nodes
-func (m *Manager) loadNamespaces(contextNode *Node) error {
-	if m.resourceManager == nil {
-		return fmt.Errorf("no resource manager configured")
-	}
-	// Prefer store provider (informer-backed); fall back to manager.ListNamespaces.
-	var list *unstructured.UnstructuredList
-	var err error
-	if m.storeProvider != nil {
-		gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
-		gvr, mapErr := m.resourceManager.GVKToGVR(gvk)
-		if mapErr == nil {
-			list, err = m.storeProvider.Store().List(context.TODO(), resources.StoreKey{GVR: gvr, Namespace: ""})
-		} else {
-			err = mapErr
-		}
-	} else {
-		// Generic namespace listing via resources.Manager
-		list, err = m.resourceManager.ListNamespaces()
-	}
-	if err != nil {
-		return fmt.Errorf("failed to list namespaces: %w", err)
-	}
-
-	// Sort by name
-	sort.Slice(list.Items, func(i, j int) bool {
-		return list.Items[i].GetName() < list.Items[j].GetName()
-	})
-
-	for i := range list.Items {
-		ns := list.Items[i]
-		namespaceNode := NewNode(NodeTypeNamespace, ns.GetName(), ns.GetName())
-		contextNode.AddChild(namespaceNode)
-	}
-
-	return nil
-}
+// loadNamespaces removed: legacy resource layer no longer supported here.
 
 // LoadNamespaceResources loads resources for a specific namespace
-func (m *Manager) LoadNamespaceResources(namespaceName string) error {
-	if m.resourceManager == nil {
-		return fmt.Errorf("no resource manager configured")
-	}
-	// Find the namespace node
-	namespaceNode := m.findNamespaceNode(namespaceName)
-	if namespaceNode == nil {
-		return fmt.Errorf("namespace node not found: %s", namespaceName)
-	}
-
-	// Clear existing children
-	namespaceNode.ClearChildren()
-
-	// Get supported resource types via discovery
-	supportedResources, err := m.resourceManager.GetSupportedResources()
-	if err != nil {
-		return fmt.Errorf("failed to get supported resources: %w", err)
-	}
-
-	// Group by resource type (GVK) before listing instances
-	// Create a ResourceType node then populate instance children
-	for _, gvk := range supportedResources {
-		// Create a grouping node for the resource type
-		groupName := gvk.Kind
-		if gvk.Group != "" {
-			groupName = fmt.Sprintf("%s.%s/%s", gvk.Kind, gvk.Group, gvk.Version)
-		} else {
-			groupName = fmt.Sprintf("%s/%s", gvk.Kind, gvk.Version)
-		}
-		typeNode := NewNode(NodeTypeResourceType, groupName, groupName)
-		typeNode.GVK = gvk
-		namespaceNode.AddChild(typeNode)
-
-		// Load instances under the type node
-		if err := m.loadResourcesForType(typeNode, gvk, namespaceName); err != nil {
-			fmt.Printf("Warning: failed to load resources for %s: %v\n", gvk.String(), err)
-		}
-	}
-
-	return nil
-}
+// LoadNamespaceResources removed: legacy resource layer no longer supported here.
 
 // findNamespaceNode finds a namespace node by name
 func (m *Manager) findNamespaceNode(namespaceName string) *Node {
@@ -262,31 +138,7 @@ func (m *Manager) findNodeByName(node *Node, name string, nodeType NodeType) *No
 }
 
 // loadResourcesForType loads resources of a specific type
-func (m *Manager) loadResourcesForType(parentNode *Node, gvk schema.GroupVersionKind, namespace string) error {
-	var list *unstructured.UnstructuredList
-	var err error
-	if m.storeProvider != nil {
-		gvr, mapErr := m.resourceManager.GVKToGVR(gvk)
-		if mapErr == nil {
-			list, err = m.storeProvider.Store().List(context.TODO(), resources.StoreKey{GVR: gvr, Namespace: namespace})
-		} else {
-			err = mapErr
-		}
-	} else {
-		// Use generic dynamic listing through resources manager
-		list, err = m.resourceManager.ListByGVK(gvk, namespace)
-	}
-	if err != nil {
-		return err
-	}
-	for i := range list.Items {
-		item := list.Items[i]
-		resourceNode := NewNode(NodeTypeResource, item.GetName(), item.GetName())
-		resourceNode.GVK = gvk
-		parentNode.AddChild(resourceNode)
-	}
-	return nil
-}
+// loadResourcesForType removed: legacy resource layer no longer supported here.
 
 // createObjectList creates an object list for a given GVK
 // createObjectList removed in favor of generic dynamic client listing
@@ -314,6 +166,4 @@ func (m *Manager) GetCurrentNode() *Node {
 }
 
 // GetResourceManager returns the current resource manager
-func (m *Manager) GetResourceManager() *resources.Manager {
-	return m.resourceManager
-}
+// GetResourceManager removed.
