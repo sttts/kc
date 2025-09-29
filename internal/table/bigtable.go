@@ -355,10 +355,14 @@ func (m *BigTable) rebuildWindow() {
         idx, cuts, widths := m.slicePlanForScroll(m.xOff, m.w)
         headers := make([]string, len(idx))
         for i, col := range idx {
-            headers[i] = asciiSlicePad(m.cols[col].Title, cuts[i], widths[i])
+            h := asciiSlicePad(m.cols[col].Title, cuts[i], widths[i])
+            if !m.bColumn && i < len(idx)-1 {
+                h = ensureTrailingSpace(h)
+            }
+            headers[i] = h
         }
         t = t.Headers(headers...)
-        t = t.Rows(rowsToStringRowsSliced(m.window, idx, cuts, widths)...)
+        t = t.Rows(rowsToStringRowsSliced(m.window, idx, cuts, widths, !m.bColumn)...)
         stylesPerRow := captureStylesSubset(m.window, idx)
         selected := m.selected
         t = t.StyleFunc(func(row, col int) lipgloss.Style {
@@ -386,10 +390,12 @@ func (m *BigTable) rebuildWindow() {
         visIdx := m.visibleColumnsAll()
         headers := make([]string, len(visIdx))
         for i := range visIdx {
-            headers[i] = m.cols[visIdx[i]].Title
+            h := m.cols[visIdx[i]].Title
+            if !m.bColumn && i < len(visIdx)-1 { h = ensureTrailingSpace(h) }
+            headers[i] = h
         }
         t = t.Headers(headers...)
-        t = t.Rows(rowsToStringRowsSubset(m.window, visIdx)...)
+        t = t.Rows(rowsToStringRowsSubsetSep(m.window, visIdx, !m.bColumn)...)
         stylesPerRow := captureStylesSubset(m.window, visIdx)
         selected := m.selected
         t = t.StyleFunc(func(row, col int) lipgloss.Style {
@@ -492,12 +498,12 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
     if n == 0 || vw <= 0 { return nil, nil, nil }
     // Compute dynamic base widths from current header titles and visible rows.
     base := m.computeScrollBaseWidths()
-    // Precompute total width including separators to clamp xOff.
+    // Precompute total width including 1-char separators to clamp xOff.
     total := 0
     for i := 0; i < n; i++ {
         w := base[i]
         total += w
-        if m.bColumn && i > 0 { total += 1 }
+        if i > 0 { total += 1 }
     }
     if total <= vw { xOff = 0 }
     if xOff < 0 { xOff = 0 }
@@ -512,15 +518,13 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
     pos := 0 // running position across full line including separators
 
     for i := 0; i < n && remaining > 0; i++ {
-        // Account for separator before this column (if any) in the position space.
-        if m.bColumn && i > 0 {
+        // Account for a 1-char separator between columns at the content level.
+        if i > 0 {
             if pos < xOff {
                 // If xOff lands on the separator, advance past it.
-                if pos+1 <= xOff {
-                    pos += 1
-                }
-            } else if len(idx) > 0 {
-                // We already have at least one column in the viewport; reserve 1 char for separator.
+                if pos+1 <= xOff { pos += 1 }
+            } else if len(widths) > 0 {
+                // Consume one column of viewport for the separator (space or border).
                 if remaining == 0 { break }
                 remaining -= 1
                 if remaining <= 0 { break }
@@ -611,7 +615,7 @@ func asciiSlicePad(s string, start, width int) string {
     return out
 }
 
-func rowsToStringRowsSliced(rows []Row, idx, cuts, widths []int) [][]string {
+func rowsToStringRowsSliced(rows []Row, idx, cuts, widths []int, spaceSep bool) [][]string {
     out := make([][]string, len(rows))
     for i := range rows {
         _, cells, _, _ := rows[i].Columns()
@@ -619,11 +623,40 @@ func rowsToStringRowsSliced(rows []Row, idx, cuts, widths []int) [][]string {
         for j, k := range idx {
             var cell string
             if k < len(cells) { cell = cells[k] }
-            row[j] = asciiSlicePad(cell, cuts[j], widths[j])
+            s := asciiSlicePad(cell, cuts[j], widths[j])
+            if spaceSep && j < len(idx)-1 {
+                s = ensureTrailingSpace(s)
+            }
+            row[j] = s
         }
         out[i] = row
     }
     return out
+}
+
+// rowsToStringRowsSubsetSep builds a subset and optionally appends a space
+// separator to all but the last column.
+func rowsToStringRowsSubsetSep(rows []Row, idx []int, spaceSep bool) [][]string {
+    out := make([][]string, len(rows))
+    for i := range rows {
+        _, cells, _, _ := rows[i].Columns()
+        row := make([]string, len(idx))
+        for j, k := range idx {
+            var cell string
+            if k < len(cells) { cell = cells[k] }
+            if spaceSep && j < len(idx)-1 { cell = ensureTrailingSpace(cell) }
+            row[j] = cell
+        }
+        out[i] = row
+    }
+    return out
+}
+
+func ensureTrailingSpace(s string) string {
+    if len(s) == 0 || s[len(s)-1] != ' ' {
+        return s + " "
+    }
+    return s
 }
 
 func min(a, b int) int { if a < b { return a }; return b }
