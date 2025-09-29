@@ -1233,8 +1233,10 @@ func (a *App) initData() error {
         folder := a.buildRootFolder()
         a.navigator = navui.NewNavigator(folder)
         cur := a.navigator.Current()
-        a.leftPanel.SetFolder(cur, a.navigator.HasBack())
-        a.rightPanel.SetFolder(cur, a.navigator.HasBack())
+        hasBack := a.navigator.HasBack()
+        wrap := navui.WithBack(cur, hasBack)
+        a.leftPanel.SetFolder(wrap, hasBack)
+        a.rightPanel.SetFolder(wrap, hasBack)
         a.leftPanel.UseFolder(true)
         a.rightPanel.UseFolder(true)
         // Wire folder navigation handlers to manage back/forward stack and update panels.
@@ -1446,8 +1448,9 @@ func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
     }
     cur := a.navigator.Current()
     hasBack := a.navigator.HasBack()
-    a.leftPanel.SetFolder(cur, hasBack)
-    a.rightPanel.SetFolder(cur, hasBack)
+    wrap := navui.WithBack(cur, hasBack)
+    a.leftPanel.SetFolder(wrap, hasBack)
+    a.rightPanel.SetFolder(wrap, hasBack)
     // Restore selection when going back; otherwise default focus to top
     if back {
         id := a.navigator.CurrentSelectionID()
