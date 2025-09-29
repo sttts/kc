@@ -1,13 +1,15 @@
 package appconfig
 
 import (
-	"errors"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"strings"
+    "errors"
+    "io/fs"
+    "os"
+    "path/filepath"
+    "strings"
+    "time"
 
-	yaml "sigs.k8s.io/yaml"
+    yaml "sigs.k8s.io/yaml"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type ViewerConfig struct {
@@ -26,15 +28,25 @@ type PanelConfig struct {
     Scrolling ScrollingConfig `json:"scrolling"`
 }
 
+type ClustersConfig struct {
+    TTL metav1.Duration `json:"ttl"` // duration, e.g. 2m, 30s
+}
+
+type KubernetesConfig struct {
+    Clusters ClustersConfig `json:"clusters"`
+}
+
 type Config struct {
     Viewer ViewerConfig `json:"viewer"`
     Panel  PanelConfig  `json:"panel"`
+    Kubernetes KubernetesConfig `json:"kubernetes"`
 }
 
 func Default() *Config {
     return &Config{
         Viewer: ViewerConfig{Theme: "dracula"},
         Panel:  PanelConfig{Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}}},
+        Kubernetes: KubernetesConfig{Clusters: ClustersConfig{TTL: metav1.Duration{Duration: 2 * time.Minute}}},
     }
 }
 
@@ -68,6 +80,7 @@ func Load() (*Config, error) {
         if cfg.Panel.Scrolling.Horizontal.Step <= 0 {
             cfg.Panel.Scrolling.Horizontal.Step = 4
         }
+        if cfg.Kubernetes.Clusters.TTL.Duration == 0 { cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute} }
         return cfg, nil
     }
 	// Fallback: tolerate legacy/mixed-case keys by normalizing
@@ -130,6 +143,7 @@ func Load() (*Config, error) {
         }
     }
     if cfg.Panel.Scrolling.Horizontal.Step <= 0 { cfg.Panel.Scrolling.Horizontal.Step = 4 }
+    if cfg.Kubernetes.Clusters.TTL.Duration == 0 { cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute} }
     return cfg, nil
 }
 
