@@ -56,7 +56,8 @@ type App struct {
 	prevTheme           string
 	suppressThemeRevert bool
 	// New navigation (folder-backed) using a Navigator
-	navigator *navui.Navigator
+    leftNav  *navui.Navigator
+    rightNav *navui.Navigator
 }
 
 // NewApp creates a new application instance
@@ -791,20 +792,18 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 	var gvr schema.GroupVersionResource
 	if path == "/namespaces" && item.Type == ItemTypeNamespace {
 		gvr = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-	} else {
-		// Prefer folder meta (authoritative)
-		if a.navigator != nil {
-			if cur := a.navigator.Current(); cur != nil {
-				type metaProv interface {
-					ObjectListMeta() (schema.GroupVersionResource, string, bool)
-				}
-				if mp, ok := cur.(metaProv); ok {
-					if mgvr, _, ok2 := mp.ObjectListMeta(); ok2 {
-						gvr = mgvr
-					}
-				}
-			}
-		}
+    } else {
+        // Prefer folder meta (authoritative) from the active panel's navigator
+        nav := a.leftNav
+        if a.activePanel == 1 { nav = a.rightNav }
+        if nav != nil {
+            if cur := nav.Current(); cur != nil {
+                type metaProv interface{ ObjectListMeta() (schema.GroupVersionResource, string, bool) }
+                if mp, ok := cur.(metaProv); ok {
+                    if mgvr, _, ok2 := mp.ObjectListMeta(); ok2 { gvr = mgvr }
+                }
+            }
+        }
 		// Fallback: derive from typed GVK + resource plural
 		if gvr.Resource == "" {
 			gvr = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
@@ -1288,80 +1287,83 @@ func (a *App) goToNamespace(ns string) {
 		return navui.NewContextRootFolder(ndeps), nil
 	}
 	root := navui.NewRootFolder(deps)
-	a.navigator = navui.NewNavigator(root)
-	if a.namespaceExists(ns) {
-		a.navigator.Push(navui.NewNamespacesFolder(deps))
-		a.navigator.Push(navui.NewNamespacedGroupsFolder(deps, ns))
-	}
-	cur := a.navigator.Current()
-	hasBack := a.navigator.HasBack()
-	a.leftPanel.SetFolder(cur, hasBack)
-	a.rightPanel.SetFolder(cur, hasBack)
+    a.leftNav = navui.NewNavigator(root)
+    a.rightNav = navui.NewNavigator(root)
+    if a.namespaceExists(ns) {
+        // Left panel: remember selection when entering
+        a.leftNav.SetSelectionID("namespaces")
+        a.leftNav.Push(navui.NewNamespacesFolder(deps))
+        a.leftNav.SetSelectionID(ns)
+        a.leftNav.Push(navui.NewNamespacedGroupsFolder(deps, ns))
+        // Right panel: same
+        a.rightNav.SetSelectionID("namespaces")
+        a.rightNav.Push(navui.NewNamespacesFolder(deps))
+        a.rightNav.SetSelectionID(ns)
+        a.rightNav.Push(navui.NewNamespacedGroupsFolder(deps, ns))
+    }
+    curL := a.leftNav.Current(); hasBackL := a.leftNav.HasBack()
+    curR := a.rightNav.Current(); hasBackR := a.rightNav.HasBack()
+    a.leftPanel.SetFolder(curL, hasBackL)
+    a.rightPanel.SetFolder(curR, hasBackR)
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
-	handler := func(back bool, selID string, next navui.Folder) { a.handleFolderNav(back, selID, next) }
-	a.leftPanel.SetFolderNavHandler(handler)
-	a.rightPanel.SetFolderNavHandler(handler)
+    a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next navui.Folder) { a.activePanel = 0; a.handleFolderNav(back, selID, next) })
+    a.rightPanel.SetFolderNavHandler(func(back bool, selID string, next navui.Folder) { a.activePanel = 1; a.handleFolderNav(back, selID, next) })
 	a.leftPanel.ResetSelectionTop()
 	a.rightPanel.ResetSelectionTop()
 }
 
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
+// currentNav returns the navigator for the active panel (left=0, right=1).
+func (a *App) currentNav() *navui.Navigator {
+    if a.activePanel == 0 { return a.leftNav }
+    return a.rightNav
+}
+
 func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
-	if a.navigator == nil {
-		deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
-			ListContexts: func() []string {
-				out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-				for _, c := range a.kubeMgr.GetContexts() {
-					out = append(out, c.Name)
-				}
-				return out
-			},
-			EnterContext: func(name string) (navui.Folder, error) {
-				var target *kubeconfig.Context
-				for _, c := range a.kubeMgr.GetContexts() {
-					if c.Name == name {
-						target = c
-						break
-					}
-				}
-				if target == nil {
-					return nil, fmt.Errorf("context %q not found", name)
-				}
-				key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
-				cl, err := a.clPool.Get(a.ctx, key)
-				if err != nil {
-					return nil, err
-				}
-				ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: nil, EnterContext: nil}
-				return navui.NewContextRootFolder(ndeps), nil
-			},
-		}
-		a.navigator = navui.NewNavigator(navui.NewRootFolder(deps))
-	}
-	if back {
-		a.navigator.Back()
-	} else if next != nil {
-		a.navigator.SetSelectionID(selID)
-		a.navigator.Push(next)
-	}
-	cur := a.navigator.Current()
-	hasBack := a.navigator.HasBack()
-	a.leftPanel.SetFolder(cur, hasBack)
-	a.rightPanel.SetFolder(cur, hasBack)
-	if back {
-		id := a.navigator.CurrentSelectionID()
-		if id != "" {
-			a.leftPanel.SelectByRowID(id)
-			a.rightPanel.SelectByRowID(id)
-		} else {
-			a.leftPanel.ResetSelectionTop()
-			a.rightPanel.ResetSelectionTop()
-		}
-	} else {
-		a.leftPanel.ResetSelectionTop()
-		a.rightPanel.ResetSelectionTop()
-	}
+    // Use navigator for current active panel
+    ensure := func() *navui.Navigator {
+        deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+            ListContexts: func() []string {
+                out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+                for _, c := range a.kubeMgr.GetContexts() { out = append(out, c.Name) }
+                return out
+            },
+        }
+        return navui.NewNavigator(navui.NewRootFolder(deps))
+    }
+    var nav *navui.Navigator
+    var panelSet func(navui.Folder, bool)
+    var panelSelectByID func(string)
+    var panelReset func()
+    if a.activePanel == 0 {
+        if a.leftNav == nil { a.leftNav = ensure() }
+        nav = a.leftNav
+        panelSet = a.leftPanel.SetFolder
+        panelSelectByID = a.leftPanel.SelectByRowID
+        panelReset = func(){ a.leftPanel.ResetSelectionTop() }
+    } else {
+        if a.rightNav == nil { a.rightNav = ensure() }
+        nav = a.rightNav
+        panelSet = a.rightPanel.SetFolder
+        panelSelectByID = a.rightPanel.SelectByRowID
+        panelReset = func(){ a.rightPanel.ResetSelectionTop() }
+    }
+    if back {
+        nav.Back()
+    } else if next != nil {
+        nav.SetSelectionID(selID)
+        nav.Push(next)
+    }
+    cur := nav.Current()
+    hasBack := nav.HasBack()
+    panelSet(cur, hasBack)
+    if back {
+        id := nav.CurrentSelectionID()
+        if id != "" { panelSelectByID(id) } else { panelReset() }
+    } else {
+        panelReset()
+    }
 }
 
 // namespaceExists returns true if the namespace exists in the current cluster.
