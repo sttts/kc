@@ -192,8 +192,9 @@ func (m *Modal) View() string {
     contentW := max(1, m.width-2)
     contentH := max(1, m.height-3)
     // For YAML viewers, drop left/right borders for easier copy/paste and allow full width content.
-    _, isYAML := m.content.(*YAMLViewer)
-    if isYAML { contentW = m.width }
+    // Full-width content for viewers: detect via RequestTheme capability (viewers implement it)
+    _, isViewer := m.content.(interface{ RequestTheme() tea.Cmd })
+    if isViewer { contentW = m.width }
 
 	if m.windowed {
 		// Render background (use provided base or blank)
@@ -356,7 +357,7 @@ func (m *Modal) View() string {
         Width(m.width).
         // Reserve one terminal line for the footer outside the frame
         Height(m.height - 2)
-    if isYAML {
+    if isViewer {
         // Remove vertical borders to allow clean copy/paste of YAML lines.
         bottomSty = bottomSty.BorderLeft(false).BorderRight(false)
     }
