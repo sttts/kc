@@ -46,6 +46,9 @@ type BigTable struct {
 
     // Only inner vertical separators (no outside borders, no underline)
     bColumn bool
+
+    // horizontal scroll state (ModeScroll): starting column index
+    colStart int
 }
 
 // Styles groups all externally configurable styles.
@@ -273,6 +276,16 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
                 m.top = max(0, n-vis)
                 m.rebuildWindow()
             }
+        case "left", "h":
+            if m.mode == ModeScroll && m.colStart > 0 {
+                m.colStart--
+                m.rebuildWindow()
+            }
+        case "right", "l":
+            if m.mode == ModeScroll && m.colStart+1 < len(m.cols) {
+                m.colStart++
+                m.rebuildWindow()
+            }
         }
     }
     return c1, c2
@@ -323,15 +336,17 @@ func (m *BigTable) rebuildWindow() {
 
     // Fit mode is handled by lipgloss.table's Width; no manual slicing.
 
-    headers := make([]string, len(m.cols))
-    for i, c := range m.cols {
-        headers[i] = c.Title
+    // Determine visible columns (ModeScroll pans horizontally by columns).
+    visIdx := m.visibleColumns()
+    headers := make([]string, len(visIdx))
+    for i := range visIdx {
+        headers[i] = m.cols[visIdx[i]].Title
     }
     t = t.Headers(headers...)
-    t = t.Rows(rowsToStringRows(m.window)...)
+    t = t.Rows(rowsToStringRowsSubset(m.window, visIdx)...)
 
     // Style cells: base cell style + per-cell style; overlay selection on data rows.
-    stylesPerRow := captureStyles(m.window)
+    stylesPerRow := captureStylesSubset(m.window, visIdx)
     selected := m.selected
     t = t.StyleFunc(func(row, col int) lipgloss.Style {
         if row == lgtable.HeaderRow {
@@ -380,21 +395,76 @@ func (m *BigTable) bodyRowsHeight() int {
 // (no custom column width allocator; Fit relies on lipgloss.table sizing)
 
 // rowsToStringRows converts []Row to [][]string for lipgloss table.
-func rowsToStringRows(rows []Row) [][]string {
+func rowsToStringRowsSubset(rows []Row, idx []int) [][]string {
     out := make([][]string, len(rows))
     for i := range rows {
         _, cells, _, _ := rows[i].Columns()
-        out[i] = cells
+        row := make([]string, len(idx))
+        for j, k := range idx {
+            if k < len(cells) {
+                row[j] = cells[k]
+            } else {
+                row[j] = ""
+            }
+        }
+        out[i] = row
     }
     return out
 }
 
 // captureStyles extracts per-cell styles for visible rows to use in StyleFunc.
-func captureStyles(rows []Row) [][]*lipgloss.Style {
+func captureStylesSubset(rows []Row, idx []int) [][]*lipgloss.Style {
     out := make([][]*lipgloss.Style, len(rows))
     for i := range rows {
         _, _, styles, _ := rows[i].Columns()
-        out[i] = styles
+        row := make([]*lipgloss.Style, len(idx))
+        for j, k := range idx {
+            if k < len(styles) {
+                row[j] = styles[k]
+            } else {
+                row[j] = nil
+            }
+        }
+        out[i] = row
+    }
+    return out
+}
+
+// visibleColumns returns the indices of columns that fit into the viewport width,
+// starting at m.colStart. Uses the column Width hints and accounts for inner
+// vertical separators when enabled. In ModeFit all columns are visible.
+func (m *BigTable) visibleColumns() []int {
+    n := len(m.cols)
+    if n == 0 { return nil }
+    if m.mode == ModeFit {
+        idx := make([]int, n)
+        for i := range idx { idx[i] = i }
+        return idx
+    }
+    // ModeScroll: choose a window of columns starting at colStart to fit width.
+    start := m.colStart
+    if start < 0 { start = 0 }
+    if start >= n { start = n - 1 }
+    budget := m.w
+    var out []int
+    for i := start; i < n; i++ {
+        w := m.cols[i].Width
+        if w <= 0 { w = 14 }
+        sep := 0
+        if m.bColumn && len(out) > 0 { sep = 1 }
+        if w+sep > budget && len(out) > 0 {
+            break
+        }
+        if w+sep > budget && len(out) == 0 {
+            // Ensure at least one column is visible even if it exceeds budget.
+            out = append(out, i)
+            break
+        }
+        out = append(out, i)
+        budget -= w + sep
+    }
+    if len(out) == 0 {
+        out = []int{start}
     }
     return out
 }

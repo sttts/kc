@@ -150,7 +150,7 @@ func (a app) View() string {
     modes := []string{"none", "verticals"}
     cur := modes[a.bstate]
     help := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A8FF60")).Render(
-        fmt.Sprintf("Up/Down | PgUp/PgDn | Home/End | m: mode(Auto/Fit) | b: borders(%s) | i: insert | d/Del: delete | t: provider", cur),
+        fmt.Sprintf("Left/Right | Up/Down | PgUp/PgDn | Home/End | m: mode(Auto/Fit) | b: borders(%s) | i: insert | d/Del: delete | t: provider", cur),
     )
     return strings.Join([]string{help, a.bt.View()}, "\n")
 }
