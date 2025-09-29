@@ -26,6 +26,8 @@ import (
 
 // EscTimeoutMsg is sent when the escape sequence times out
 type EscTimeoutMsg struct{}
+// FolderTickMsg triggers periodic folder refresh (debounced to ~1s).
+type FolderTickMsg struct{}
 
 // App represents the main application state
 type App struct {
@@ -86,16 +88,17 @@ func (a *App) Init() tea.Cmd {
 		cfg = appconfig.Default()
 	}
 	a.cfg = cfg
-	return tea.Batch(
-		a.leftPanel.Init(),
-		a.rightPanel.Init(),
-		a.terminal.Init(),
-		func() tea.Msg {
-			// Focus the terminal initially since it's the main input area
-			a.terminal.Focus()
-			return nil
-		},
-	)
+    return tea.Batch(
+        a.leftPanel.Init(),
+        a.rightPanel.Init(),
+        a.terminal.Init(),
+        func() tea.Msg {
+            // Focus the terminal initially since it's the main input area
+            a.terminal.Focus()
+            return nil
+        },
+        tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} }),
+    )
 }
 
 // Update handles messages and updates the application state
@@ -144,11 +147,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 	}
 
-	switch msg := msg.(type) {
-	case EscTimeoutMsg:
-		// Escape sequence timed out
-		a.escPressed = false
-		return a, nil
+    switch msg := msg.(type) {
+    case EscTimeoutMsg:
+        // Escape sequence timed out
+        a.escPressed = false
+        return a, nil
+    case FolderTickMsg:
+        // Periodic refresh to reflect informer-driven folder updates.
+        if a.leftPanel != nil { a.leftPanel.RefreshFolder() }
+        if a.rightPanel != nil { a.rightPanel.RefreshFolder() }
+        // Schedule next tick
+        return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
 
 	case tea.KeyMsg:
 		// Handle global shortcuts first
@@ -1384,5 +1393,5 @@ func isProbablyText(b []byte) bool {
 			ctrl++
 		}
 	}
-	return ctrl*10 < len(b)
+    return ctrl*10 < len(b)
 }

@@ -245,6 +245,14 @@ func (p *Panel) SelectByRowID(id string) {
 // navigation was requested and, if not back, the next Folder (may be nil).
 func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next nav.Folder)) { p.folderHandler = h }
 
+// RefreshFolder refreshes the BigTable rows from the current folder list.
+// Used by periodic ticks to reflect informer-driven changes with a max 1s delay.
+func (p *Panel) RefreshFolder() {
+    if p.useFolder && p.folder != nil && p.bt != nil {
+        p.bt.SetList(p.folder)
+    }
+}
+
 // SetNamespacesDataSource wires a namespaces data source for live listings.
 // Legacy live data sources removed; folders drive listings now.
 
