@@ -437,6 +437,9 @@ func (m *BigTable) rebuildWindow() {
 
 func (m *BigTable) applyMode() { m.rebuildWindow() }
 
+// Refresh forces a re-render of the current window without changing state.
+func (m *BigTable) Refresh() { m.rebuildWindow() }
+
 // Focus sets the table as focused (selector visible on the focused row).
 func (m *BigTable) Focus() { m.focused = true; m.rebuildWindow() }
 
