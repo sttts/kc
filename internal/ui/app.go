@@ -14,18 +14,19 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	kccluster "github.com/sttts/kc/internal/cluster"
+	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
-	navui "github.com/sttts/kc/internal/navigation"
-    kccluster "github.com/sttts/kc/internal/cluster"
+	metamapper "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-    metamapper "k8s.io/apimachinery/pkg/api/meta"
-    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-    yaml "sigs.k8s.io/yaml"
+	yaml "sigs.k8s.io/yaml"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
 type EscTimeoutMsg struct{}
+
 // FolderTickMsg triggers periodic folder refresh (debounced to ~1s).
 type FolderTickMsg struct{}
 
@@ -49,7 +50,7 @@ type App struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	currentCtx *kubeconfig.Context
-    viewConfig *ViewConfig
+	viewConfig *ViewConfig
 	cfg        *appconfig.Config
 	// Theme dialog state
 	prevTheme           string
@@ -69,7 +70,7 @@ func NewApp() *App {
 		showTerminal: false,
 		allResources: make([]schema.GroupVersionKind, 0),
 		escPressed:   false,
-        viewConfig:   NewViewConfig(),
+		viewConfig:   NewViewConfig(),
 	}
 
 	// Register modals
@@ -86,17 +87,17 @@ func (a *App) Init() tea.Cmd {
 		cfg = appconfig.Default()
 	}
 	a.cfg = cfg
-    return tea.Batch(
-        a.leftPanel.Init(),
-        a.rightPanel.Init(),
-        a.terminal.Init(),
-        func() tea.Msg {
-            // Focus the terminal initially since it's the main input area
-            a.terminal.Focus()
-            return nil
-        },
-        tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} }),
-    )
+	return tea.Batch(
+		a.leftPanel.Init(),
+		a.rightPanel.Init(),
+		a.terminal.Init(),
+		func() tea.Msg {
+			// Focus the terminal initially since it's the main input area
+			a.terminal.Focus()
+			return nil
+		},
+		tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} }),
+	)
 }
 
 // Update handles messages and updates the application state
@@ -145,17 +146,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 	}
 
-    switch msg := msg.(type) {
-    case EscTimeoutMsg:
-        // Escape sequence timed out
-        a.escPressed = false
-        return a, nil
-    case FolderTickMsg:
-        // Periodic refresh to reflect informer-driven folder updates.
-        if a.leftPanel != nil { a.leftPanel.RefreshFolder() }
-        if a.rightPanel != nil { a.rightPanel.RefreshFolder() }
-        // Schedule next tick
-        return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
+	switch msg := msg.(type) {
+	case EscTimeoutMsg:
+		// Escape sequence timed out
+		a.escPressed = false
+		return a, nil
+	case FolderTickMsg:
+		// Periodic refresh to reflect informer-driven folder updates.
+		if a.leftPanel != nil {
+			a.leftPanel.RefreshFolder()
+		}
+		if a.rightPanel != nil {
+			a.rightPanel.RefreshFolder()
+		}
+		// Schedule next tick
+		return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
 
 	case tea.KeyMsg:
 		// Handle global shortcuts first
@@ -782,27 +787,29 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 		a.modalManager.Show("yaml_viewer")
 		return nil
 	}
-    // Build GVR from current folder meta when available; fallback to typed GVK + resource plural
-    var gvr schema.GroupVersionResource
-    if path == "/namespaces" && item.Type == ItemTypeNamespace {
-        gvr = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-    } else {
-        // Prefer folder meta (authoritative)
-        if a.navigator != nil {
-            if cur := a.navigator.Current(); cur != nil {
-                type metaProv interface{ ObjectListMeta() (schema.GroupVersionResource, string, bool) }
-                if mp, ok := cur.(metaProv); ok {
-                    if mgvr, _, ok2 := mp.ObjectListMeta(); ok2 {
-                        gvr = mgvr
-                    }
-                }
-            }
-        }
-        // Fallback: derive from typed GVK + resource plural
-        if gvr.Resource == "" {
-            gvr = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
-        }
-    }
+	// Build GVR from current folder meta when available; fallback to typed GVK + resource plural
+	var gvr schema.GroupVersionResource
+	if path == "/namespaces" && item.Type == ItemTypeNamespace {
+		gvr = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
+	} else {
+		// Prefer folder meta (authoritative)
+		if a.navigator != nil {
+			if cur := a.navigator.Current(); cur != nil {
+				type metaProv interface {
+					ObjectListMeta() (schema.GroupVersionResource, string, bool)
+				}
+				if mp, ok := cur.(metaProv); ok {
+					if mgvr, _, ok2 := mp.ObjectListMeta(); ok2 {
+						gvr = mgvr
+					}
+				}
+			}
+		}
+		// Fallback: derive from typed GVK + resource plural
+		if gvr.Resource == "" {
+			gvr = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
+		}
+	}
 	obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, name)
 	if err != nil {
 		return nil
@@ -1207,7 +1214,7 @@ func (a *App) initData() error {
 	if a.currentCtx == nil {
 		return fmt.Errorf("no current context found")
 	}
-    // Prepare app context and cluster pool; cluster will be started via pool.Get
+	// Prepare app context and cluster pool; cluster will be started via pool.Get
 	a.ctx, a.cancel = context.WithCancel(context.TODO())
 	a.clPool = kccluster.NewPool(2 * time.Minute)
 	a.clPool.Start()
@@ -1217,13 +1224,13 @@ func (a *App) initData() error {
 		return fmt.Errorf("cluster pool get: %w", err)
 	}
 	a.cl = cl
-    // Discovery-backed catalog (for panel displays)
-    if infos, err := a.cl.GetResourceInfos(); err == nil {
-        a.leftPanel.SetResourceCatalog(infos)
-        a.rightPanel.SetResourceCatalog(infos)
-    } else {
-        fmt.Printf("Warning: discovery resources: %v\n", err)
-    }
+	// Discovery-backed catalog (for panel displays)
+	if infos, err := a.cl.GetResourceInfos(); err == nil {
+		a.leftPanel.SetResourceCatalog(infos)
+		a.rightPanel.SetResourceCatalog(infos)
+	} else {
+		fmt.Printf("Warning: discovery resources: %v\n", err)
+	}
 	// Legacy generic data sources removed; folders provide data directly
 	a.leftPanel.SetViewConfig(a.viewConfig)
 	a.rightPanel.SetViewConfig(a.viewConfig)
@@ -1250,17 +1257,23 @@ func (a *App) goToNamespace(ns string) {
 	if ns == "" {
 		ns = "default"
 	}
-	deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name}
+	deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name, ListContexts: func() []string {
+		out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+		for _, c := range a.kubeMgr.GetContexts() {
+			out = append(out, c.Name)
+		}
+		return out
+	}}
 	root := navui.NewRootFolder(deps)
 	a.navigator = navui.NewNavigator(root)
 	if a.namespaceExists(ns) {
 		a.navigator.Push(navui.NewNamespacesFolder(deps))
 		a.navigator.Push(navui.NewNamespacedGroupsFolder(deps, ns))
 	}
-    cur := a.navigator.Current()
-    hasBack := a.navigator.HasBack()
-    a.leftPanel.SetFolder(cur, hasBack)
-    a.rightPanel.SetFolder(cur, hasBack)
+	cur := a.navigator.Current()
+	hasBack := a.navigator.HasBack()
+	a.leftPanel.SetFolder(cur, hasBack)
+	a.rightPanel.SetFolder(cur, hasBack)
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
 	handler := func(back bool, selID string, next navui.Folder) { a.handleFolderNav(back, selID, next) }
@@ -1273,7 +1286,13 @@ func (a *App) goToNamespace(ns string) {
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
 func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
 	if a.navigator == nil {
-		deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name}
+		deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name, ListContexts: func() []string {
+			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+			for _, c := range a.kubeMgr.GetContexts() {
+				out = append(out, c.Name)
+			}
+			return out
+		}}
 		a.navigator = navui.NewNavigator(navui.NewRootFolder(deps))
 	}
 	if back {
@@ -1283,10 +1302,10 @@ func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
 		a.navigator.SetSelectionID(selID)
 		a.navigator.Push(next)
 	}
-    cur := a.navigator.Current()
-    hasBack := a.navigator.HasBack()
-    a.leftPanel.SetFolder(cur, hasBack)
-    a.rightPanel.SetFolder(cur, hasBack)
+	cur := a.navigator.Current()
+	hasBack := a.navigator.HasBack()
+	a.leftPanel.SetFolder(cur, hasBack)
+	a.rightPanel.SetFolder(cur, hasBack)
 	// Restore selection when going back; otherwise default focus to top
 	if back {
 		id := a.navigator.CurrentSelectionID()
@@ -1399,5 +1418,5 @@ func isProbablyText(b []byte) bool {
 			ctrl++
 		}
 	}
-    return ctrl*10 < len(b)
+	return ctrl*10 < len(b)
 }

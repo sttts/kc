@@ -171,6 +171,10 @@ func verbsInclude(vs []string, want string) bool { for _, v := range vs { if str
 func (f *RootFolder) populate() {
     rows := make([]table.Row, 0, 64)
     nameSty := WhiteStyle()
+    // Contexts entry (if provided)
+    if f.deps.ListContexts != nil {
+        rows = append(rows, NewEnterableItemStyled("contexts", []string{"/contexts", "", ""}, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewContextsFolder(f.deps), nil }))
+    }
     // Namespaces entry
     rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", ""}, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps), nil }))
     // Cluster-scoped resources
@@ -191,6 +195,26 @@ func (f *RootFolder) populate() {
             id := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
             rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr), nil }))
         }
+    }
+    f.list = table.NewSliceList(rows)
+}
+
+// ContextsFolder lists available contexts (if provided in Deps).
+type ContextsFolder struct{ BaseFolder }
+func NewContextsFolder(deps Deps) *ContextsFolder {
+    f := &ContextsFolder{BaseFolder: BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}}}
+    f.init = func() { f.populate() }
+    return f
+}
+func (f *ContextsFolder) Title() string { return "contexts" }
+func (f *ContextsFolder) Key() string   { return depsKey(f.deps, "contexts") }
+func (f *ContextsFolder) populate() {
+    nameSty := WhiteStyle()
+    rows := make([]table.Row, 0, 16)
+    if f.deps.ListContexts != nil {
+        names := f.deps.ListContexts()
+        sort.Strings(names)
+        for _, n := range names { rows = append(rows, NewSimpleItem(n, []string{n}, nameSty)) }
     }
     f.list = table.NewSliceList(rows)
 }
