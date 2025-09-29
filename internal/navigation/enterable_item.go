@@ -1,6 +1,7 @@
 package navigation
 
 import (
+    "strings"
     lipgloss "github.com/charmbracelet/lipgloss/v2"
     table "github.com/sttts/kc/internal/table"
 )
@@ -17,6 +18,11 @@ var _ Enterable = (*EnterableItem)(nil)
 
 func NewEnterableItem(id string, cells []string, enter func() (Folder, error), style *lipgloss.Style) *EnterableItem {
     if style == nil { style = GreenStyle() }
+    // Ensure enterable items show a leading "/" in the first cell for generic folder UI
+    if len(cells) > 0 && !strings.HasPrefix(cells[0], "/") {
+        cells = append([]string(nil), cells...)
+        cells[0] = "/" + cells[0]
+    }
     styles := make([]*lipgloss.Style, len(cells))
     for i := range styles { styles[i] = style }
     return &EnterableItem{Row: table.SimpleRow{ID: id, Cells: cells, Styles: styles}, enter: enter}
@@ -25,6 +31,11 @@ func NewEnterableItem(id string, cells []string, enter func() (Folder, error), s
 // NewEnterableItemStyled constructs an EnterableItem with per-cell styles.
 func NewEnterableItemStyled(id string, cells []string, styles []*lipgloss.Style, enter func() (Folder, error)) *EnterableItem {
     // ensure styles slice length matches cells
+    // Ensure leading "/" in the first cell for enterable rows
+    if len(cells) > 0 && !strings.HasPrefix(cells[0], "/") {
+        cells = append([]string(nil), cells...)
+        cells[0] = "/" + cells[0]
+    }
     ss := make([]*lipgloss.Style, len(cells))
     copy(ss, styles)
     for i := range ss {
