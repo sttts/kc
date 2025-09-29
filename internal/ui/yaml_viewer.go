@@ -33,6 +33,10 @@ type YAMLViewer struct {
 	rawLines []string       // raw, uncolored lines for measuring widths
 }
 
+// TextViewer is an alias for YAMLViewer for format-agnostic usage.
+// The implementation supports arbitrary lexers via lang/mime/filename hints.
+type TextViewer = YAMLViewer
+
 func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *YAMLViewer {
     v := &YAMLViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
     v.rawLines = strings.Split(text, "\n")

@@ -721,12 +721,12 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 					theme = a.cfg.Viewer.Theme
 				}
             viewer := NewTextViewer(id, string(yb), "yaml", "application/yaml", id, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
-				viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-				title := p.GetCurrentPath()
-				if !strings.HasSuffix(title, "/"+id) {
-					title = title + "/" + id
-				}
-				modal := NewModal(title, viewer)
+            viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
+            // Build full breadcrumbs from meta
+            title := "/" + gvr.Resource
+            if ns != "" { title = "/namespaces/" + ns + "/" + gvr.Resource }
+            title = title + "/" + id
+            modal := NewModal(title, viewer)
 				modal.SetDimensions(a.width, a.height)
 				modal.SetCloseOnSingleEsc(false)
 				a.modalManager.Register("yaml_viewer", modal)
@@ -776,12 +776,15 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 			theme = a.cfg.Viewer.Theme
 		}
         viewer := NewTextViewer(titleName, body, "yaml", "application/yaml", titleName, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
-		viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-		title := path
-		if !strings.HasSuffix(path, "/"+titleName) {
-			title = path + "/" + titleName
-		}
-		modal := NewModal(title, viewer)
+        viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
+        // Prefer breadcrumbs from parsed path when available
+        title := path
+        if ns != "" && res != "" {
+            title = "/namespaces/" + ns + "/" + res + "/" + titleName
+        } else if !strings.HasSuffix(path, "/"+titleName) {
+            title = path + "/" + titleName
+        }
+        modal := NewModal(title, viewer)
 		modal.SetDimensions(a.width, a.height)
 		modal.SetCloseOnSingleEsc(false)
 		a.modalManager.Register("yaml_viewer", modal)
@@ -928,7 +931,7 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 
 // showThemeSelector opens the theme selector modal and wires selection to save
 // config and re-highlight the currently open YAML viewer.
-func (a *App) showThemeSelector(v *YAMLViewer) tea.Cmd {
+func (a *App) showThemeSelector(v *TextViewer) tea.Cmd {
 	modal := a.modalManager.modals["theme_selector"]
 	if modal == nil {
 		return nil
