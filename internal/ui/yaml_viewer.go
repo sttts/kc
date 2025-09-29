@@ -12,9 +12,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 )
 
-// YAMLViewer is a simple scrollable text viewer for YAML content.
-// Note: Syntax highlighting to be integrated with a library (e.g., chroma) in a follow-up.
-type YAMLViewer struct {
+// TextViewer is a scrollable text viewer with Chroma syntax highlighting.
+// It is format-agnostic: provide lang (lexer name), or mime/filename hints.
+type TextViewer struct {
 	title    string
 	content  []string // highlighted, ANSI-colored lines
 	raw      string   // original, uncolored content for re-highlight on resize/theme
@@ -33,12 +33,10 @@ type YAMLViewer struct {
 	rawLines []string       // raw, uncolored lines for measuring widths
 }
 
-// TextViewer is an alias for YAMLViewer for format-agnostic usage.
-// The implementation supports arbitrary lexers via lang/mime/filename hints.
-type TextViewer = YAMLViewer
+//
 
-func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *YAMLViewer {
-    v := &YAMLViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
+func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
+    v := &TextViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
     v.rawLines = strings.Split(text, "\n")
     v.content = v.highlightWithTheme(text, theme)
     return v
@@ -46,18 +44,18 @@ func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme fun
 
 // NewTextViewer creates a syntax-highlighted viewer for arbitrary text.
 // Provide at least one of lang/mime/filename for best detection; otherwise a fallback will be used.
-func NewTextViewer(title, text, lang, mime, filename, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *YAMLViewer {
-    v := &YAMLViewer{title: title, raw: text, theme: theme, lang: lang, mime: mime, filename: filename, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
+func NewTextViewer(title, text, lang, mime, filename, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
+    v := &TextViewer{title: title, raw: text, theme: theme, lang: lang, mime: mime, filename: filename, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
     v.rawLines = strings.Split(text, "\n")
     v.content = v.highlightWithTheme(text, theme)
     return v
 }
 
-func (v *YAMLViewer) Init() tea.Cmd { return nil }
+func (v *TextViewer) Init() tea.Cmd { return nil }
 
-func (v *YAMLViewer) SetDimensions(w, h int) { v.width, v.height = w, h }
+func (v *TextViewer) SetDimensions(w, h int) { v.width, v.height = w, h }
 
-func (v *YAMLViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (v *TextViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.KeyMsg:
 		switch m.String() {
@@ -118,7 +116,7 @@ func (v *YAMLViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return v, nil
 }
 
-func (v *YAMLViewer) View() string {
+func (v *TextViewer) View() string {
 	if v.height <= 0 || v.width <= 0 {
 		return ""
 	}
@@ -137,12 +135,12 @@ func (v *YAMLViewer) View() string {
 }
 
 // FooterHints implements ModalFooterHints to show extra footer actions.
-func (v *YAMLViewer) FooterHints() [][2]string {
+func (v *TextViewer) FooterHints() [][2]string {
 	return [][2]string{{"F9", "Theme"}, {"F10", "Close"}}
 }
 
 // SetTheme updates the theme and re-highlights content.
-func (v *YAMLViewer) SetTheme(theme string) {
+func (v *TextViewer) SetTheme(theme string) {
 	if theme == "" {
 		return
 	}
@@ -151,14 +149,14 @@ func (v *YAMLViewer) SetTheme(theme string) {
 }
 
 // SetOnTheme sets the callback invoked when user requests theme selection.
-func (v *YAMLViewer) SetOnTheme(fn func() tea.Cmd) { v.onTheme = fn }
+func (v *TextViewer) SetOnTheme(fn func() tea.Cmd) { v.onTheme = fn }
 
 // SetOnClose sets the callback used to close the surrounding modal.
-func (v *YAMLViewer) SetOnClose(fn func() tea.Cmd) { v.onClose = fn }
+func (v *TextViewer) SetOnClose(fn func() tea.Cmd) { v.onClose = fn }
 
 // RequestTheme allows external callers (e.g., modal ESC-number mapping)
 // to trigger the theme selector without synthesizing a key event.
-func (v *YAMLViewer) RequestTheme() tea.Cmd {
+func (v *TextViewer) RequestTheme() tea.Cmd {
 	if v.onTheme != nil {
 		return v.onTheme()
 	}
@@ -167,7 +165,7 @@ func (v *YAMLViewer) RequestTheme() tea.Cmd {
 
 // highlightWithTheme converts YAML to ANSI-colored lines using chroma with no background so it
 // blends with the panel theme. On failure it returns the plain, uncolored lines.
-func (v *YAMLViewer) highlightWithTheme(text, theme string) []string {
+func (v *TextViewer) highlightWithTheme(text, theme string) []string {
     // Pick lexer using hints: lang > mime > filename > analyse > fallback
     var lexer chroma.Lexer
     if v.lang != "" { lexer = lexers.Get(v.lang) }
