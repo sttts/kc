@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
+	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -146,6 +147,14 @@ func (m *Manager) ensureDiscovery() error {
 		}
 	})
 	return initErr
+}
+
+// RESTMapper returns the manager's RESTMapper. The mapper is backed by cached
+// discovery and is periodically reset in the background to pick up new APIs/CRDs.
+func (m *Manager) RESTMapper() metamapper.RESTMapper {
+    // Best-effort lazy init; ignore error — callers will see mapping errors if any.
+    _ = m.ensureDiscovery()
+    return m.mapper
 }
 
 // GVKToGVR resolves a GroupVersionKind to a GroupVersionResource using discovery
