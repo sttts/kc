@@ -1,19 +1,19 @@
 package ui
 
 import (
-	"context"
-	"fmt"
-	"sort"
-	"strings"
+    "context"
+    "fmt"
+    "sort"
+    "strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
-	table "github.com/sttts/kc/internal/table"
-	nav "github.com/sttts/kc/internal/navigation"
-	viewpkg "github.com/sttts/kc/internal/ui/view"
-	"github.com/sttts/kc/pkg/resources"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+    tea "github.com/charmbracelet/bubbletea/v2"
+    "github.com/charmbracelet/lipgloss/v2"
+    table "github.com/sttts/kc/internal/table"
+    nav "github.com/sttts/kc/internal/navigation"
+    viewpkg "github.com/sttts/kc/internal/ui/view"
+    // resources removed; folders/cluster handle data
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Panel represents a file/resource panel

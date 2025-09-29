@@ -1,15 +1,15 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"log"
+    "context"
+    "fmt"
+    "log"
 
-	"github.com/sttts/kc/pkg/handlers"
-	"github.com/sttts/kc/pkg/kubeconfig"
-	"github.com/sttts/kc/pkg/resources"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+    "github.com/sttts/kc/pkg/handlers"
+    "github.com/sttts/kc/pkg/kubeconfig"
+    icluster "github.com/sttts/kc/internal/cluster"
+    corev1 "k8s.io/api/core/v1"
+    "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func main() {
@@ -47,11 +47,11 @@ func main() {
 		log.Fatalf("Failed to create client config: %v", err)
 	}
 
-	// Create a resource manager
-	resourceManager, err := resources.NewManager(config)
-	if err != nil {
-		log.Fatalf("Failed to create resource manager: %v", err)
-	}
+    // Create a cluster
+    cl, err := icluster.New(config)
+    if err != nil { log.Fatalf("cluster: %v", err) }
+    ctx2 := context.TODO()
+    go cl.Start(ctx2)
 
 	// Register a pod handler
 	podHandler := handlers.NewPodHandler()
@@ -60,19 +60,16 @@ func main() {
 		Version: "v1",
 		Kind:    "Pod",
 	}
-	resourceManager.RegisterHandler(podGVK, podHandler)
+    // Handlers are demo-only; keep registration out in real app
+    _ = podHandler
 
 	// Start the manager
-	fmt.Println("Starting resource manager...")
-	if err := resourceManager.Start(); err != nil {
-		log.Fatalf("Failed to start resource manager: %v", err)
-	}
-	defer resourceManager.Stop()
+    fmt.Println("Starting cluster...")
 
 	// List pods using the client directly
 	fmt.Println("\nListing pods...")
 	podList := &corev1.PodList{}
-	err = resourceManager.Client().List(context.Background(), podList)
+    err = cl.GetClient().List(ctx2, podList)
 	if err != nil {
 		log.Printf("Failed to list pods: %v", err)
 	} else {
@@ -90,7 +87,7 @@ func main() {
 	// List namespaces using the client directly
 	fmt.Println("\nListing namespaces...")
 	namespaceList := &corev1.NamespaceList{}
-	err = resourceManager.Client().List(context.Background(), namespaceList)
+    err = cl.GetClient().List(ctx2, namespaceList)
 	if err != nil {
 		log.Printf("Failed to list namespaces: %v", err)
 	} else {
@@ -108,23 +105,20 @@ func main() {
 	fmt.Println("\nTesting handler functionality...")
 	if len(podList.Items) > 0 {
 		pod := &podList.Items[0]
-		handler, err := resourceManager.GetHandler(podGVK)
-		if err != nil {
-			log.Printf("Failed to get handler: %v", err)
-		} else {
-			// Get actions
-			actions := handler.GetActions(pod)
+    {
+        // Get actions
+        actions := podHandler.GetActions(pod)
 			fmt.Printf("Actions for pod %s:\n", pod.Name)
 			for _, action := range actions {
 				fmt.Printf("  - %s: %s\n", action.Name, action.Description)
 			}
 
 			// Get status
-			status := handler.GetStatus(pod)
+        status := podHandler.GetStatus(pod)
 			fmt.Printf("Status: %s\n", status)
 
 			// Get display columns
-			columns := handler.GetDisplayColumns()
+        columns := podHandler.GetDisplayColumns()
 			fmt.Printf("Display columns:\n")
 			for _, column := range columns {
 				fmt.Printf("  - %s (width: %d, sortable: %v)\n",
@@ -135,7 +129,7 @@ func main() {
 
 	// Show supported resources
 	fmt.Println("\nSupported resource types:")
-	supportedResources, err := resourceManager.GetSupportedResources()
+    supportedResources, err := cl.GetResourceInfos()
 	if err != nil {
 		log.Printf("Failed to get supported resources: %v", err)
 	} else {
