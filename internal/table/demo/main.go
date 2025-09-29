@@ -19,10 +19,11 @@ type app struct{
 }
 
 func newApp(provider string) app {
-	cols := make([]table.Column, 10)
-	for c := 0; c < 10; c++ {
-		cols[c] = table.Column{Title: fmt.Sprintf("Col%02d", c+1), Width: 18}
-	}
+    cols := make([]table.Column, 10)
+    for c := 0; c < 10; c++ {
+        // No fixed widths in the demo; BigTable computes widths from visible data in ModeScroll.
+        cols[c] = table.Column{Title: fmt.Sprintf("Col%02d", c+1)}
+    }
 	// Build a demo List provider with ASCII cells and per-cell styles.
 	base := makeBaseRows(1000, 20) // ASCII text only
 	colStyles := []*lipgloss.Style{
