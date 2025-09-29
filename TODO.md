@@ -20,7 +20,13 @@ Current tasks
  - [ ] Generalize data sources and watchers: move from pods-specific to generic GVK/GVR-driven listings and watches; use discovery to enumerate resources under namespaces.
  - [ ] Table horizontal scroll: when a server-side Table exceeds panel width, support column-wise horizontal scrolling with Left/Right keys. Only enable when the terminal has not received typed input (same gating logic used for Enter routing to terminal vs panel).
  - [ ] Table column separators vs selection: uninterrupted selector across columns. Today lipgloss.table uses a single global border style so the cyan selection bar is visually interrupted at the vertical divider. Explore upstream support in lipgloss.table for per-row column-border styling (inherit row background) or an extension hook. For now, accept the interruption and revisit later.
- - [ ] Favorites: build a favorites list of resource types (seed from discovery alias "all"); allow users to add/remove favorites to override discovery. Persist and use favorites to populate resource selectors and shortcuts.
+- [ ] Favorites: build a favorites list of resource types (seed from discovery alias "all"); allow users to add/remove favorites to override discovery. Persist and use favorites to populate resource selectors and shortcuts.
+
+Hierarchy refactor and tests
+- [ ] Navigation: make Folders self‑sufficient. Each Folder lazily populates its rows from injected Deps and Enterable rows return the next Folder. Keep `WithBack` for a synthetic ".." row in presentation.
+- [ ] Extract UI‑agnostic Folder constructors into `internal/navigation` with a small `Deps` bundle (ResMgr, Store, CtxName). Remove row‑building from the UI.
+- [ ] Programmatic goto (namespaces): implement simple Enter‑driven path stepping for `/namespaces/<ns>` without builders.
+- [ ] Envtest integration tests: start apiserver, seed ns/configmap/secret/node; verify walking Root → Namespaces → Groups → Objects → Keys; Back to parent; cluster‑scoped list. Tests only import navigation/resources/table (no UI).
 
 ## Milestone 2 — UI Navigation on the Model
 - Panel adapter reads model nodes; implements `Enter`, `Back(..)`, breadcrumbs, and `..` entries.

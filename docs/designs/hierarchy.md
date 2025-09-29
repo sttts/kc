@@ -30,18 +30,14 @@ Every location is backed by exact identities (GVR), never heuristic breadcrumb p
 
 - `internal/ui` (TUI composition)
   - `App` orchestrates panels, modals, and terminal.
-  - `Panel` presents a listing for the current location and constructs `Item`s precisely from discovery/store data.
-  - `Item` is a row in the panel with exact identity and optional capabilities.
+  - `Panel` renders a provided `Folder` via BigTable and routes keys; it does not build rows.
+  - `Item` is a row with identity and optional capabilities.
 
 - `internal/navigation` (items + folders)
-  - Owns the core navigation model: `Item`, `ObjectItem`, `Enterable`, `Viewable`, `Folder`, and the Back marker.
-  - Folder types:
-    - `ContextsFolder` — special contexts listing (not a resources folder).
-    - `ResourcesFolder` — lists GVRs (root cluster‑scoped and namespaced resource groups).
-    - `ObjectsFolder` — lists API objects for a specific GVR (+ optional namespace).
-    - Specialized: `PodContainersFolder`, `ConfigMapKeysFolder`, `SecretKeysFolder` for non‑API children.
-  - Minimal UI code only (per-cell default styles); no Bubble Tea components.
-  - Depends on `pkg/resources` for cluster access and `internal/table` for rows/columns.
+  - Owns the core navigation model: `Item`, `Enterable`, `Folder`, `Back`.
+  - Folders are self‑sufficient: each lazily populates rows from injected dependencies and `Enterable.Enter()` returns the next Folder.
+  - `WithBack(f, hasBack)` injects a synthetic “..” row for presentation.
+  - Depends on `pkg/resources` and `internal/table`.
 
 - `internal/ui/view` (modular viewers)
   - `ViewProvider` — provides `BuildView() (title, body string, err error)` for `F3`.
@@ -88,12 +84,7 @@ Notes:
 
 ### Panel (internal/ui)
 
-- Responsible for:
-  - Turning the current location into a list of `Item`s.
-  - Populating precise capabilities on each item (e.g., attaching `ConfigKeyView` to key rows).
-  - Rendering via a shared table pipeline using `[]table.Row` (header + aligned columns) for both server‑side Table and synthesized group/object lists.
-- Navigation:
-  - Computes “next” locations deterministically. E.g., entering a Pod object produces container folder items by reading the object under the cursor and creating `Item`s with `Enterable` and `Viewer`.
+- Renders `Folder` via BigTable; does not build rows. Keys route to Enter/Back.
 
 ### App (internal/ui)
 
@@ -168,19 +159,51 @@ Notes:
 
 ## Data Flow
 
-1. Discovery + store give `Panel` the exact GVRs for each resource group.
-2. `Panel` builds `Item`s with identities and attaches capabilities (e.g., `ConfigKeyView` for configmap keys) based on the precise type of each row.
-3. On `F3`, when the current folder is an `ObjectsFolder`, the app fetches the object by `(GVR, ns, rowID)` and renders YAML. Key/containers/logs viewers are added on their respective folders.
-4. Column layout uses one table pipeline (headers: Name, Group, Count for resource group views) for consistent alignment/styling. We now import `internal/table` directly and build rows using its exported `Row` and `SimpleRow` types:
+1. App creates a `Navigator` with the root `Folder` (Deps injected).
+2. Panel shows `WithBack(Current(), HasBack())` and routes keys.
+3. Enter pushes the next Folder returned by the selected `Enterable` row. Back pops.
+4. Viewers use GVR/ns/rowID from the current Folder to fetch content.
 
-```go
-import tbl "github.com/sttts/kc/internal/table"
+## Self‑Sufficient Folders
 
-row := tbl.SimpleRow{ID: "pods"}
-row.SetColumn(0, "pods", nil)           // Name
-row.SetColumn(1, "", dimStyle)          // Group (dimmed when appropriate)
-row.SetColumn(2, "42", rightAlignStyle) // Count (right‑aligned)
-```
+- Dependencies: Folders receive an immutable `Deps` struct with:
+  - `ResMgr *resources.Manager` (GVK↔GVR + optional server‑side Table)
+  - `Store resources.StoreProvider` (List/Get via controller‑runtime caches)
+  - `CtxName string` (for keys/titles)
+- Constructors (UI‑agnostic) live in `internal/navigation`:
+  - `NewRootFolder(deps)`
+  - `NewNamespacesFolder(deps)`
+  - `NewNamespacedGroupsFolder(deps, ns)`
+  - `NewNamespacedObjectsFolder(deps, gvr, ns)`
+  - `NewClusterObjectsFolder(deps, gvr)`
+  - `NewPodContainersFolder(deps, ns, pod)`
+  - `NewConfigMapKeysFolder(deps, ns, name)`
+  - `NewSecretKeysFolder(deps, ns, name)`
+- Lazy population: first access to `Lines/Len/Find` triggers a single populate pass that builds
+  a `table.SliceList` of rows. Rows are `table.Row` values (typically `SimpleRow`/`EnterableItem`).
+- Enterable rows: items that can be entered implement `Enterable` and return the exact next Folder with `deps` already bound.
+- Back: The “..” entry is injected by `WithBack(f, hasBack)` as a presentational wrapper. The underlying Folder remains pure data.
+
+## Programmatic Navigation
+
+- Paths are UX‑level, not a data source. Programmatic navigation (“goto”) composes Enter calls:
+  - Example: `/namespaces/<ns>` → `root.Enter("/namespaces").Enter("/"+ns)`.
+  - Validation (missing ns/resource/object) falls back to the nearest valid parent.
+- The App owns a `Navigator`; `GoToNamespace(ns)` builds a clean stack using Enterable rows and updates the panels with `WithBack(Current(), HasBack())`.
+
+## Testing (Envtest)
+
+- Use controller‑runtime envtest to start an API server and seed fixtures (ns/configmap/secret/node).
+- Build `resources.Manager` + StoreProvider from envtest `rest.Config`.
+- Create `Deps` and walk the hierarchy via Folders only (no UI imports):
+  1. Root → assert rows include `/contexts`, `/namespaces`.
+  2. Enter `/namespaces` → assert `/<ns>` present.
+  3. Enter `/<ns>` (groups) → assert `/configmaps`, `/secrets` with counts.
+  4. Enter `/configmaps` → assert `cm1`.
+  5. Enter `cm1` → assert keys `a`, `b`.
+  6. Back using `Navigator` + `WithBack` → verify parent restored.
+  7. Cluster objects (`nodes`) → assert `n1`.
+
 
 ## Extensibility / Capability Pattern
 
