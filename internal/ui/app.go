@@ -19,7 +19,7 @@ import (
 	"github.com/sttts/kc/pkg/navigation"
 	navui "github.com/sttts/kc/internal/navigation"
 	table "github.com/sttts/kc/internal/table"
-	"github.com/sttts/kc/pkg/resources"
+	icluster "github.com/sttts/kc/internal/cluster"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -45,10 +45,8 @@ type App struct {
 	escPressed bool
 	// Data providers
 	kubeMgr        *kubeconfig.Manager
-	resMgr         *resources.Manager
+	clus           *icluster.Cluster
 	navMgr         *navigation.Manager
-	storePool      *resources.ClusterPool
-	storeProvider  resources.StoreProvider
 	currentCtx     *kubeconfig.Context
 	viewConfig     *ViewConfig
 	resCatalog     map[string]schema.GroupVersionKind
@@ -1160,7 +1158,7 @@ func Run() error {
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
 func (a *App) initData() error {
 	// Kubeconfig manager and discovery
-	a.kubeMgr = kubeconfig.NewManager()
+    a.kubeMgr = kubeconfig.NewManager()
 	if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
 		return fmt.Errorf("discover kubeconfigs: %w", err)
 	}
@@ -1174,19 +1172,12 @@ func (a *App) initData() error {
 	if err != nil {
 		return fmt.Errorf("client config: %w", err)
 	}
-	a.resMgr, err = resources.NewManager(cfg)
-	if err != nil {
-		return fmt.Errorf("resources manager: %w", err)
-	}
-	if err := a.resMgr.Start(); err != nil {
-		// Non-fatal; continue without cache warm
-		fmt.Printf("Warning: start resources manager: %v\n", err)
-	}
+    a.clus, err = icluster.New(cfg)
+    if err != nil { return fmt.Errorf("cluster: %w", err) }
+    go func(){ _ = a.clus.Start(context.Background()) }()
 	// Store provider and pool (2m TTL)
-	a.storeProvider, a.storePool = resources.NewStoreProviderForContext(a.currentCtx, 2*time.Minute)
-	// Navigation manager and store wiring
-	a.navMgr = navigation.NewManager(a.kubeMgr, a.resMgr)
-	a.navMgr.SetStoreProvider(a.storeProvider)
+    // Navigation manager (legacy); will be replaced by self-sufficient folders
+    a.navMgr = navigation.NewManager(a.kubeMgr, nil)
 	// Build hierarchy and load context resources
 	if err := a.navMgr.BuildHierarchy(); err != nil {
 		return fmt.Errorf("build hierarchy: %w", err)
@@ -1199,34 +1190,27 @@ func (a *App) initData() error {
 	tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
 		return a.resMgr.ListTableByGVR(ctx, gvr, ns)
 	}
-    nsDS := NewNamespacesDataSource(a.resMgr, a.resMgr.GVKToGVR, tableFn)
-    a.leftPanel.SetNamespacesDataSource(nsDS)
-    a.rightPanel.SetNamespacesDataSource(nsDS)
+    // datasources removed; panel uses folder-backed rendering only
 	// Discovery-backed catalog
-	if infos, err := a.resMgr.GetResourceInfos(); err == nil {
-		a.leftPanel.SetResourceCatalog(infos)
-		a.rightPanel.SetResourceCatalog(infos)
-		// populate app-level resource catalog for lookups
-		a.resCatalog = make(map[string]schema.GroupVersionKind)
-		for _, info := range infos {
-			if info.Namespaced {
-				a.resCatalog[info.Resource] = info.GVK
-			}
-		}
-	} else {
-		fmt.Printf("Warning: discovery resources: %v\n", err)
-	}
-	// Generic data source factory (per-GVK)
-    factory := func(gvk schema.GroupVersionKind) *GenericDataSource {
-        return NewGenericDataSource(a.resMgr, a.resMgr.GVKToGVR, tableFn, gvk)
+    if infos, err := a.clus.GetResourceInfos(); err == nil {
+        a.leftPanel.SetResourceCatalog(infos)
+        a.rightPanel.SetResourceCatalog(infos)
+        // populate app-level resource catalog for lookups
+        a.resCatalog = make(map[string]schema.GroupVersionKind)
+        for _, info := range infos {
+            if info.Namespaced {
+                a.resCatalog[info.Resource] = info.GVK
+            }
+        }
+    } else {
+        fmt.Printf("Warning: discovery resources: %v\n", err)
     }
-	a.leftPanel.SetGenericDataSourceFactory(factory)
-	a.rightPanel.SetGenericDataSourceFactory(factory)
-	a.genericFactory = factory
-	a.leftPanel.SetViewConfig(a.viewConfig)
+	// Generic data source factory (per-GVK)
+    // generic factory removed; folders provide data directly
+    a.leftPanel.SetViewConfig(a.viewConfig)
 	a.rightPanel.SetViewConfig(a.viewConfig)
 	// Provide contexts count to panels for root display
-	a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
+    a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	a.rightPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	// Preview: Use folder-backed rendering starting at root (not contexts listing)
     {
@@ -1242,7 +1226,7 @@ func (a *App) initData() error {
 func (a *App) buildNamespacesFolder() navui.Folder {
     // Discover Namespace GVR
     gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
-    gvr, err := a.resMgr.GVKToGVR(gvk)
+    gvr, err := a.clus.GVKToGVR(gvk)
     if err != nil { return navui.NewNamespacesFolder(a.currentCtx.Name, nil) }
     lst, err := a.resMgr.ListByGVR(context.Background(), gvr, "")
     if err != nil { return navui.NewNamespacesFolder(a.currentCtx.Name, nil) }
@@ -1274,7 +1258,7 @@ func (a *App) buildNamespacedGroupsFolder(namespace string) navui.Folder {
         hasList := false
         for _, v := range info.Verbs { if v == "list" { hasList = true; break } }
         if !hasList { continue }
-        gvr, err := a.resMgr.GVKToGVR(info.GVK)
+        gvr, err := a.clus.GVKToGVR(info.GVK)
         if err != nil { continue }
         // Count namespaced objects
         n := 0
@@ -1321,7 +1305,7 @@ func (a *App) buildNamespacedObjectsFolder(gvr schema.GroupVersionResource, name
 
 // buildPodContainersFolder lists containers for a pod
 func (a *App) buildPodContainersFolder(namespace, pod string) navui.Folder {
-    gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
+    gvr, err := a.clus.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
     if err != nil { return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, nil) }
     obj, err := a.resMgr.GetByGVR(context.Background(), gvr, namespace, pod)
     if err != nil || obj == nil { return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, nil) }
@@ -1337,7 +1321,7 @@ func (a *App) buildPodContainersFolder(namespace, pod string) navui.Folder {
 }
 
 func (a *App) buildConfigMapKeysFolder(namespace, name string) navui.Folder {
-    gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
+    gvr, err := a.clus.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
     if err != nil { return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, nil) }
     obj, err := a.resMgr.GetByGVR(context.Background(), gvr, namespace, name)
     if err != nil || obj == nil { return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, nil) }
@@ -1348,7 +1332,7 @@ func (a *App) buildConfigMapKeysFolder(namespace, name string) navui.Folder {
 }
 
 func (a *App) buildSecretKeysFolder(namespace, name string) navui.Folder {
-    gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"})
+    gvr, err := a.clus.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"})
     if err != nil { return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, nil) }
     obj, err := a.resMgr.GetByGVR(context.Background(), gvr, namespace, name)
     if err != nil || obj == nil { return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, nil) }
@@ -1407,7 +1391,7 @@ func (a *App) buildRootFolder() navui.Folder {
             gv := info.GVK.Group
             if gv == "" { gv = "core" }
             gv = gv + "/" + info.GVK.Version
-            gvr, err := a.resMgr.GVKToGVR(info.GVK)
+            gvr, err := a.clus.GVKToGVR(info.GVK)
             if err != nil { continue }
             g := gvr
             enter := func() (navui.Folder, error) { return a.buildClusterObjectsFolder(g), nil }
@@ -1419,7 +1403,7 @@ func (a *App) buildRootFolder() navui.Folder {
 
 // countClusterScoped returns the number of cluster-scoped objects for a given GVK.
 func (a *App) countClusterScoped(gvk schema.GroupVersionKind) int {
-    gvr, err := a.resMgr.GVKToGVR(gvk)
+    gvr, err := a.clus.GVKToGVR(gvk)
     if err != nil { return 0 }
     lst, err := a.resMgr.ListByGVR(context.Background(), gvr, "")
     if err != nil { return 0 }
@@ -1429,7 +1413,7 @@ func (a *App) countClusterScoped(gvk schema.GroupVersionKind) int {
 // namespaceExists returns true if the namespace exists in the current cluster.
 func (a *App) namespaceExists(ns string) bool {
     if ns == "" { return false }
-    gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
+    gvr, err := a.clus.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
     if err != nil { return false }
     lst, err := a.resMgr.ListByGVR(context.Background(), gvr, "")
     if err != nil { return false }
@@ -1464,7 +1448,7 @@ func (a *App) goToNamespace(ns string) {
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
 func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
     if a.navigator == nil {
-        a.navigator = navui.NewNavigator(a.buildRootFolder())
+    a.navigator = navui.NewNavigator(a.buildRootFolder())
     }
     if back {
         a.navigator.Back()
@@ -1573,9 +1557,7 @@ func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (ma
 }
 
 // RESTMapper exposes the app's RESTMapper to viewers for resource→GVK resolution.
-func (a *App) RESTMapper() metamapper.RESTMapper {
-    return a.resMgr.RESTMapper()
-}
+func (a *App) RESTMapper() metamapper.RESTMapper { return a.clus.RESTMapper() }
 
 // isProbablyText returns true if the byte slice looks like readable UTF-8
 // with a low proportion of control bytes.
