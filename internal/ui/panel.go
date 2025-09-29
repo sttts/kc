@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	table "github.com/sttts/kc/internal/table"
 	nav "github.com/sttts/kc/internal/navigation"
 	viewpkg "github.com/sttts/kc/internal/ui/view"
 	"github.com/sttts/kc/pkg/resources"
@@ -23,6 +24,8 @@ type Panel struct {
 	scrollTop int
 	width     int
 	height    int
+	// BigTable for folder-backed content rendering
+	bt *table.BigTable
 	// Navigation state
 	currentPath string
 	pathHistory []string
@@ -121,6 +124,14 @@ func NewPanel(title string) *Panel {
 func (p *Panel) ResetSelectionTop() {
     p.selected = 0
     p.scrollTop = 0
+    if p.useFolder && p.folder != nil && p.bt != nil {
+        rows := p.folder.Lines(0, 1)
+        if len(rows) > 0 {
+            if id, _, _, ok := rows[0].Columns(); ok {
+                p.bt.Select(id)
+            }
+        }
+    }
 }
 
 // SetFolder enables folder-backed rendering using the new navigation package.
@@ -129,6 +140,29 @@ func (p *Panel) ResetSelectionTop() {
 func (p *Panel) SetFolder(f nav.Folder, hasBack bool) {
     p.folder = f
     p.folderHasBack = hasBack
+    // Initialize or refresh BigTable from folder columns and data when enabled
+    if p.useFolder && p.folder != nil {
+        cols := p.folder.Columns()
+        bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
+        // Apply panel-aligned styles
+        st := table.DefaultStyles()
+        st.Header = PanelTableHeaderStyle
+        st.Cell = PanelItemStyle
+        st.Selector = PanelItemSelectedStyle // cursor highlight
+        st.Marked = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Bold(true) // multi-select style
+        // Match outer frame border color (white) for inner verticals
+        st.Border = lipgloss.NewStyle().
+            Foreground(lipgloss.White).
+            Background(lipgloss.Blue).
+            BorderForeground(lipgloss.White).
+            BorderBackground(lipgloss.Blue)
+        bt.SetStyles(st)
+        // Enable custom vertical separators that adopt the row background.
+        bt.BorderVertical(true)
+        p.bt = &bt
+    } else {
+        p.bt = nil
+    }
 }
 
 // UseFolder toggles folder-backed rendering.
@@ -193,6 +227,9 @@ func (p *Panel) SelectByRowID(id string) {
     if sel >= len(p.items) { sel = len(p.items) - 1 }
     p.selected = sel
     p.adjustScroll()
+    if p.bt != nil {
+        p.bt.Select(id)
+    }
 }
 
 // SetFolderNavHandler installs a callback invoked when Enter is pressed while
@@ -248,7 +285,7 @@ func (p *Panel) Init() tea.Cmd {
 
 // Update handles messages and updates the panel state
 func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
+    switch msg := msg.(type) {
 	case namespacesEventMsg:
 		// Live update: reload namespaces and continue watching
 		if p.currentPath == "/namespaces" {
@@ -261,8 +298,20 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = p.loadItemsForPath(p.currentPath)
 		}
 		return p, p.startResourceWatch(msg.namespace)
-	case tea.KeyMsg:
-		switch msg.String() {
+    case tea.KeyMsg:
+        // When using folder-backed rendering with BigTable, route navigation/selection keys to it
+        if p.useFolder && p.folder != nil && p.bt != nil {
+            key := msg.String()
+            switch key {
+            case "up", "down", "left", "right", "home", "end", "pgup", "pgdown", "ctrl+t", "insert":
+                _, _ = p.bt.Update(msg)
+                if id, ok := p.bt.CurrentID(); ok {
+                    p.SelectByRowID(id)
+                }
+                return p, nil
+            }
+        }
+        switch msg.String() {
 		// Navigation keys (Midnight Commander style)
 		case "up":
 			p.moveUp()
@@ -374,8 +423,11 @@ func (p *Panel) GetFooter() string {
 
 // SetDimensions sets the panel dimensions
 func (p *Panel) SetDimensions(width, height int) {
-	p.width = width
-	p.height = height
+    p.width = width
+    p.height = height
+    if p.bt != nil {
+        p.bt.SetSize(max(1, width), max(1, height))
+    }
 }
 
 // renderHeader renders the panel header
@@ -436,6 +488,38 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
     // If a folder is set for preview, sync headers/rows/items from it first.
     if p.useFolder && p.folder != nil {
         p.syncFromFolder()
+        // Ensure BigTable exists and is sized
+        if p.bt == nil {
+            cols := p.folder.Columns()
+            bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
+            st := table.DefaultStyles()
+            st.Header = PanelTableHeaderStyle
+            st.Cell = PanelItemStyle
+            st.Selector = PanelItemSelectedStyle
+            st.Marked = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Bold(true)
+            // Match outer frame border color (white) for inner verticals
+            st.Border = lipgloss.NewStyle().
+                Foreground(lipgloss.White).
+                Background(lipgloss.Blue).
+                BorderForeground(lipgloss.White).
+                BorderBackground(lipgloss.Blue)
+            bt.SetStyles(st)
+            bt.BorderVertical(true)
+            p.bt = &bt
+        } else {
+            // Keep list fresh in case the folder instance changed
+            p.bt.SetList(p.folder)
+            p.bt.SetSize(max(1, p.width), max(1, p.height))
+        }
+        // Focus state drives selector styling
+        p.bt.SetFocused(isFocused)
+        // Render BigTable inside the panel content area, preserving its colors.
+        // Apply only background + sizing to avoid overriding table border/text colors.
+        return lipgloss.NewStyle().
+            Background(lipgloss.Blue).
+            Width(p.width).
+            Height(p.height).
+            Render(p.bt.View())
     }
     if len(p.items) == 0 {
         return PanelContentStyle.
@@ -620,14 +704,13 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 			rightCol = p.width
 		}
 		leftW := max(0, p.width-rightCol)
-		// group/version string in faint white (light gray)
+		// group/version string; no special styling
 		group := item.TypedGVK.Group
 		if group == "" {
 			group = "core"
 		}
 		gv := group + "/" + item.TypedGVK.Version
-		// Dimmed grey foreground for group/version
-		gvEsc := "\033[2m\033[90m" + gv + "\033[39m\033[22m"
+		gvEsc := gv
 		prefixW := lipgloss.Width(prefix)
 		innerW := max(0, leftW-prefixW)
 		showGV := (len(name)+2+len(gv) <= innerW)
@@ -677,7 +760,7 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 				group = "core"
 			}
 			gv := group + "/" + item.TypedGVK.Version
-			gvEsc := "\033[90m" + gv + "\033[39m"
+			gvEsc := gv
 			mid := p.width / 2
 			if mid < len(base)+2 {
 				mid = len(base) + 2
