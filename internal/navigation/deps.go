@@ -15,6 +15,8 @@ type Deps struct {
     Ctx context.Context
     // CtxName is the human label for the current context (for Folder titles/keys).
     CtxName string
+    // ListContexts returns available context names (optional; used by root Contexts folder).
+    ListContexts func() []string
 }
 
 // newEmptyList returns an empty table.List ready to be populated.
