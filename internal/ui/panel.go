@@ -125,10 +125,12 @@ func (p *Panel) ResetSelectionTop() {
     p.selected = 0
     p.scrollTop = 0
     if p.useFolder && p.folder != nil && p.bt != nil {
-        rows := p.folder.Lines(0, 1)
-        if len(rows) > 0 {
-            if id, _, _, ok := rows[0].Columns(); ok {
-                p.bt.Select(id)
+        if p.folderHasBack {
+            p.bt.Select("__back__")
+        } else {
+            rows := p.folder.Lines(0, 1)
+            if len(rows) > 0 {
+                if id, _, _, ok := rows[0].Columns(); ok { p.bt.Select(id) }
             }
         }
     }
@@ -185,24 +187,19 @@ func (p *Panel) syncFromFolder() {
     // Build items aligned to rows and mark enterable where applicable
     items := make([]Item, 0, len(cells)+1)
     tableRows := make([][]string, 0, len(cells)+1)
-    addBack := p.folderHasBack
-    if !addBack && p.folder != nil && p.folder.Title() != "/" {
-        // Fallback: for non-root folders, ensure back row is visible
-        addBack = true
-    }
-    if addBack {
-        items = append(items, Item{Name: "..", Type: ItemTypeDirectory, Enterable: true})
-        // Do NOT add a matching row to tableRows; keep table rows aligned to real data rows.
-    }
-    for i := range cells {
+    for i := range rows {
+        id, rcells, _, _ := rows[i].Columns()
         name := ""
-        if len(cells[i]) > 0 { name = cells[i][0] }
-        enter := false
-        if i < len(rows) {
-            if _, ok := rows[i].(nav.Enterable); ok { enter = true }
+        if len(rcells) > 0 { name = rcells[0] }
+        if id == "__back__" {
+            items = append(items, Item{Name: "..", Type: ItemTypeDirectory, Enterable: true})
+            // do not append to tableRows; keep alignment to data rows only
+            continue
         }
+        enter := false
+        if _, ok := rows[i].(nav.Enterable); ok { enter = true }
         items = append(items, Item{Name: name, Type: ItemTypeResource, Enterable: enter})
-        tableRows = append(tableRows, cells[i])
+        tableRows = append(tableRows, rcells)
     }
     p.tableRows = tableRows
     p.items = items
@@ -306,7 +303,12 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             case "up", "down", "left", "right", "home", "end", "pgup", "pgdown", "ctrl+t", "insert":
                 _, _ = p.bt.Update(msg)
                 if id, ok := p.bt.CurrentID(); ok {
-                    p.SelectByRowID(id)
+                    if id == "__back__" {
+                        p.selected = 0
+                        p.scrollTop = 0
+                    } else {
+                        p.SelectByRowID(id)
+                    }
                 }
                 return p, nil
             }
@@ -1040,28 +1042,14 @@ func (p *Panel) enterItem() tea.Cmd {
         // Ensure items are in sync with folder rows (back row, etc.).
         p.syncFromFolder()
         if p.folderHandler != nil {
-            // Determine if back selected by item name or position
-            if p.selected < len(p.items) {
-                cur := p.items[p.selected]
-                if cur.Name == ".." {
-                    p.folderHandler(true, "", nil)
-                    return nil
-                }
-            }
-            // Map selected index to row index (skip synthetic back item if present)
-            idx := p.selected
-            if len(p.items) > 0 && p.items[0].Name == ".." { idx-- }
-            if idx < 0 || idx >= p.folder.Len() { return nil }
+            // Determine back selection or enterable row from folder rows (folder already includes back row)
+            if p.selected < 0 || p.selected >= p.folder.Len() { return nil }
             rows := p.folder.Lines(0, p.folder.Len())
-            if idx < len(rows) {
-                if e, ok := rows[idx].(nav.Enterable); ok {
-                    next, err := e.Enter()
-                    if err == nil {
-                        // Capture selection row ID
-                        id, _, _, _ := rows[idx].Columns()
-                        p.folderHandler(false, id, next)
-                    }
-                }
+            id, _, _, _ := rows[p.selected].Columns()
+            if id == "__back__" { p.folderHandler(true, "", nil); return nil }
+            if e, ok := rows[p.selected].(nav.Enterable); ok {
+                next, err := e.Enter()
+                if err == nil { p.folderHandler(false, id, next) }
             }
         }
         return nil
@@ -1820,3 +1808,7 @@ func min(a, b int) int {
 	}
 	return b
 }
+// makeListForTable builds a table.List for BigTable from the current folder,
+// inserting a ".." back row when appropriate and prefixing enterable rows with
+// a leading slash in the first column.
+// makeListForTable removed: folder now yields BackItem when applicable via navigation.WithBack.
