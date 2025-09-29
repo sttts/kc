@@ -9,7 +9,11 @@ import (
 // make a simple folder with provided row names
 func mkTestFolder(title string, names ...string) nav.Folder {
     rows := make([]table.Row, 0, len(names))
-    for _, n := range names { rows = append(rows, nav.NewSimpleItem(n, []string{n}, nav.WhiteStyle())) }
+    base := []string{}
+    if title != "/" && title != "" { base = append(base, title) }
+    for _, n := range names {
+        rows = append(rows, nav.NewSimpleItem(n, []string{n}, append(append([]string(nil), base...), n), nav.WhiteStyle()))
+    }
     return nav.NewSliceFolder(title, title, []table.Column{{Title: " Name"}}, rows)
 }
 
@@ -40,7 +44,7 @@ func TestEnterFromNamespacesIntoGroups(t *testing.T) {
     p := NewPanel("")
     // namespaces folder with one namespace row that enters a groups folder
     groups := mkTestFolder("groups", "pods", "configmaps")
-    nsRow := nav.NewEnterableItem("default", []string{"default"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle())
+    nsRow := nav.NewEnterableItem("default", []string{"default"}, []string{"namespaces","default"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle())
     nsFolder := nav.NewSliceFolder("namespaces", "namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
     p.SetFolder(nsFolder, true)
     p.UseFolder(true)
@@ -60,8 +64,8 @@ func TestSelectionRestoredOnBack(t *testing.T) {
     // Build a root folder with enterable namespaces row
     groups := mkTestFolder("groups", "pods")
     rows := []table.Row{
-        nav.NewSimpleItem("contexts", []string{"contexts"}, nav.WhiteStyle()),
-        nav.NewEnterableItem("namespaces", []string{"namespaces"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle()),
+        nav.NewSimpleItem("contexts", []string{"contexts"}, []string{"contexts"}, nav.WhiteStyle()),
+        nav.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle()),
     }
     root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, rows)
 
@@ -114,14 +118,14 @@ func TestSelectionRestoreWithinContexts(t *testing.T) {
     ctxANamespaces := mkTestFolder("namespaces", "default", "kube-system")
     // contexts folder: ctxA enterable to its namespaces, plus another context
     ctxsRows := []table.Row{
-        nav.NewEnterableItem("ctxA", []string{"ctxA"}, func() (nav.Folder, error) { return ctxANamespaces, nil }, nav.WhiteStyle()),
-        nav.NewSimpleItem("ctxB", []string{"ctxB"}, nav.WhiteStyle()),
+        nav.NewEnterableItem("ctxA", []string{"ctxA"}, []string{"contexts","ctxA"}, func() (nav.Folder, error) { return ctxANamespaces, nil }, nav.WhiteStyle()),
+        nav.NewSimpleItem("ctxB", []string{"ctxB"}, []string{"contexts","ctxB"}, nav.WhiteStyle()),
     }
     contexts := nav.NewSliceFolder("contexts", "contexts", []table.Column{{Title: " Name"}}, ctxsRows)
 
     // root folder with enterable contexts
     root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, []table.Row{
-        nav.NewEnterableItem("contexts", []string{"contexts"}, func() (nav.Folder, error) { return contexts, nil }, nav.WhiteStyle()),
+        nav.NewEnterableItem("contexts", []string{"contexts"}, []string{"contexts"}, func() (nav.Folder, error) { return contexts, nil }, nav.WhiteStyle()),
     })
 
     // Wire navigator-like handler
@@ -187,9 +191,9 @@ func TestSelectionRestoreNamespacesToGroupsAndBack(t *testing.T) {
     p := NewPanel("")
     // Build folders: root(namespaces) -> groups
     groups := mkTestFolder("groups", "pods", "configmaps")
-    nsRow := nav.NewEnterableItem("default", []string{"default"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle())
+    nsRow := nav.NewEnterableItem("default", []string{"default"}, []string{"namespaces","default"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle())
     nsFolder := nav.NewSliceFolder("namespaces", "namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
-    root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, []table.Row{nav.NewEnterableItem("namespaces", []string{"namespaces"}, func() (nav.Folder, error) { return nsFolder, nil }, nav.WhiteStyle())})
+    root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, []table.Row{nav.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (nav.Folder, error) { return nsFolder, nil }, nav.WhiteStyle())})
 
     navg := nav.NewNavigator(root)
     p.SetFolder(root, false)

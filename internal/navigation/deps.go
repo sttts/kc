@@ -18,8 +18,9 @@ type Deps struct {
     // ListContexts returns available context names (optional; used by root Contexts folder).
     ListContexts func() []string
     // EnterContext returns a Folder for the selected context (optional).
-    // Typically returns a NamespacesFolder bound to the new context's cluster.
-    EnterContext func(name string) (Folder, error)
+    // Typically returns a ContextRootFolder bound to the new context's cluster.
+    // basePath is the absolute path segments to the target (e.g., ["contexts", name]).
+    EnterContext func(name string, basePath []string) (Folder, error)
 }
 
 // newEmptyList returns an empty table.List ready to be populated.

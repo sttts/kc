@@ -685,29 +685,69 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 	if a.activePanel == 1 {
 		p = a.rightPanel
 	}
-	// Folder-backed path: use Folder meta and row ID
-	if p.useFolder && p.folder != nil {
-		// compute row index, skipping back row
-		idx := p.selected
-		if (p.folderHasBack || p.folder.Title() != "/") && idx == 0 {
-			return nil
-		}
-		if p.folderHasBack || p.folder.Title() != "/" {
-			idx--
-		}
-		if idx < 0 || idx >= p.folder.Len() {
-			return nil
-		}
-		rows := p.folder.Lines(0, p.folder.Len())
-		id, _, _, ok := rows[idx].Columns()
-		if !ok {
-			return nil
-		}
-		// Extract object-list metadata
-		type metaProv interface {
-			ObjectListMeta() (schema.GroupVersionResource, string, bool)
-		}
-		if mp, ok := p.folder.(metaProv); ok {
+    // Folder-backed path: object YAML or key value depending on folder type
+    if p.useFolder && p.folder != nil {
+        // Use the selected index directly; folder rows include the back row at index 0
+        if p.selected < 0 || p.selected >= p.folder.Len() { return nil }
+        rows := p.folder.Lines(0, p.folder.Len())
+        id, _, _, ok := rows[p.selected].Columns()
+        if ok && id == "__back__" { return nil }
+        if !ok {
+            return nil
+        }
+        // Key folders (configmaps/secrets data): show key value, not whole object
+        if kf, ok := p.folder.(navui.KeyFolder); ok {
+            gvr, ns, name := kf.Parent()
+            obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, name)
+            if err != nil || obj == nil { return nil }
+            // Extract data value
+            var body string
+            if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found {
+                if val, ok2 := data[id]; ok2 {
+                    switch v := val.(type) {
+                    case string:
+                        if gvr.Resource == "secrets" {
+                            if b, err := base64.StdEncoding.DecodeString(v); err == nil {
+                                if isProbablyText(b) { body = string(b) } else { body = v }
+                            } else { body = v }
+                        } else {
+                            body = v
+                        }
+                    default:
+                        yb, _ := yaml.Marshal(v)
+                        body = string(yb)
+                    }
+                }
+            }
+            if body == "" { body = "" }
+            theme := "dracula"
+            if a.cfg != nil && a.cfg.Viewer.Theme != "" { theme = a.cfg.Viewer.Theme }
+            // Title from item.Path() when available
+            title := ""
+            type pathAware interface{ Path() []string }
+            if pa, ok := rows[p.selected].(pathAware); ok {
+                segs := pa.Path(); if len(segs) > 0 { title = "/" + strings.Join(segs, "/") }
+            }
+            if title == "" {
+                // Fallback: /namespaces/<ns>/<res>/<name>/data/<key>
+                title = "/" + gvr.Resource
+                if ns != "" { title = "/namespaces/" + ns + "/" + gvr.Resource }
+                title = title + "/" + name + "/data/" + id
+            }
+            viewer := NewTextViewer(id, body, "text", "text/plain", id, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
+            viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
+            modal := NewModal(title, viewer)
+            modal.SetDimensions(a.width, a.height)
+            modal.SetCloseOnSingleEsc(false)
+            a.modalManager.Register("yaml_viewer", modal)
+            a.modalManager.Show("yaml_viewer")
+            return nil
+        }
+        // Extract object-list metadata
+        type metaProv interface {
+            ObjectListMeta() (schema.GroupVersionResource, string, bool)
+        }
+        if mp, ok := p.folder.(metaProv); ok {
 			gvr, ns, mok := mp.ObjectListMeta()
 			if mok {
 				obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, id)
@@ -722,10 +762,18 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 				}
             viewer := NewTextViewer(id, string(yb), "yaml", "application/yaml", id, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
             viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-            // Build full breadcrumbs from meta
-            title := "/" + gvr.Resource
-            if ns != "" { title = "/namespaces/" + ns + "/" + gvr.Resource }
-            title = title + "/" + id
+            // Build full breadcrumbs from item.Path() when available, else fallback to meta
+            title := ""
+            type pathAware interface{ Path() []string }
+            if pa, ok := rows[p.selected].(pathAware); ok {
+                segs := pa.Path();
+                if len(segs) > 0 { title = "/" + strings.Join(segs, "/") }
+            }
+            if title == "" {
+                title = "/" + gvr.Resource
+                if ns != "" { title = "/namespaces/" + ns + "/" + gvr.Resource }
+                title = title + "/" + id
+            }
             modal := NewModal(title, viewer)
 				modal.SetDimensions(a.width, a.height)
 				modal.SetCloseOnSingleEsc(false)
@@ -1270,44 +1318,47 @@ func (a *App) goToNamespace(ns string) {
 		},
 	}
 	// set EnterContext after deps to avoid forward reference
-	deps.EnterContext = func(name string) (navui.Folder, error) {
-		var target *kubeconfig.Context
-		for _, c := range a.kubeMgr.GetContexts() {
-			if c.Name == name {
-				target = c
-				break
-			}
-		}
-		if target == nil {
-			return nil, fmt.Errorf("context %q not found", name)
-		}
-		key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
-		cl, err := a.clPool.Get(a.ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: deps.ListContexts}
-		return navui.NewContextRootFolder(ndeps), nil
-	}
-	root := navui.NewRootFolder(deps)
+    deps.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
+        var target *kubeconfig.Context
+        for _, c := range a.kubeMgr.GetContexts() {
+            if c.Name == name {
+                target = c
+                break
+            }
+        }
+        if target == nil {
+            return nil, fmt.Errorf("context %q not found", name)
+        }
+        key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
+        cl, err := a.clPool.Get(a.ctx, key)
+        if err != nil {
+            return nil, err
+        }
+        ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: deps.ListContexts}
+        return navui.NewContextRootFolder(ndeps, basePath), nil
+    }
+    root := navui.NewRootFolder(deps)
     a.leftNav = navui.NewNavigator(root)
     a.rightNav = navui.NewNavigator(root)
     if a.namespaceExists(ns) {
         // Left panel: remember selection when entering
         a.leftNav.SetSelectionID("namespaces")
-        a.leftNav.Push(navui.NewNamespacesFolder(deps))
+        a.leftNav.Push(navui.NewNamespacesFolder(deps, []string{"namespaces"}))
         a.leftNav.SetSelectionID(ns)
-        a.leftNav.Push(navui.NewNamespacedGroupsFolder(deps, ns))
+        a.leftNav.Push(navui.NewNamespacedGroupsFolder(deps, ns, []string{"namespaces", ns}))
         // Right panel: same
         a.rightNav.SetSelectionID("namespaces")
-        a.rightNav.Push(navui.NewNamespacesFolder(deps))
+        a.rightNav.Push(navui.NewNamespacesFolder(deps, []string{"namespaces"}))
         a.rightNav.SetSelectionID(ns)
-        a.rightNav.Push(navui.NewNamespacedGroupsFolder(deps, ns))
+        a.rightNav.Push(navui.NewNamespacedGroupsFolder(deps, ns, []string{"namespaces", ns}))
     }
     curL := a.leftNav.Current(); hasBackL := a.leftNav.HasBack()
     curR := a.rightNav.Current(); hasBackR := a.rightNav.HasBack()
     a.leftPanel.SetFolder(curL, hasBackL)
     a.rightPanel.SetFolder(curR, hasBackR)
+    // Use navigator paths for breadcrumbs
+    if a.leftNav != nil { a.leftPanel.SetCurrentPath(a.leftNav.Path()) }
+    if a.rightNav != nil { a.rightPanel.SetCurrentPath(a.rightNav.Path()) }
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
     a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next navui.Folder) { a.activePanel = 0; a.handleFolderNav(back, selID, next) })
@@ -1361,6 +1412,12 @@ func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
     cur := nav.Current()
     hasBack := nav.HasBack()
     panelSet(cur, hasBack)
+    // Update breadcrumbs from navigator state
+    if a.activePanel == 0 {
+        a.leftPanel.SetCurrentPath(nav.Path())
+    } else {
+        a.rightPanel.SetCurrentPath(nav.Path())
+    }
     if back {
         id := nav.CurrentSelectionID()
         if id != "" { panelSelectByID(id) } else { panelReset() }

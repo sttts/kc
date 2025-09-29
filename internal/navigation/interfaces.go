@@ -11,6 +11,9 @@ import (
 type Item interface {
     table.Row        // Columns() (id, cells, styles, exists)
     Details() string // concise info shown in status/footer
+    // Path returns the absolute breadcrumb path segments for this item,
+    // excluding the leading root slash. Example: ["namespaces","ns1","pods","pod-0"].
+    Path() []string
 }
 
 // ObjectItem is implemented by items that represent actual Kubernetes objects.
@@ -48,6 +51,14 @@ type Folder interface {
     Columns() []table.Column  // column titles (+ future width/priority/orientation)
     Title() string            // short label for breadcrumbs
     Key() string              // stable identity for history/restore (e.g., context/ns/GVR and child kind)
+}
+
+// KeyFolder is implemented by folders that list key-value entries under a
+// parent Kubernetes object (e.g., ConfigMap/Secret data). It returns the
+// parent object's coordinates.
+type KeyFolder interface {
+    Folder
+    Parent() (schema.GroupVersionResource, string, string) // gvr, namespace, name
 }
 
 // GreenStyle returns a style for the default (green) row rendering.

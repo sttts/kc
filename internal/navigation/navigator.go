@@ -54,3 +54,55 @@ func (n *Navigator) CurrentSelectionID() string {
     if len(n.stack) == 0 { return "" }
     return n.stack[len(n.stack)-1].selID
 }
+
+// Path computes the breadcrumb path for the current stack based on the
+// selected row IDs in each parent frame and the first column text of those rows.
+// It ignores synthetic back rows ("__back__"). The returned string is an
+// absolute path starting with a leading "/". Root with no selections yields "/".
+func (n *Navigator) Path() string {
+    if len(n.stack) == 0 {
+        return "/"
+    }
+    segments := make([]string, 0, len(n.stack))
+    // For each parent frame (exclude the last/current folder), use its selID
+    // to find the row and take the first cell (trim a single leading "/").
+    for i := 0; i < len(n.stack)-1; i++ {
+        fr := n.stack[i]
+        if fr.selID == "" || fr.selID == "__back__" || fr.f == nil {
+            continue
+        }
+        _, row, ok := fr.f.Find(fr.selID)
+        if !ok || row == nil {
+            continue
+        }
+        _, cells, _, ok2 := row.Columns()
+        if !ok2 || len(cells) == 0 {
+            continue
+        }
+        seg := cells[0]
+        if len(seg) > 0 && seg[0] == '/' {
+            seg = seg[1:]
+        }
+        if seg != "" && seg != ".." {
+            segments = append(segments, seg)
+        }
+    }
+    // If no segments could be derived from selections, fall back to the current
+    // folder title for a reasonable breadcrumb (useful in tests and initial bind).
+    if len(segments) == 0 {
+        cur := n.Current()
+        if cur == nil {
+            return "/"
+        }
+        t := cur.Title()
+        if t == "" || t == "/" {
+            return "/"
+        }
+        if t[0] == '/' { return t }
+        return "/" + t
+    }
+    // Join into absolute path
+    out := "/" + segments[0]
+    for i := 1; i < len(segments); i++ { out += "/" + segments[i] }
+    return out
+}

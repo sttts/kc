@@ -144,16 +144,6 @@ func (p *Panel) SetFolder(f nav.Folder, hasBack bool) {
     eff := nav.WithBack(f, hasBack)
     p.folder = eff
     p.folderHasBack = hasBack
-    // Update path title for breadcrumbs
-    if f != nil {
-        t := f.Title()
-        if t == "/" {
-            p.currentPath = "/"
-        } else {
-            // always render with leading slash
-            if strings.HasPrefix(t, "/") { p.currentPath = t } else { p.currentPath = "/" + t }
-        }
-    }
     // Initialize or refresh BigTable from folder columns and data when enabled
     if p.useFolder && p.folder != nil {
         cols := p.folder.Columns()
@@ -197,6 +187,12 @@ func (p *Panel) syncFromFolder() {
     // Prepare headers and rows
     p.tableHeaders = cols
     // Build items aligned to rows and mark enterable where applicable
+    // Detect special folders where rows represent file-like entries (e.g., configmap/secret keys)
+    isKeysFolder := false
+    switch p.folder.(type) {
+    case *nav.ConfigMapKeysFolder, *nav.SecretKeysFolder:
+        isKeysFolder = true
+    }
     items := make([]Item, 0, len(cells)+1)
     tableRows := make([][]string, 0, len(cells)+1)
     for i := range rows {
@@ -210,7 +206,9 @@ func (p *Panel) syncFromFolder() {
         }
         enter := false
         if _, ok := rows[i].(nav.Enterable); ok { enter = true }
-        it := Item{Name: name, Type: ItemTypeResource, Enterable: enter}
+        typ := ItemTypeResource
+        if isKeysFolder { typ = ItemTypeFile }
+        it := Item{Name: name, Type: typ, Enterable: enter}
         // For group rows, strip leading slash in item.Name and set TypedGVR from row ID
         if strings.HasPrefix(name, "/") {
             if len(name) > 1 { it.Name = name[1:] }
@@ -469,8 +467,12 @@ func (p *Panel) ViewContentOnlyFocused(isFocused bool) string {
 
 // GetCurrentPath returns the current path for breadcrumbs
 func (p *Panel) GetCurrentPath() string {
-	return p.currentPath
+    return p.currentPath
 }
+
+// SetCurrentPath sets the breadcrumb path (absolute, leading slash) for this panel.
+// The App is responsible for computing the path via the navigator.
+func (p *Panel) SetCurrentPath(path string) { p.currentPath = path }
 
 // GetFooter returns the rendered footer for external use
 func (p *Panel) GetFooter() string {
