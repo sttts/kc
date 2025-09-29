@@ -210,7 +210,17 @@ func (p *Panel) syncFromFolder() {
         }
         enter := false
         if _, ok := rows[i].(nav.Enterable); ok { enter = true }
-        items = append(items, Item{Name: name, Type: ItemTypeResource, Enterable: enter})
+        it := Item{Name: name, Type: ItemTypeResource, Enterable: enter}
+        // For group rows, strip leading slash in item.Name and set TypedGVR from row ID
+        if strings.HasPrefix(name, "/") {
+            if len(name) > 1 { it.Name = name[1:] }
+            // Parse row ID as GVR: group/version/resource (group may be empty)
+            parts := strings.SplitN(id, "/", 3)
+            if len(parts) == 3 {
+                it.TypedGVR = schema.GroupVersionResource{Group: parts[0], Version: parts[1], Resource: parts[2]}
+            }
+        }
+        items = append(items, it)
         tableRows = append(tableRows, rcells)
     }
     p.tableRows = tableRows
