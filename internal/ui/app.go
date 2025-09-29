@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+    metamapper "k8s.io/apimachinery/pkg/api/meta"
     yaml "sigs.k8s.io/yaml"
 )
 
@@ -730,15 +731,14 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 		}
 	} else {
 		// Prefer typed GVK carried by item; otherwise resolve via RESTMapper for current cluster
-		if item.TypedGVK.Group != "" || item.TypedGVK.Kind != "" || item.TypedGVK.Version != "" {
-			gvk = item.TypedGVK
-		} else {
-			var err error
-			gvk, err = a.resMgr.ResourceToGVK(res)
-			if err != nil {
-				return nil
-			}
-		}
+        if item.TypedGVK.Group != "" || item.TypedGVK.Kind != "" || item.TypedGVK.Version != "" {
+            gvk = item.TypedGVK
+        } else {
+            // Resolve via RESTMapper from resource plural
+            k, err := a.resMgr.RESTMapper().KindFor(schema.GroupVersionResource{Resource: res})
+            if err != nil { return nil }
+            gvk = k
+        }
 	}
 	// If item provides its own view, delegate to it
 	if item != nil && item.Viewer != nil {
@@ -1559,22 +1559,22 @@ func sameFilepath(a, b string) bool {
 	return ap == bp
 }
 
-// Implement view.Context to support modular viewers.
-func (a *App) ResourceToGVK(resource string) (schema.GroupVersionKind, error) {
-	return a.resMgr.ResourceToGVK(resource)
+func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]interface{}, error) {
+    ds := a.genericFactory(gvk)
+    if ds == nil {
+        return nil, fmt.Errorf("no datasource for %s", gvk.String())
+    }
+    obj, err := ds.Get(namespace, name)
+    if err != nil {
+        return nil, err
+    }
+    unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
+    return obj.Object, nil
 }
 
-func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]interface{}, error) {
-	ds := a.genericFactory(gvk)
-	if ds == nil {
-		return nil, fmt.Errorf("no datasource for %s", gvk.String())
-	}
-	obj, err := ds.Get(namespace, name)
-	if err != nil {
-		return nil, err
-	}
-	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-	return obj.Object, nil
+// RESTMapper exposes the app's RESTMapper to viewers for resource→GVK resolution.
+func (a *App) RESTMapper() metamapper.RESTMapper {
+    return a.resMgr.RESTMapper()
 }
 
 // isProbablyText returns true if the byte slice looks like readable UTF-8

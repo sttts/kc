@@ -6,13 +6,14 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	yaml "sigs.k8s.io/yaml"
 )
 
 // Context abstracts what a viewer needs from the UI/app.
 type Context interface {
-	ResourceToGVK(resource string) (schema.GroupVersionKind, error)
-	GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]interface{}, error)
+    RESTMapper() metamapper.RESTMapper
+    GetObject(gvk schema.GroupVersionKind, namespace, name string) (map[string]interface{}, error)
 }
 
 // ViewProvider renders a title and body for F3 viewing.
@@ -31,11 +32,10 @@ type KubeObjectView struct {
 func (v *KubeObjectView) BuildView(a Context) (string, string, error) {
 	gvk := v.GVK
 	if gvk.Empty() {
-		var err error
-		gvk, err = a.ResourceToGVK(v.Resource)
-		if err != nil {
-			return "", "", err
-		}
+		// Resolve resource → preferred GVK via RESTMapper
+		k, err := a.RESTMapper().KindFor(schema.GroupVersionResource{Resource: v.Resource})
+		if err != nil { return "", "", err }
+		gvk = k
 	}
 	obj, err := a.GetObject(gvk, v.Namespace, v.Name)
 	if err != nil {
@@ -59,7 +59,7 @@ func (v *ConfigKeyView) BuildView(a Context) (string, string, error) {
 	if v.IsSecret {
 		res = "secrets"
 	}
-	gvk, err := a.ResourceToGVK(res)
+	gvk, err := a.RESTMapper().KindFor(schema.GroupVersionResource{Resource: res})
 	if err != nil {
 		return "", "", err
 	}
@@ -96,7 +96,7 @@ type PodContainerView struct {
 }
 
 func (v *PodContainerView) BuildView(a Context) (string, string, error) {
-	gvk, err := a.ResourceToGVK("pods")
+	gvk, err := a.RESTMapper().KindFor(schema.GroupVersionResource{Resource: "pods"})
 	if err != nil {
 		return "", "", err
 	}
