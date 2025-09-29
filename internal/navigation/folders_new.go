@@ -195,11 +195,12 @@ func (f *RootFolder) populate() {
     // Contexts entry (if provided)
     if f.deps.ListContexts != nil {
         base := append(append([]string(nil), f.path...), "contexts")
-        rows = append(rows, NewEnterableItemStyled("contexts", []string{"/contexts", "", ""}, base, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewContextsFolder(f.deps, base), nil }))
+        // Contexts entry should be green (enterable)
+        rows = append(rows, NewEnterableItemStyled("contexts", []string{"/contexts", "", ""}, base, []*lipgloss.Style{GreenStyle(), nil, nil}, func() (Folder, error) { return NewContextsFolder(f.deps, base), nil }))
     }
-    // Namespaces entry
+    // Namespaces entry (core group appears as just version: v1)
     nsBase := append(append([]string(nil), f.path...), "namespaces")
-    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", ""}, nsBase, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps, nsBase), nil }))
+    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "v1", ""}, nsBase, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps, nsBase), nil }))
     // Cluster-scoped resources
     if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
         // Filter and sort by resource name (plural)
@@ -217,7 +218,7 @@ func (f *RootFolder) populate() {
             // Use a unique GVR-based ID (group/version/resource) to avoid collisions (e.g., events).
             id := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
             base := append(append([]string(nil), f.path...), info.Resource)
-            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, base, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr, base), nil }))
+            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, base, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr, base), nil }))
         }
     }
     f.list = table.NewSliceList(rows)
@@ -240,7 +241,7 @@ func (f *ContextRootFolder) populate() {
     nameSty := WhiteStyle()
     // Namespaces entry within the context
     nsBase := append(append([]string(nil), f.path...), "namespaces")
-    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", ""}, nsBase, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps, nsBase), nil }))
+    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "v1", ""}, nsBase, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps, nsBase), nil }))
     // Cluster-scoped resources for this context
     if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
         filtered := make([]kccluster.ResourceInfo, 0, len(infos))
@@ -256,7 +257,7 @@ func (f *ContextRootFolder) populate() {
             if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, ""); err == nil { n = len(lst.Items) }
             id := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
             base := append(append([]string(nil), f.path...), info.Resource)
-            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, base, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr, base), nil }))
+            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, base, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr, base), nil }))
         }
     }
     f.list = table.NewSliceList(rows)
@@ -281,7 +282,8 @@ func (f *ContextsFolder) populate() {
             if f.deps.EnterContext != nil {
                 name := n
                 base := append(append([]string(nil), f.path...), name)
-                rows = append(rows, NewEnterableItem(name, []string{name}, base, func() (Folder, error) { return f.deps.EnterContext(name, base) }, nameSty))
+                // Default to green for enterable contexts
+                rows = append(rows, NewEnterableItem(name, []string{name}, base, func() (Folder, error) { return f.deps.EnterContext(name, base) }, nil))
             } else {
                 rows = append(rows, NewSimpleItem(n, []string{n}, append(append([]string(nil), f.path...), n), nameSty))
             }
