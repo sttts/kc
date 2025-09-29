@@ -720,7 +720,7 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 				if a.cfg != nil && a.cfg.Viewer.Theme != "" {
 					theme = a.cfg.Viewer.Theme
 				}
-				viewer := NewYAMLViewer(id, string(yb), theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
+            viewer := NewTextViewer(id, string(yb), "yaml", "application/yaml", id, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
 				viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
 				title := p.GetCurrentPath()
 				if !strings.HasSuffix(title, "/"+id) {
@@ -775,7 +775,7 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 		if a.cfg != nil && a.cfg.Viewer.Theme != "" {
 			theme = a.cfg.Viewer.Theme
 		}
-		viewer := NewYAMLViewer(titleName, body, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
+        viewer := NewTextViewer(titleName, body, "yaml", "application/yaml", titleName, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
 		viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
 		title := path
 		if !strings.HasSuffix(path, "/"+titleName) {
@@ -901,7 +901,7 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 	if item != nil && item.Type == ItemTypeFile && (len(parts) >= 4 && (parts[3] == "configmaps" || parts[3] == "secrets")) {
 		titleName = name + ":" + item.Name
 	}
-	viewer := NewYAMLViewer(titleName, body, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
+    viewer := NewTextViewer(titleName, body, "yaml", "application/yaml", titleName, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
 		// Close the topmost modal (the YAML viewer itself)
 		a.modalManager.Hide()
 		return nil

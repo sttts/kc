@@ -22,7 +22,11 @@ type YAMLViewer struct {
 	height   int
 	offset   int // vertical scroll (top line index)
 	hOffset  int // horizontal scroll (left column index)
-	theme    string
+    theme    string
+    // Syntax detection hints
+    lang     string // e.g., "yaml", "json", "go" (lexer name)
+    mime     string // e.g., "application/yaml"
+    filename string // e.g., "file.yaml"
 	onEdit   func() tea.Cmd // invoked on F4
 	onTheme  func() tea.Cmd // invoked on F9 to open theme selector
 	onClose  func() tea.Cmd // invoked on F10 to close modal
@@ -30,10 +34,19 @@ type YAMLViewer struct {
 }
 
 func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *YAMLViewer {
-	v := &YAMLViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
-	v.rawLines = strings.Split(text, "\n")
-	v.content = v.highlightWithTheme(text, theme)
-	return v
+    v := &YAMLViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
+    v.rawLines = strings.Split(text, "\n")
+    v.content = v.highlightWithTheme(text, theme)
+    return v
+}
+
+// NewTextViewer creates a syntax-highlighted viewer for arbitrary text.
+// Provide at least one of lang/mime/filename for best detection; otherwise a fallback will be used.
+func NewTextViewer(title, text, lang, mime, filename, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *YAMLViewer {
+    v := &YAMLViewer{title: title, raw: text, theme: theme, lang: lang, mime: mime, filename: filename, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
+    v.rawLines = strings.Split(text, "\n")
+    v.content = v.highlightWithTheme(text, theme)
+    return v
 }
 
 func (v *YAMLViewer) Init() tea.Cmd { return nil }
@@ -151,11 +164,13 @@ func (v *YAMLViewer) RequestTheme() tea.Cmd {
 // highlightWithTheme converts YAML to ANSI-colored lines using chroma with no background so it
 // blends with the panel theme. On failure it returns the plain, uncolored lines.
 func (v *YAMLViewer) highlightWithTheme(text, theme string) []string {
-	// Pick YAML lexer explicitly
-	lexer := lexers.Get("yaml")
-	if lexer == nil {
-		lexer = lexers.Fallback
-	}
+    // Pick lexer using hints: lang > mime > filename > analyse > fallback
+    var lexer chroma.Lexer
+    if v.lang != "" { lexer = lexers.Get(v.lang) }
+    if lexer == nil && v.mime != "" { lexer = lexers.MatchMimeType(v.mime) }
+    if lexer == nil && v.filename != "" { lexer = lexers.Match(v.filename) }
+    if lexer == nil { lexer = lexers.Analyse(text) }
+    if lexer == nil { lexer = lexers.Fallback }
 	iterator, err := lexer.Tokenise(nil, text)
 	if err != nil {
 		return strings.Split(text, "\n")
