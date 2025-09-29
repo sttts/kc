@@ -47,8 +47,9 @@ type BigTable struct {
     // Only inner vertical separators (no outside borders, no underline)
     bColumn bool
 
-    // horizontal scroll state (ModeScroll): starting column index
-    colStart int
+    // Horizontal scroll state for ModeScroll (character-based, ASCII-safe).
+    xOff  int // horizontal offset in characters across the full row
+    hStep int // step size for left/right navigation
 }
 
 // Styles groups all externally configurable styles.
@@ -96,9 +97,19 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
         focusedID:  "",
         styles:     DefaultStyles(),
         bColumn:    false,
+        xOff:       0,
+        hStep:      4,
     }
     bt.applyMode()
     return bt
+}
+
+// SetHorizontalStep sets the number of characters to pan left/right in
+// ModeScroll. Values < 1 are clamped to 1. Returns the receiver for chaining.
+func (m *BigTable) SetHorizontalStep(step int) *BigTable {
+    if step < 1 { step = 1 }
+    m.hStep = step
+    return m
 }
 
 // SetSize updates the component size (content area). Width/height are clamped
@@ -277,13 +288,16 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
                 m.rebuildWindow()
             }
         case "left", "h":
-            if m.mode == ModeScroll && m.colStart > 0 {
-                m.colStart--
+            if m.mode == ModeScroll && m.xOff > 0 {
+                m.xOff -= m.hStep
+                if m.xOff < 0 { m.xOff = 0 }
                 m.rebuildWindow()
             }
         case "right", "l":
-            if m.mode == ModeScroll && m.colStart+1 < len(m.cols) {
-                m.colStart++
+            if m.mode == ModeScroll {
+                m.xOff += m.hStep
+                // clamp in rebuildWindow based on total width
+                if m.xOff < 0 { m.xOff = 0 }
                 m.rebuildWindow()
             }
         }
@@ -336,38 +350,69 @@ func (m *BigTable) rebuildWindow() {
 
     // Fit mode is handled by lipgloss.table's Width; no manual slicing.
 
-    // Determine visible columns (ModeScroll pans horizontally by columns).
-    visIdx := m.visibleColumns()
-    headers := make([]string, len(visIdx))
-    for i := range visIdx {
-        headers[i] = m.cols[visIdx[i]].Title
+    if m.mode == ModeScroll {
+        // Character-based horizontal panning over ASCII cell data.
+        idx, cuts, widths := m.slicePlanForScroll(m.xOff, m.w)
+        headers := make([]string, len(idx))
+        for i, col := range idx {
+            headers[i] = asciiSlicePad(m.cols[col].Title, cuts[i], widths[i])
+        }
+        t = t.Headers(headers...)
+        t = t.Rows(rowsToStringRowsSliced(m.window, idx, cuts, widths)...)
+        stylesPerRow := captureStylesSubset(m.window, idx)
+        selected := m.selected
+        t = t.StyleFunc(func(row, col int) lipgloss.Style {
+            if row == lgtable.HeaderRow {
+                return m.styles.Header
+            }
+            if row < 0 || row >= len(stylesPerRow) {
+                return lipgloss.NewStyle()
+            }
+            st := m.styles.Cell
+            if col < len(stylesPerRow[row]) && stylesPerRow[row][col] != nil {
+                st = (*stylesPerRow[row][col]).Inherit(st)
+            }
+            id, _, _, _ := m.window[row].Columns()
+            if row == (m.cursor-m.top) {
+                st = m.styles.Selector.Inherit(st)
+            }
+            if _, ok := selected[id]; ok {
+                st = m.styles.Selector.Inherit(st)
+            }
+            return st
+        })
+    } else {
+        // ModeFit: show all columns; lipgloss.table handles width.
+        visIdx := m.visibleColumnsAll()
+        headers := make([]string, len(visIdx))
+        for i := range visIdx {
+            headers[i] = m.cols[visIdx[i]].Title
+        }
+        t = t.Headers(headers...)
+        t = t.Rows(rowsToStringRowsSubset(m.window, visIdx)...)
+        stylesPerRow := captureStylesSubset(m.window, visIdx)
+        selected := m.selected
+        t = t.StyleFunc(func(row, col int) lipgloss.Style {
+            if row == lgtable.HeaderRow {
+                return m.styles.Header
+            }
+            if row < 0 || row >= len(stylesPerRow) {
+                return lipgloss.NewStyle()
+            }
+            st := m.styles.Cell
+            if col < len(stylesPerRow[row]) && stylesPerRow[row][col] != nil {
+                st = (*stylesPerRow[row][col]).Inherit(st)
+            }
+            id, _, _, _ := m.window[row].Columns()
+            if row == (m.cursor-m.top) {
+                st = m.styles.Selector.Inherit(st)
+            }
+            if _, ok := selected[id]; ok {
+                st = m.styles.Selector.Inherit(st)
+            }
+            return st
+        })
     }
-    t = t.Headers(headers...)
-    t = t.Rows(rowsToStringRowsSubset(m.window, visIdx)...)
-
-    // Style cells: base cell style + per-cell style; overlay selection on data rows.
-    stylesPerRow := captureStylesSubset(m.window, visIdx)
-    selected := m.selected
-    t = t.StyleFunc(func(row, col int) lipgloss.Style {
-        if row == lgtable.HeaderRow {
-            return m.styles.Header
-        }
-        if row < 0 || row >= len(stylesPerRow) {
-            return lipgloss.NewStyle()
-        }
-        st := m.styles.Cell
-        if col < len(stylesPerRow[row]) && stylesPerRow[row][col] != nil {
-            st = (*stylesPerRow[row][col]).Inherit(st)
-        }
-        id, _, _, _ := m.window[row].Columns()
-        if row == (m.cursor-m.top) {
-            st = m.styles.Selector.Inherit(st)
-        }
-        if _, ok := selected[id]; ok {
-            st = m.styles.Selector.Inherit(st)
-        }
-        return st
-    })
 
     m.bodyRow = strings.TrimRight(t.Render(), "\n")
     // Track focused ID for stability across updates.
@@ -430,44 +475,130 @@ func captureStylesSubset(rows []Row, idx []int) [][]*lipgloss.Style {
     return out
 }
 
-// visibleColumns returns the indices of columns that fit into the viewport width,
-// starting at m.colStart. Uses the column Width hints and accounts for inner
-// vertical separators when enabled. In ModeFit all columns are visible.
-func (m *BigTable) visibleColumns() []int {
+// visibleColumnsAll returns all column indices in order.
+func (m *BigTable) visibleColumnsAll() []int {
     n := len(m.cols)
     if n == 0 { return nil }
-    if m.mode == ModeFit {
-        idx := make([]int, n)
-        for i := range idx { idx[i] = i }
-        return idx
-    }
-    // ModeScroll: choose a window of columns starting at colStart to fit width.
-    start := m.colStart
-    if start < 0 { start = 0 }
-    if start >= n { start = n - 1 }
-    budget := m.w
-    var out []int
-    for i := start; i < n; i++ {
+    idx := make([]int, n)
+    for i := range idx { idx[i] = i }
+    return idx
+}
+
+// slicePlanForScroll computes which columns and which horizontal slices of those
+// columns should be rendered to display a viewport of width vw starting at xOff.
+// Returns the column indices, per-column cut offsets, and per-column visible widths.
+func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
+    n := len(m.cols)
+    if n == 0 || vw <= 0 { return nil, nil, nil }
+    // Precompute total width including separators to clamp xOff.
+    total := 0
+    for i := 0; i < n; i++ {
         w := m.cols[i].Width
         if w <= 0 { w = 14 }
-        sep := 0
-        if m.bColumn && len(out) > 0 { sep = 1 }
-        if w+sep > budget && len(out) > 0 {
-            break
-        }
-        if w+sep > budget && len(out) == 0 {
-            // Ensure at least one column is visible even if it exceeds budget.
-            out = append(out, i)
-            break
-        }
-        out = append(out, i)
-        budget -= w + sep
+        total += w
+        if m.bColumn && i > 0 { total += 1 }
     }
-    if len(out) == 0 {
-        out = []int{start}
+    if total <= vw { xOff = 0 }
+    if xOff < 0 { xOff = 0 }
+    if xOff > total-vw { xOff = total - vw }
+    if xOff < 0 { xOff = 0 }
+    m.xOff = xOff // keep clamped value
+
+    var idx []int
+    var cuts []int
+    var widths []int
+    remaining := vw
+    pos := 0 // running position across full line including separators
+
+    for i := 0; i < n && remaining > 0; i++ {
+        // Account for separator before this column (if any) in the position space.
+        if m.bColumn && i > 0 {
+            if pos < xOff {
+                // If xOff lands on the separator, advance past it.
+                if pos+1 <= xOff {
+                    pos += 1
+                }
+            } else if len(idx) > 0 {
+                // We already have at least one column in the viewport; reserve 1 char for separator.
+                if remaining == 0 { break }
+                remaining -= 1
+                if remaining <= 0 { break }
+            }
+        }
+
+        w := m.cols[i].Width
+        if w <= 0 { w = 14 }
+
+        // Skip columns fully left of the viewport.
+        if pos+w <= xOff {
+            pos += w
+            continue
+        }
+
+        // Determine starting cut within this column and how much to take.
+        cut := 0
+        if xOff > pos {
+            cut = xOff - pos
+        }
+        avail := w - cut
+        if avail <= 0 { continue }
+        take := avail
+        if take > remaining {
+            take = remaining
+        }
+        idx = append(idx, i)
+        cuts = append(cuts, cut)
+        widths = append(widths, take)
+        remaining -= take
+        pos += w
+    }
+
+    if len(idx) == 0 {
+        // Nothing visible, force showing the last column tail.
+        i := n - 1
+        w := m.cols[i].Width
+        if w <= 0 { w = 14 }
+        cut := 0
+        if w > vw { cut = w - vw }
+        return []int{i}, []int{cut}, []int{min(vw, w)}
+    }
+    return idx, cuts, widths
+}
+
+func asciiSlicePad(s string, start, width int) string {
+    if width <= 0 { return "" }
+    if start < 0 { start = 0 }
+    // ASCII only: byte indexing is safe and equals rune count
+    if start >= len(s) {
+        // pad entirely
+        if width <= 0 { return "" }
+        return strings.Repeat(" ", width)
+    }
+    end := start + width
+    if end > len(s) { end = len(s) }
+    out := s[start:end]
+    if len(out) < width {
+        out += strings.Repeat(" ", width-len(out))
     }
     return out
 }
+
+func rowsToStringRowsSliced(rows []Row, idx, cuts, widths []int) [][]string {
+    out := make([][]string, len(rows))
+    for i := range rows {
+        _, cells, _, _ := rows[i].Columns()
+        row := make([]string, len(idx))
+        for j, k := range idx {
+            var cell string
+            if k < len(cells) { cell = cells[k] }
+            row[j] = asciiSlicePad(cell, cuts[j], widths[j])
+        }
+        out[i] = row
+    }
+    return out
+}
+
+func min(a, b int) int { if a < b { return a }; return b }
 
 // repositionOnDataChange keeps the cursor stable by ID. If the previous
 // focused row vanished, move to the next row; if none, to the previous; else
