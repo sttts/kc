@@ -224,3 +224,95 @@ func TestStartupSelectionRestore(t *testing.T) {
         t.Fatalf("expected selection 'namespaces', got %q", sel)
     }
 }
+
+// TestClusterStartupSelectionRestore mirrors startup selection restore at cluster root (/).
+func TestClusterStartupSelectionRestore(t *testing.T) {
+    t.Parallel()
+    testEnv := &envtest.Environment{}
+    cfg, err := testEnv.Start()
+    if err != nil || cfg == nil { t.Fatalf("start envtest: %v", err) }
+    defer func(){ _ = testEnv.Stop() }()
+
+    scheme := runtime.NewScheme(); _ = corev1.AddToScheme(scheme)
+    cli, err := crclient.New(cfg, crclient.Options{Scheme: scheme})
+    if err != nil { t.Fatalf("new client: %v", err) }
+    ctx := context.TODO()
+    if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil { t.Fatalf("create ns: %v", err) }
+
+    cl, err := kccluster.New(cfg)
+    if err != nil { t.Fatalf("kccluster: %v", err) }
+    go cl.Start(ctx)
+    deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+
+    root := NewRootFolder(deps)
+    nav := NewNavigator(root)
+    // Simulate app startup sequence
+    nav.SetSelectionID("namespaces")
+    nav.Push(NewNamespacesFolder(deps))
+    nav.SetSelectionID("testns")
+    nav.Push(NewNamespacedGroupsFolder(deps, "testns"))
+
+    // Back to namespaces
+    if cur := nav.Back(); cur == nil || cur.Title() != "namespaces" { t.Fatalf("expected namespaces, got %v", cur) }
+    if sel := nav.CurrentSelectionID(); sel != "testns" { t.Fatalf("expected 'testns', got %q", sel) }
+    // Back to root
+    if cur := nav.Back(); cur == nil || cur.Title() != "/" { t.Fatalf("expected root /, got %v", cur) }
+    if sel := nav.CurrentSelectionID(); sel != "namespaces" { t.Fatalf("expected 'namespaces', got %q", sel) }
+}
+
+// TestGroupObjectBackSelectionRestore: enter a group, then an object, then back restores object selection,
+// and another back restores group selection.
+func TestGroupObjectBackSelectionRestore(t *testing.T) {
+    t.Parallel()
+    testEnv := &envtest.Environment{}
+    cfg, err := testEnv.Start()
+    if err != nil || cfg == nil { t.Fatalf("start envtest: %v", err) }
+    defer func(){ _ = testEnv.Stop() }()
+
+    scheme := runtime.NewScheme(); _ = corev1.AddToScheme(scheme)
+    cli, err := crclient.New(cfg, crclient.Options{Scheme: scheme})
+    if err != nil { t.Fatalf("new client: %v", err) }
+    ctx := context.TODO()
+    if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil { t.Fatalf("create ns: %v", err) }
+    if err := cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "testns"}, Data: map[string]string{"a":"A"}}); err != nil { t.Fatalf("create cm1: %v", err) }
+
+    cl, err := kccluster.New(cfg)
+    if err != nil { t.Fatalf("kccluster: %v", err) }
+    go cl.Start(ctx)
+    deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+
+    root := NewRootFolder(deps)
+    nav := NewNavigator(root)
+    // Into namespaces -> testns -> groups
+    nav.SetSelectionID("namespaces"); nav.Push(NewNamespacesFolder(deps))
+    nav.SetSelectionID("testns"); nav.Push(NewNamespacedGroupsFolder(deps, "testns"))
+    // Find configmaps group and enter objects
+    var objs Folder
+    var groupID string
+    rows := nav.Current().Lines(0, nav.Current().Len())
+    for _, r := range rows {
+        id, cells, _, _ := r.Columns()
+        if len(cells) > 0 && cells[0] == "/configmaps" {
+            groupID = id
+            if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { objs = f }; break }
+        }
+    }
+    if objs == nil { t.Fatalf("enter configmaps objects failed") }
+    // Remember group selection and enter objects
+    nav.SetSelectionID(groupID)
+    nav.Push(objs)
+    // Enter cm1 keys (simulate selection)
+    nav.SetSelectionID("cm1")
+    // Ensure a keys folder can be constructed by calling Enterable on cm1 row
+    rows = nav.Current().Lines(0, nav.Current().Len())
+    var keys Folder
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "cm1" { if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { keys = f }; break } } }
+    if keys == nil { t.Fatalf("enter cm1 keys failed") }
+    nav.Push(keys)
+    // Back to objects; selection should be cm1
+    if cur := nav.Back(); cur == nil || cur.Title() != "configmaps" { t.Fatalf("expected configmaps, got %v", cur) }
+    if sel := nav.CurrentSelectionID(); sel != "cm1" { t.Fatalf("expected selection 'cm1', got %q", sel) }
+    // Back to groups; selection should be groupID
+    if cur := nav.Back(); cur == nil || cur.Title() != "namespaces/testns" { t.Fatalf("expected groups, got %v", cur) }
+    if sel := nav.CurrentSelectionID(); sel != groupID { t.Fatalf("expected selection %q, got %q", groupID, sel) }
+}
