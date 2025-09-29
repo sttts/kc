@@ -123,6 +123,7 @@ func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, ns s
     f.init = func(){ f.populate() }
     return f
 }
+func (f *NamespacedObjectsFolder) Title() string { return f.gvr.Resource }
 func (f *NamespacedObjectsFolder) Key() string   { return depsKey(f.deps, "namespaces/"+f.namespace+"/"+f.gvr.Resource) }
 
 // ClusterObjectsFolder lists cluster-scoped objects for a GVR.
