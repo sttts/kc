@@ -10,45 +10,45 @@ import (
     "github.com/charmbracelet/lipgloss/v2"
     table "github.com/sttts/kc/internal/table"
     nav "github.com/sttts/kc/internal/navigation"
+    kccluster "github.com/sttts/kc/internal/cluster"
     viewpkg "github.com/sttts/kc/internal/ui/view"
-    // resources removed; folders/cluster handle data
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
     "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Panel represents a file/resource panel
 type Panel struct {
-	title     string
-	items     []Item
-	selected  int
-	scrollTop int
-	width     int
-	height    int
-	// BigTable for folder-backed content rendering
-	bt *table.BigTable
-	// Navigation state
-	currentPath string
-	pathHistory []string
-	// Position memory - maps path to position info
-	positionMemory map[string]PositionInfo
-	// Live data
-	nsData              *NamespacesDataSource
-	nsWatchCh           <-chan resources.Event
-	nsWatchCancel       context.CancelFunc
-	resourceData        *GenericDataSource // per-GVK data source
-	resourceWatchCh     <-chan resources.Event
-	resourceWatchCancel context.CancelFunc
-	// Discovery-backed resource infos (precise, from RESTMapper);
-	// we keep infos and derive full GVRs when populating items.
-	namespacedInfos    []resources.ResourceInfo
-	clusterInfos       []resources.ResourceInfo
-	genericFactory     func(schema.GroupVersionKind) *GenericDataSource
-	currentResourceGVK *schema.GroupVersionKind
-	tableHeaders       []string
-	tableRows          [][]string
-	columnWidths       []int
-	tableViewEnabled   bool
-	viewConfig         *ViewConfig
+    title     string
+    items     []Item
+    selected  int
+    scrollTop int
+    width     int
+    height    int
+    // BigTable for folder-backed content rendering
+    bt *table.BigTable
+    // Navigation state
+    currentPath string
+    pathHistory []string
+    // Position memory - maps path to position info
+    positionMemory map[string]PositionInfo
+    // Discovery-backed resource infos (precise, from RESTMapper);
+    // we keep infos and derive full GVRs when populating items.
+    namespacedInfos    []kccluster.ResourceInfo
+    clusterInfos       []kccluster.ResourceInfo
+    // Legacy generic data hooks (kept as no-ops; real data comes from folders)
+    nsData              *NamespacesDataSource
+    nsWatchCh           <-chan nsEvent
+    nsWatchCancel       context.CancelFunc
+    resourceData        *GenericDataSource
+    resourceWatchCh     <-chan resEvent
+    resourceWatchCancel context.CancelFunc
+    genericFactory      func(schema.GroupVersionKind) *GenericDataSource
+    currentResourceGVK  *schema.GroupVersionKind
+    tableHeaders       []string
+    tableRows          [][]string
+    columnWidths       []int
+    tableViewEnabled   bool
+    viewConfig         *ViewConfig
 	// Optional providers
 	contextCountProvider func() int // returns number of contexts, or negative if unknown
 	// Optional: folder-backed rendering (preview path using internal/navigation)
@@ -235,29 +235,63 @@ func (p *Panel) SelectByRowID(id string) {
 func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next nav.Folder)) { p.folderHandler = h }
 
 // SetNamespacesDataSource wires a namespaces data source for live listings.
-func (p *Panel) SetNamespacesDataSource(ds *NamespacesDataSource) {
-	p.nsData = ds
-}
+// Legacy live data sources removed; folders drive listings now.
 
 // SetPodsDataSource retained for compatibility; prefer SetGenericDataSourceFactory.
-func (p *Panel) SetPodsDataSource(ds *PodsDataSource) { /* no-op in generic mode */ }
+func (p *Panel) SetPodsDataSource(ds *PodsDataSource) { /* deprecated */ }
 
 // SetResourceCatalog injects the namespaced resource catalog (plural -> GVK).
-func (p *Panel) SetResourceCatalog(infos []resources.ResourceInfo) {
-	p.namespacedInfos = make([]resources.ResourceInfo, 0)
-	p.clusterInfos = make([]resources.ResourceInfo, 0)
-	for _, info := range infos {
-		if info.Namespaced {
-			p.namespacedInfos = append(p.namespacedInfos, info)
-		} else {
-			p.clusterInfos = append(p.clusterInfos, info)
-		}
-	}
+func (p *Panel) SetResourceCatalog(infos []kccluster.ResourceInfo) {
+    p.namespacedInfos = make([]kccluster.ResourceInfo, 0)
+    p.clusterInfos = make([]kccluster.ResourceInfo, 0)
+    for _, info := range infos {
+        if info.Namespaced {
+            p.namespacedInfos = append(p.namespacedInfos, info)
+        } else {
+            p.clusterInfos = append(p.clusterInfos, info)
+        }
+    }
 }
 
 // SetGenericDataSourceFactory sets a factory for creating per-GVK data sources.
-func (p *Panel) SetGenericDataSourceFactory(factory func(schema.GroupVersionKind) *GenericDataSource) {
-	p.genericFactory = factory
+// Deprecated; no-op now that folders provide data directly.
+func (p *Panel) SetGenericDataSourceFactory(factory func(schema.GroupVersionKind) *GenericDataSource) {}
+
+// --- Legacy datasource shims (no-ops) ---------------------------------------
+
+// nsEvent/resEvent are local event shims to avoid old resources.Event type.
+type nsEvent struct{}
+type resEvent struct{}
+
+// NamespacesDataSource is a legacy interface placeholder.
+type NamespacesDataSource struct{}
+
+func (n *NamespacesDataSource) ListTable() ([]string, [][]string, []Item, error) {
+    return nil, nil, nil, fmt.Errorf("not supported")
+}
+func (n *NamespacesDataSource) List() ([]Item, error) { return nil, fmt.Errorf("not supported") }
+func (n *NamespacesDataSource) Watch(ctx context.Context) (<-chan nsEvent, func(), error) {
+    ch := make(chan nsEvent)
+    close(ch)
+    stop := func() {}
+    return ch, stop, nil
+}
+
+// GenericDataSource is a legacy data source placeholder.
+type GenericDataSource struct{}
+
+func (g *GenericDataSource) ListTable(ns string) ([]string, [][]string, []Item, error) {
+    return nil, nil, nil, fmt.Errorf("not supported")
+}
+func (g *GenericDataSource) List(ns string) ([]Item, error) { return nil, fmt.Errorf("not supported") }
+func (g *GenericDataSource) Get(ns, name string) (*unstructured.Unstructured, error) {
+    return nil, fmt.Errorf("not supported")
+}
+func (g *GenericDataSource) Watch(ctx context.Context, ns string) (<-chan resEvent, func(), error) {
+    ch := make(chan resEvent)
+    close(ch)
+    stop := func() {}
+    return ch, stop, nil
 }
 
 // SetViewConfig injects the view configuration (global + per resource overrides).
@@ -283,18 +317,7 @@ func (p *Panel) Init() tea.Cmd {
 // Update handles messages and updates the panel state
 func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     switch msg := msg.(type) {
-	case namespacesEventMsg:
-		// Live update: reload namespaces and continue watching
-		if p.currentPath == "/namespaces" {
-			_ = p.loadItemsForPath("/namespaces")
-		}
-		return p, p.startNamespacesWatch()
-	case resourceEventMsg:
-		// Live update: reload pods for the namespace in message
-		if strings.HasPrefix(p.currentPath, "/namespaces/") && strings.Contains(p.currentPath, "/pods") {
-			_ = p.loadItemsForPath(p.currentPath)
-		}
-		return p, p.startResourceWatch(msg.namespace)
+    // Legacy watch events removed; folders handle refresh separately.
     case tea.KeyMsg:
         // When using folder-backed rendering with BigTable, route navigation/selection keys to it
         if p.useFolder && p.folder != nil && p.bt != nil {
@@ -595,10 +618,10 @@ func (p *Panel) isGroupListView() bool {
 
 // buildResourceGroupItems returns resource group items with counts, hiding empty ones.
 // If namespace is empty, cluster-scoped resources are listed; otherwise namespaced.
-func (p *Panel) buildResourceGroupItems(infos []resources.ResourceInfo, namespace string, skipNamespaceResource bool) []Item {
-	if len(infos) == 0 || p.genericFactory == nil {
-		return nil
-	}
+func (p *Panel) buildResourceGroupItems(infos []kccluster.ResourceInfo, namespace string, skipNamespaceResource bool) []Item {
+    if len(infos) == 0 {
+        return nil
+    }
 	// Sort deterministically by resource plural
 	names := make([]string, 0, len(infos))
 	for _, info := range infos {
@@ -606,7 +629,7 @@ func (p *Panel) buildResourceGroupItems(infos []resources.ResourceInfo, namespac
 	}
 	sort.Strings(names)
 	// Map for lookup
-	byRes := make(map[string]resources.ResourceInfo, len(infos))
+    byRes := make(map[string]kccluster.ResourceInfo, len(infos))
 	for _, info := range infos {
 		byRes[info.Resource] = info
 	}
@@ -617,36 +640,8 @@ func (p *Panel) buildResourceGroupItems(infos []resources.ResourceInfo, namespac
 		}
 		info := byRes[res]
 		gvk := info.GVK
-		// Filter out resources without list support
-		hasList := false
-		for _, v := range info.Verbs {
-			if v == "list" {
-				hasList = true
-				break
-			}
-		}
-		if !hasList {
-			continue
-		}
-		ds := p.genericFactory(gvk)
-		if ds == nil {
-			continue
-		}
-		// Count via Table when available, fallback to List. On error, include entry
-		// with unknown count so the user can still enter.
-		count := -1
-		if _, rows, _, err := ds.ListTable(namespace); err == nil && rows != nil {
-			count = len(rows)
-		} else if lst, err := ds.List(namespace); err == nil {
-			count = len(lst)
-		}
-		if count == 0 {
-			continue // verified empty -> hide
-		}
-		size := ""
-		if count > 0 {
-			size = fmt.Sprintf("%d", count)
-		}
+        // Without legacy datasources, we do not compute counts here.
+        size := ""
 		it := Item{Name: res, Type: ItemTypeResource, Size: size, Enterable: true, TypedGVK: gvk}
 		it.TypedGVR = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
 		out = append(out, it)
@@ -1358,35 +1353,9 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 			{Name: "kind-kind", Type: ItemTypeContext, Size: "", Modified: "30m"},
 		}...)
 
-	case "/namespaces":
-		// Namespaces level - server-side table when available
-		if p.nsData != nil {
-			if headers, rows, items, err := p.nsData.ListTable(); err == nil {
-				p.tableHeaders = headers
-				p.tableRows = rows
-				for i := range items {
-					items[i].TypedGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
-					items[i].TypedGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-				}
-				p.items = append(p.items, items...)
-			} else if items, err := p.nsData.List(); err == nil {
-				p.tableHeaders, p.tableRows = nil, nil
-				for i := range items {
-					items[i].TypedGVK = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
-					items[i].TypedGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-				}
-				p.items = append(p.items, items...)
-			} else {
-				p.items = append(p.items, Item{Name: fmt.Sprintf("error: %v", err), Type: ItemTypeDirectory})
-			}
-			return p.startNamespacesWatch()
-		} else {
-			p.items = append(p.items, []Item{
-				{Name: "default", Type: ItemTypeNamespace, GVK: "v1 Namespace"},
-				{Name: "kube-system", Type: ItemTypeNamespace, GVK: "v1 Namespace"},
-				{Name: "kube-public", Type: ItemTypeNamespace, GVK: "v1 Namespace"},
-			}...)
-		}
+    case "/namespaces":
+        // Placeholder; not used when folder-backed rendering is active.
+        p.items = append(p.items, []Item{{Name: "default", Type: ItemTypeNamespace, GVK: "v1 Namespace"}}...)
 
 	case "/cluster-resources":
 		// Deprecated: mirror root listing (skip 'namespaces')
@@ -1439,44 +1408,19 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 					// no resources, leave empty indicator
 					p.items = append(p.items, Item{Name: "(no resources)", Type: ItemTypeDirectory})
 				}
-			} else if len(parts) == 2 {
-				// Cluster-scoped resource objects: "/<resource>"
-				res := parts[1]
-				var gvk schema.GroupVersionKind
-				found := false
-				for _, info := range p.clusterInfos {
-					if info.Resource == res {
-						gvk = info.GVK
-						found = true
-						break
-					}
-				}
-				if found && p.genericFactory != nil {
-					if p.currentResourceGVK == nil || *p.currentResourceGVK != gvk {
-						p.resourceData = p.genericFactory(gvk)
-						p.currentResourceGVK = &gvk
-					}
-					if p.resourceData != nil {
-						if headers, rows, items, err := p.resourceData.ListTable(""); err == nil {
-							p.tableHeaders, p.tableRows = headers, rows
-							for i := range items {
-								items[i].Enterable = p.isObjectEnterable(res)
-								items[i].TypedGVK = *p.currentResourceGVK
-								items[i].TypedGVR = schema.GroupVersionResource{Group: p.currentResourceGVK.Group, Version: p.currentResourceGVK.Version, Resource: res}
-							}
-							p.items = append(p.items, items...)
-						} else if items, err := p.resourceData.List(""); err == nil {
-							p.tableHeaders, p.tableRows = nil, nil
-							for i := range items {
-								items[i].Enterable = p.isObjectEnterable(res)
-								items[i].TypedGVK = *p.currentResourceGVK
-								items[i].TypedGVR = schema.GroupVersionResource{Group: p.currentResourceGVK.Group, Version: p.currentResourceGVK.Version, Resource: res}
-							}
-							p.items = append(p.items, items...)
-						}
-						return nil
-					}
-				}
+            } else if len(parts) == 2 {
+                // Cluster-scoped resource objects: "/<resource>"
+                res := parts[1]
+                var gvk schema.GroupVersionKind
+                found := false
+                for _, info := range p.clusterInfos {
+                    if info.Resource == res {
+                        gvk = info.GVK
+                        found = true
+                        break
+                    }
+                }
+                _ = gvk
 			} else if len(parts) >= 4 {
 				ns := parts[2]
 				res := parts[3]
@@ -1621,77 +1565,11 @@ func (p *Panel) loadItemsForPath(path string) tea.Cmd {
 	return nil
 }
 
-// namespacesEventMsg signals that namespaces changed; payload not needed for a reload.
-type namespacesEventMsg struct{}
-type resourceEventMsg struct{ namespace string }
-
-// startNamespacesWatch sets up a watch loop and returns a Cmd to await the first event.
-func (p *Panel) startNamespacesWatch() tea.Cmd {
-	// If an existing watch is present, keep it.
-	if p.nsWatchCh == nil && p.nsData != nil {
-		ctx, cancel := context.WithCancel(context.Background())
-		ch, stop, err := p.nsData.Watch(ctx)
-		if err != nil {
-			cancel()
-		} else {
-			p.nsWatchCh = ch
-			p.nsWatchCancel = func() { stop(); cancel() }
-		}
-	}
-	if p.nsWatchCh == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		// Block until next event or channel close; then signal UI to reload.
-		if _, ok := <-p.nsWatchCh; ok {
-			return namespacesEventMsg{}
-		}
-		return namespacesEventMsg{}
-	}
-}
-
-// stopNamespacesWatch cancels the namespaces watch if running.
-func (p *Panel) stopNamespacesWatch() {
-	if p.nsWatchCancel != nil {
-		p.nsWatchCancel()
-		p.nsWatchCancel = nil
-		p.nsWatchCh = nil
-	}
-}
-
-// startResourceWatch watches a namespaced resource list (currently pods) in a namespace.
-func (p *Panel) startResourceWatch(ns string) tea.Cmd {
-	if p.resourceData == nil {
-		return nil
-	}
-	if p.resourceWatchCh == nil {
-		ctx, cancel := context.WithCancel(context.Background())
-		ch, stop, err := p.resourceData.Watch(ctx, ns)
-		if err == nil {
-			p.resourceWatchCh = ch
-			p.resourceWatchCancel = func() { stop(); cancel() }
-		} else {
-			cancel()
-		}
-	}
-	if p.resourceWatchCh == nil {
-		return nil
-	}
-	return func() tea.Msg {
-		if _, ok := <-p.resourceWatchCh; ok {
-			return resourceEventMsg{namespace: ns}
-		}
-		return resourceEventMsg{namespace: ns}
-	}
-}
-
-func (p *Panel) stopResourceWatch() {
-	if p.resourceWatchCancel != nil {
-		p.resourceWatchCancel()
-		p.resourceWatchCancel = nil
-		p.resourceWatchCh = nil
-	}
-}
+// start/stop watch helpers are no-ops in folder-backed mode.
+func (p *Panel) startNamespacesWatch() tea.Cmd { return nil }
+func (p *Panel) stopNamespacesWatch()          {}
+func (p *Panel) startResourceWatch(ns string) tea.Cmd { return nil }
+func (p *Panel) stopResourceWatch() {}
 
 // Getters
 func (p *Panel) GetTitle() string {
