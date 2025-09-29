@@ -17,6 +17,9 @@ type Deps struct {
     CtxName string
     // ListContexts returns available context names (optional; used by root Contexts folder).
     ListContexts func() []string
+    // EnterContext returns a Folder for the selected context (optional).
+    // Typically returns a NamespacesFolder bound to the new context's cluster.
+    EnterContext func(name string) (Folder, error)
 }
 
 // newEmptyList returns an empty table.List ready to be populated.
