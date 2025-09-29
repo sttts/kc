@@ -1230,19 +1230,10 @@ func (a *App) initData() error {
 	a.rightPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	// Preview: Use folder-backed rendering starting at root (not contexts listing)
     {
-        folder := a.buildRootFolder()
-        a.navigator = navui.NewNavigator(folder)
-        cur := a.navigator.Current()
-        hasBack := a.navigator.HasBack()
-        wrap := navui.WithBack(cur, hasBack)
-        a.leftPanel.SetFolder(wrap, hasBack)
-        a.rightPanel.SetFolder(wrap, hasBack)
-        a.leftPanel.UseFolder(true)
-        a.rightPanel.UseFolder(true)
-        // Wire folder navigation handlers to manage back/forward stack and update panels.
-        handler := func(back bool, selID string, next navui.Folder) { a.handleFolderNav(back, selID, next) }
-        a.leftPanel.SetFolderNavHandler(handler)
-        a.rightPanel.SetFolderNavHandler(handler)
+        // Programmatic navigation to current namespace for both panels
+        ns := "default"
+        if a.currentCtx != nil && a.currentCtx.Namespace != "" { ns = a.currentCtx.Namespace }
+        a.goToNamespace(ns)
     }
     return nil
 }
@@ -1263,7 +1254,7 @@ func (a *App) buildNamespacesFolder() navui.Folder {
         enter := func(nsName string) func() (navui.Folder, error) {
             return func() (navui.Folder, error) { return a.buildNamespacedGroupsFolder(nsName), nil }
         }(name)
-        it := navui.NewEnterableItem(name, []string{name}, enter, sty)
+        it := navui.NewEnterableItem(name, []string{"/" + name}, enter, sty)
         rows = append(rows, it)
     }
     return navui.NewNamespacesFolder(a.currentCtx.Name, rows)
@@ -1295,7 +1286,7 @@ func (a *App) buildNamespacedGroupsFolder(namespace string) navui.Folder {
         ns := namespace
         enter := func() (navui.Folder, error) { return a.buildNamespacedObjectsFolder(g, ns), nil }
         // No special/dim style for Group column; let table default styling apply
-        rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{info.Resource, gv, fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, nil, nil}, enter))
+        rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{"/" + info.Resource, gv, fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, nil, nil}, enter))
     }
     title := "namespaces/" + namespace
     key := a.currentCtx.Name + "/namespaces/" + namespace
@@ -1391,16 +1382,17 @@ func (a *App) buildContextsFolder() navui.Folder {
 // Cluster-scoped resources will be added incrementally.
 func (a *App) buildRootFolder() navui.Folder {
     nameSty := navui.WhiteStyle()
+    greenSty := navui.GreenStyle()
     rows := make([]table.Row, 0, 16)
     // Columns: Name, Group (dim), Count
     cols := []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}
     // Row: contexts (enterable) with count of contexts
     enterContexts := func() (navui.Folder, error) { return a.buildContextsFolder(), nil }
     ctxCount := len(a.kubeMgr.GetContexts())
-    rows = append(rows, navui.NewEnterableItemStyled("contexts", []string{"contexts", "", fmt.Sprintf("%d", ctxCount)}, []*lipgloss.Style{nameSty, nil, nil}, enterContexts))
+    rows = append(rows, navui.NewEnterableItemStyled("contexts", []string{"/contexts", "", fmt.Sprintf("%d", ctxCount)}, []*lipgloss.Style{greenSty, nil, nil}, enterContexts))
     // Row: namespaces (default context) with count and group
     nsCount := a.countClusterScoped(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
-    rows = append(rows, navui.NewEnterableItemStyled("namespaces", []string{"namespaces", "core/v1", fmt.Sprintf("%d", nsCount)}, []*lipgloss.Style{nameSty, nil, nil}, func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }))
+    rows = append(rows, navui.NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", fmt.Sprintf("%d", nsCount)}, []*lipgloss.Style{nameSty, nil, nil}, func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }))
     // Namespaces are accessible under contexts; not listed at root.
     // Cluster-scoped resources with counts (excluding namespaces)
     if infos, err := a.resMgr.GetResourceInfos(); err == nil {
@@ -1419,7 +1411,7 @@ func (a *App) buildRootFolder() navui.Folder {
             if err != nil { continue }
             g := gvr
             enter := func() (navui.Folder, error) { return a.buildClusterObjectsFolder(g), nil }
-            rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{info.Resource, gv, fmt.Sprintf("%d", c)}, []*lipgloss.Style{nameSty, nil, nil}, enter))
+            rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{"/" + info.Resource, gv, fmt.Sprintf("%d", c)}, []*lipgloss.Style{nameSty, nil, nil}, enter))
         }
     }
     return navui.NewSliceFolder("/", "root", cols, rows)
@@ -1432,6 +1424,41 @@ func (a *App) countClusterScoped(gvk schema.GroupVersionKind) int {
     lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
     if err != nil { return 0 }
     return len(lst.Items)
+}
+
+// namespaceExists returns true if the namespace exists in the current cluster.
+func (a *App) namespaceExists(ns string) bool {
+    if ns == "" { return false }
+    gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
+    if err != nil { return false }
+    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
+    if err != nil { return false }
+    for i := range lst.Items { if lst.Items[i].GetName() == ns { return true } }
+    return false
+}
+
+// goToNamespace programmatically navigates to /namespaces/<ns> and updates panels.
+// If ns is empty, uses "default". If the namespace does not exist, navigates to root.
+func (a *App) goToNamespace(ns string) {
+    if ns == "" { ns = "default" }
+    root := a.buildRootFolder()
+    a.navigator = navui.NewNavigator(root)
+    if a.namespaceExists(ns) {
+        a.navigator.Push(a.buildNamespacesFolder())
+        a.navigator.Push(a.buildNamespacedGroupsFolder(ns))
+    }
+    cur := a.navigator.Current()
+    hasBack := a.navigator.HasBack()
+    wrap := navui.WithBack(cur, hasBack)
+    a.leftPanel.SetFolder(wrap, hasBack)
+    a.rightPanel.SetFolder(wrap, hasBack)
+    a.leftPanel.UseFolder(true)
+    a.rightPanel.UseFolder(true)
+    handler := func(back bool, selID string, next navui.Folder) { a.handleFolderNav(back, selID, next) }
+    a.leftPanel.SetFolderNavHandler(handler)
+    a.rightPanel.SetFolderNavHandler(handler)
+    a.leftPanel.ResetSelectionTop()
+    a.rightPanel.ResetSelectionTop()
 }
 
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
