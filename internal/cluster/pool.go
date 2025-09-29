@@ -7,7 +7,6 @@ import (
     "time"
 
     "k8s.io/client-go/tools/clientcmd"
-    crcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
 )
 
 // Key identifies a controller-runtime Cluster by kubeconfig path and context name.
@@ -18,7 +17,7 @@ type Key struct {
 
 type entry struct {
     key      Key
-    cl       crcluster.Cluster
+    cl       *Cluster
     cancel   context.CancelFunc
     lastUsed time.Time
     ready    sync.Once
@@ -51,7 +50,7 @@ func (p *Pool) Stop() {
 }
 
 // Get returns a running controller-runtime Cluster for the key, starting it if needed.
-func (p *Pool) Get(k Key) (crcluster.Cluster, error) {
+func (p *Pool) Get(ctx context.Context, k Key) (*Cluster, error) {
     p.mu.Lock()
     if e, ok := p.items[k]; ok {
         e.lastUsed = time.Now(); p.mu.Unlock(); return e.cl, nil
@@ -61,13 +60,13 @@ func (p *Pool) Get(k Key) (crcluster.Cluster, error) {
         &clientcmd.ConfigOverrides{CurrentContext: k.ContextName},
     ).ClientConfig()
     if err != nil { p.mu.Unlock(); return nil, fmt.Errorf("client config: %w", err) }
-    cl, err := crcluster.New(cfg, func(o *crcluster.Options) {})
+    cl, err := New(cfg)
     if err != nil { p.mu.Unlock(); return nil, fmt.Errorf("cluster: %w", err) }
-    ctx, cancel := context.WithCancel(context.TODO())
+    cctx, cancel := context.WithCancel(ctx)
     e := &entry{key: k, cl: cl, cancel: cancel, lastUsed: time.Now()}
     p.items[k] = e
     p.mu.Unlock()
-    go func(){ e.ready.Do(func(){ e.err = cl.Start(ctx) }) }()
+    go func(){ e.ready.Do(func(){ e.err = cl.Start(cctx) }) }()
     return cl, nil
 }
 
@@ -92,4 +91,3 @@ func (p *Pool) evictIdle() {
         if e.lastUsed.Before(cutoff) { e.cancel(); delete(p.items, k) }
     }
 }
-

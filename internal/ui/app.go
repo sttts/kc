@@ -46,6 +46,7 @@ type App struct {
 	// Data providers
 	kubeMgr        *kubeconfig.Manager
     cl             *icluster.Cluster
+    clPool         *icluster.Pool
     ctx            context.Context
     cancel         context.CancelFunc
 	navMgr         *navigation.Manager
@@ -1135,19 +1136,15 @@ func Run() error {
 	}()
 
 	// Ensure terminal is reset on exit
-	defer func() {
-		// Reset terminal to normal state
-		fmt.Print("\033[?1049l") // Exit alternate screen
-		fmt.Print("\033[?25h")   // Show cursor
-		fmt.Print("\033[0m")     // Reset all attributes
-		// Stop background resources
-		if app.storePool != nil {
-			app.storePool.Stop()
-		}
-		if app.resMgr != nil {
-			app.resMgr.Stop()
-		}
-	}()
+    defer func() {
+        // Reset terminal to normal state
+        fmt.Print("\033[?1049l") // Exit alternate screen
+        fmt.Print("\033[?25h")   // Show cursor
+        fmt.Print("\033[0m")     // Reset all attributes
+        // Stop background resources
+        if app.clPool != nil { app.clPool.Stop() }
+        if app.cancel != nil { app.cancel() }
+    }()
 
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running application: %v\n", err)
@@ -1174,10 +1171,12 @@ func (a *App) initData() error {
 	if err != nil {
 		return fmt.Errorf("client config: %w", err)
 	}
-    a.cl, err = icluster.New(cfg)
-    if err != nil { return fmt.Errorf("cluster: %w", err) }
     a.ctx, a.cancel = context.WithCancel(context.TODO())
-    go func(){ _ = a.cl.Start(a.ctx) }()
+    a.clPool = icluster.NewPool(2 * time.Minute)
+    a.clPool.Start()
+    k := icluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
+    a.cl, err = a.clPool.Get(a.ctx, k)
+    if err != nil { return fmt.Errorf("cluster pool get: %w", err) }
 	// Store provider and pool (2m TTL)
     // Navigation manager (legacy); will be replaced by self-sufficient folders
     a.navMgr = navigation.NewManager(a.kubeMgr, nil)
