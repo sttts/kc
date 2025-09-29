@@ -19,6 +19,7 @@ Current tasks
  - [ ] Discovery: add periodic discovery refresh (~30s) by invalidating cached discovery and resetting RESTMapper; ensure CRDs appear/disappear dynamically.
  - [ ] Generalize data sources and watchers: move from pods-specific to generic GVK/GVR-driven listings and watches; use discovery to enumerate resources under namespaces.
  - [ ] Table horizontal scroll: when a server-side Table exceeds panel width, support column-wise horizontal scrolling with Left/Right keys. Only enable when the terminal has not received typed input (same gating logic used for Enter routing to terminal vs panel).
+ - [ ] Table column separators vs selection: uninterrupted selector across columns. Today lipgloss.table uses a single global border style so the cyan selection bar is visually interrupted at the vertical divider. Explore upstream support in lipgloss.table for per-row column-border styling (inherit row background) or an extension hook. For now, accept the interruption and revisit later.
  - [ ] Favorites: build a favorites list of resource types (seed from discovery alias "all"); allow users to add/remove favorites to override discovery. Persist and use favorites to populate resource selectors and shortcuts.
 
 ## Milestone 2 — UI Navigation on the Model
