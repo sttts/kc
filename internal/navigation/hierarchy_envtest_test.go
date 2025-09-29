@@ -112,3 +112,66 @@ func TestHierarchyEnvtest(t *testing.T) {
     for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "n1" { foundN1 = true; break } }
     if !foundN1 { t.Fatalf("nodes: n1 not found") }
 }
+
+// TestContextNamespaceWalk verifies that under /contexts/<ctx> we can walk into
+// /namespaces, then a namespace, then a group and into concrete objects below.
+func TestContextNamespaceWalk(t *testing.T) {
+    t.Parallel()
+    testEnv := &envtest.Environment{}
+    cfg, err := testEnv.Start()
+    if err != nil || cfg == nil { t.Fatalf("start envtest: %v", err) }
+    defer func(){ _ = testEnv.Stop() }()
+
+    // Seed: ns testns, cm1 (a,b)
+    scheme := runtime.NewScheme()
+    _ = corev1.AddToScheme(scheme)
+    cli, err := crclient.New(cfg, crclient.Options{Scheme: scheme})
+    if err != nil { t.Fatalf("new client: %v", err) }
+    ctx := context.TODO()
+    if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil { t.Fatalf("create ns: %v", err) }
+    if err := cli.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "testns"}, Data: map[string]string{"a":"A","b":"B"}}); err != nil { t.Fatalf("create cm1: %v", err) }
+
+    cl, err := kccluster.New(cfg)
+    if err != nil { t.Fatalf("kccluster: %v", err) }
+    go cl.Start(ctx)
+    deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+
+    // Context root
+    ctxRoot := NewContextRootFolder(deps)
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return ctxRoot.Len() > 0 })
+    // Enter /namespaces
+    var nsFolder Folder
+    rows := ctxRoot.Lines(0, ctxRoot.Len())
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/namespaces" {
+        if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { nsFolder = f }; break }
+    } }
+    if nsFolder == nil { t.Fatalf("enter namespaces from context root failed") }
+    // Wait for namespace
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len() > 0 })
+    // Enter testns
+    var grp Folder
+    rows = nsFolder.Lines(0, nsFolder.Len())
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/testns" {
+        if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { grp = f }; break }
+    } }
+    if grp == nil { t.Fatalf("enter groups for testns failed") }
+    // Enter configmaps group
+    var objs Folder
+    rows = grp.Lines(0, grp.Len())
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/configmaps" {
+        if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { objs = f }; break }
+    } }
+    if objs == nil { t.Fatalf("enter configmaps objects failed") }
+    // Enter cm1 keys
+    var keys Folder
+    rows = objs.Lines(0, objs.Len())
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "cm1" {
+        if e, ok := r.(Enterable); ok { f, err := e.Enter(); if err == nil { keys = f }; break }
+    } }
+    if keys == nil { t.Fatalf("enter cm1 keys failed") }
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len() >= 2 })
+    rows = keys.Lines(0, keys.Len())
+    seen := map[string]bool{}
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 { seen[cells[0]] = true } }
+    if !seen["a"] || !seen["b"] { t.Fatalf("cm1 keys: expected a and b, got %+v", seen) }
+}
