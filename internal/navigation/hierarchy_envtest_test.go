@@ -61,6 +61,23 @@ func TestHierarchyEnvtest(t *testing.T) {
     for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 && cells[0] == "/testns" { foundTestns = true; break } }
     if !foundTestns { t.Fatalf("namespaces: /testns not found") }
 
+    // 2b) Context root behaves like cluster root for this context
+    ctxRoot := NewContextRootFolder(deps)
+    if ctxRoot.Title() != "contexts/"+deps.CtxName { t.Fatalf("context root title: got %q", ctxRoot.Title()) }
+    kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return ctxRoot.Len() > 0 })
+    rows = ctxRoot.Lines(0, ctxRoot.Len())
+    hasNamespaces := false
+    hasNodes := false
+    for _, r := range rows {
+        _, cells, _, _ := r.Columns()
+        if len(cells) > 0 {
+            if cells[0] == "/namespaces" { hasNamespaces = true }
+            if cells[0] == "/nodes" { hasNodes = true }
+        }
+    }
+    if !hasNamespaces { t.Fatalf("context root: /namespaces not found") }
+    if !hasNodes { t.Fatalf("context root: /nodes not found") }
+
     // 3) Enter groups for testns
     grp := NewNamespacedGroupsFolder(deps, "testns")
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return grp.Len() > 0 })

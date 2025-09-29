@@ -1285,7 +1285,7 @@ func (a *App) goToNamespace(ns string) {
 			return nil, err
 		}
 		ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: deps.ListContexts}
-		return navui.NewNamespacesFolder(ndeps), nil
+		return navui.NewContextRootFolder(ndeps), nil
 	}
 	root := navui.NewRootFolder(deps)
 	a.navigator = navui.NewNavigator(root)
@@ -1334,7 +1334,7 @@ func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
 					return nil, err
 				}
 				ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: nil, EnterContext: nil}
-				return navui.NewNamespacesFolder(ndeps), nil
+				return navui.NewContextRootFolder(ndeps), nil
 			},
 		}
 		a.navigator = navui.NewNavigator(navui.NewRootFolder(deps))

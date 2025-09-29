@@ -199,6 +199,43 @@ func (f *RootFolder) populate() {
     f.list = table.NewSliceList(rows)
 }
 
+// ContextRootFolder shows a context-scoped root, equivalent to "/" but under /contexts/<ctx>.
+type ContextRootFolder struct{ BaseFolder }
+
+func NewContextRootFolder(deps Deps) *ContextRootFolder {
+    f := &ContextRootFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}}}
+    f.init = func(){ f.populate() }
+    return f
+}
+
+func (f *ContextRootFolder) Title() string { return "contexts/" + f.deps.CtxName }
+func (f *ContextRootFolder) Key() string   { return depsKey(f.deps, "contexts/"+f.deps.CtxName) }
+
+func (f *ContextRootFolder) populate() {
+    rows := make([]table.Row, 0, 64)
+    nameSty := WhiteStyle()
+    // Namespaces entry within the context
+    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "core/v1", ""}, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps), nil }))
+    // Cluster-scoped resources for this context
+    if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
+        filtered := make([]kccluster.ResourceInfo, 0, len(infos))
+        for _, info := range infos {
+            if info.Namespaced || info.Resource == "namespaces" { continue }
+            if !verbsInclude(info.Verbs, "list") { continue }
+            filtered = append(filtered, info)
+        }
+        sort.Slice(filtered, func(i, j int) bool { return filtered[i].Resource < filtered[j].Resource })
+        for _, info := range filtered {
+            gvr := schema.GroupVersionResource{Group: info.GVK.Group, Version: info.GVK.Version, Resource: info.Resource}
+            n := 0
+            if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, ""); err == nil { n = len(lst.Items) }
+            id := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
+            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, DimStyle(), nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr), nil }))
+        }
+    }
+    f.list = table.NewSliceList(rows)
+}
+
 // ContextsFolder lists available contexts (if provided in Deps).
 type ContextsFolder struct{ BaseFolder }
 func NewContextsFolder(deps Deps) *ContextsFolder {
