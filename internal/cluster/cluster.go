@@ -141,3 +141,72 @@ func (c *Cluster) restClientForGV(gv schema.GroupVersion) (*rest.RESTClient, err
     cfg.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
     return rest.RESTClientFor(cfg)
 }
+
+// Helpers ---------------------------------------------------------------------
+
+// GVKToGVR maps a Kind to its resource using the RESTMapper.
+func (c *Cluster) GVKToGVR(gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
+    _ = c.ensureDiscovery()
+    m, err := c.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
+    if err != nil { return schema.GroupVersionResource{}, err }
+    return m.Resource, nil
+}
+
+// ListByGVR lists objects using the cache-backed client and returns an UnstructuredList.
+func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*metav1.UnstructuredList, error) {
+    _ = c.ensureDiscovery()
+    k, err := c.RESTMapper().KindFor(gvr)
+    if err != nil { return nil, err }
+    ul := &metav1.UnstructuredList{}
+    ul.SetGroupVersionKind(schema.GroupVersionKind{Group: k.Group, Version: k.Version, Kind: k.Kind + "List"})
+    if namespace != "" {
+        if err := c.GetClient().List(ctx, ul, crclient.InNamespace(namespace)); err != nil { return nil, err }
+    } else {
+        if err := c.GetClient().List(ctx, ul); err != nil { return nil, err }
+    }
+    return ul, nil
+}
+
+// GetByGVR fetches one object as Unstructured using the cache-backed client.
+func (c *Cluster) GetByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*metav1.Unstructured, error) {
+    _ = c.ensureDiscovery()
+    k, err := c.RESTMapper().KindFor(gvr)
+    if err != nil { return nil, err }
+    u := &metav1.Unstructured{}
+    u.SetGroupVersionKind(k)
+    key := crclient.ObjectKey{Namespace: namespace, Name: name}
+    if err := c.GetClient().Get(ctx, key, u); err != nil { return nil, err }
+    return u, nil
+}
+
+// ResourceInfo describes a discoverable API resource kind.
+type ResourceInfo struct {
+    GVK        schema.GroupVersionKind
+    Resource   string
+    Namespaced bool
+    Verbs      []string
+}
+
+// GetResourceInfos returns API resource infos via discovery.
+func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
+    dc, err := discovery.NewDiscoveryClientForConfig(c.GetConfig())
+    if err != nil { return nil, err }
+    lists, err := dc.ServerPreferredResources()
+    if err != nil { return nil, err }
+    var out []ResourceInfo
+    for _, l := range lists {
+        gv, err := schema.ParseGroupVersion(l.GroupVersion)
+        if err != nil { continue }
+        for _, ar := range l.APIResources {
+            if ar.Name == "" || ar.Kind == "" { continue }
+            if strings.Contains(ar.Name, "/") { continue }
+            out = append(out, ResourceInfo{
+                GVK:        schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: ar.Kind},
+                Resource:   ar.Name,
+                Namespaced: ar.Namespaced,
+                Verbs:      ar.Verbs,
+            })
+        }
+    }
+    return out, nil
+}
