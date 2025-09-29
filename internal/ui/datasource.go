@@ -12,26 +12,26 @@ import (
 
 // NamespacesDataSource provides live listings for namespaces using a StoreProvider.
 type NamespacesDataSource struct {
-	store  resources.StoreProvider
-	mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)
-	table  func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error)
+    resMgr *resources.Manager
+    mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)
+    table  func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error)
 }
 
-func NewNamespacesDataSource(store resources.StoreProvider, mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error), table func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error)) *NamespacesDataSource {
-	return &NamespacesDataSource{store: store, mapper: mapper, table: table}
+func NewNamespacesDataSource(resMgr *resources.Manager, mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error), table func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error)) *NamespacesDataSource {
+    return &NamespacesDataSource{resMgr: resMgr, mapper: mapper, table: table}
 }
 
 // List returns items for namespaces at "/namespaces".
 func (d *NamespacesDataSource) List() ([]Item, error) {
-	if d.store == nil || d.mapper == nil {
-		return nil, fmt.Errorf("data source not initialized")
-	}
+    if d.resMgr == nil || d.mapper == nil {
+        return nil, fmt.Errorf("data source not initialized")
+    }
 	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
 	gvr, err := d.mapper(gvk)
 	if err != nil {
 		return nil, err
 	}
-	lst, err := d.store.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
+    lst, err := d.resMgr.ListByGVR(context.Background(), gvr, "")
 	if err != nil {
 		return nil, err
 	}
@@ -108,24 +108,24 @@ func (d *NamespacesDataSource) Watch(ctx context.Context) (<-chan resources.Even
 
 // PodsDataSource provides live listings for pods in a namespace using a StoreProvider.
 type PodsDataSource struct {
-	store  resources.StoreProvider
-	mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)
+    resMgr *resources.Manager
+    mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)
 }
 
-func NewPodsDataSource(store resources.StoreProvider, mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)) *PodsDataSource {
-	return &PodsDataSource{store: store, mapper: mapper}
+func NewPodsDataSource(resMgr *resources.Manager, mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)) *PodsDataSource {
+    return &PodsDataSource{resMgr: resMgr, mapper: mapper}
 }
 
 func (d *PodsDataSource) List(namespace string) ([]Item, error) {
-	if d.store == nil || d.mapper == nil {
-		return nil, fmt.Errorf("data source not initialized")
-	}
+    if d.resMgr == nil || d.mapper == nil {
+        return nil, fmt.Errorf("data source not initialized")
+    }
 	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}
 	gvr, err := d.mapper(gvk)
 	if err != nil {
 		return nil, err
 	}
-	lst, err := d.store.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace})
+    lst, err := d.resMgr.ListByGVR(context.Background(), gvr, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -137,34 +137,28 @@ func (d *PodsDataSource) List(namespace string) ([]Item, error) {
 	return items, nil
 }
 
+// Watch is currently disabled in favor of periodic list until controller-runtime
+// cache-based watch is wired. TODO: replace with cache informer subscription.
 func (d *PodsDataSource) Watch(ctx context.Context, namespace string) (<-chan resources.Event, context.CancelFunc, error) {
-	if d.store == nil || d.mapper == nil {
-		return nil, func() {}, fmt.Errorf("data source not initialized")
-	}
-	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}
-	gvr, err := d.mapper(gvk)
-	if err != nil {
-		return nil, func() {}, err
-	}
-	return d.store.Store().Watch(ctx, resources.StoreKey{GVR: gvr, Namespace: namespace})
+    return nil, func(){}, fmt.Errorf("watch not implemented")
 }
 
 // GenericDataSource provides list/watch for any GVK.
 type GenericDataSource struct {
-	store  resources.StoreProvider
-	mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)
-	gvk    schema.GroupVersionKind
-	table  func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error)
+    resMgr *resources.Manager
+    mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error)
+    gvk    schema.GroupVersionKind
+    table  func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error)
 }
 
-func NewGenericDataSource(store resources.StoreProvider, mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error), table func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error), gvk schema.GroupVersionKind) *GenericDataSource {
-	return &GenericDataSource{store: store, mapper: mapper, table: table, gvk: gvk}
+func NewGenericDataSource(resMgr *resources.Manager, mapper func(schema.GroupVersionKind) (schema.GroupVersionResource, error), table func(context.Context, schema.GroupVersionResource, string) (*metav1.Table, error), gvk schema.GroupVersionKind) *GenericDataSource {
+    return &GenericDataSource{resMgr: resMgr, mapper: mapper, table: table, gvk: gvk}
 }
 
 func (d *GenericDataSource) List(namespace string) ([]Item, error) {
-	if d.store == nil || d.mapper == nil {
-		return nil, fmt.Errorf("data source not initialized")
-	}
+    if d.resMgr == nil || d.mapper == nil {
+        return nil, fmt.Errorf("data source not initialized")
+    }
 	gvr, err := d.mapper(d.gvk)
 	if err != nil {
 		return nil, err
@@ -193,7 +187,7 @@ func (d *GenericDataSource) List(namespace string) ([]Item, error) {
 			return items, nil
 		}
 	}
-	lst, err := d.store.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace})
+    lst, err := d.resMgr.ListByGVR(context.Background(), gvr, namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -206,25 +200,18 @@ func (d *GenericDataSource) List(namespace string) ([]Item, error) {
 }
 
 func (d *GenericDataSource) Watch(ctx context.Context, namespace string) (<-chan resources.Event, context.CancelFunc, error) {
-	if d.store == nil || d.mapper == nil {
-		return nil, func() {}, fmt.Errorf("data source not initialized")
-	}
-	gvr, err := d.mapper(d.gvk)
-	if err != nil {
-		return nil, func() {}, err
-	}
-	return d.store.Store().Watch(ctx, resources.StoreKey{GVR: gvr, Namespace: namespace})
+    return nil, func(){}, fmt.Errorf("watch not implemented")
 }
 
 func (d *GenericDataSource) Get(namespace, name string) (*unstructured.Unstructured, error) {
-	if d.store == nil || d.mapper == nil {
-		return nil, fmt.Errorf("data source not initialized")
-	}
+    if d.resMgr == nil || d.mapper == nil {
+        return nil, fmt.Errorf("data source not initialized")
+    }
 	gvr, err := d.mapper(d.gvk)
 	if err != nil {
 		return nil, err
 	}
-	return d.store.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}, name)
+    return d.resMgr.GetByGVR(context.Background(), gvr, namespace, name)
 }
 
 // ListTable returns server-side table headers/rows and items for selection when available.

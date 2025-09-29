@@ -210,6 +210,39 @@ func (m *Manager) ListByGVK(gvk schema.GroupVersionKind, namespace string) (*uns
 	return list, nil
 }
 
+// ListByGVR lists resources generically using controller-runtime's cache-backed reader.
+// It resolves the preferred Kind for the given GVR and constructs an UnstructuredList
+// with the appropriate Group/Version/Kind (Kind: <Kind>List) before invoking List.
+func (m *Manager) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*unstructured.UnstructuredList, error) {
+    if err := m.ensureDiscovery(); err != nil { return nil, err }
+    // Derive the preferred Kind for the resource
+    gvk, err := m.mapper.KindFor(gvr)
+    if err != nil { return nil, fmt.Errorf("kind for %s: %w", gvr.String(), err) }
+    // Build the corresponding List kind (<Kind>List)
+    listGVK := schema.GroupVersionKind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind + "List"}
+    out := &unstructured.UnstructuredList{}
+    out.SetGroupVersionKind(listGVK)
+    // Use the controller-runtime client (cache reader) for listing
+    if namespace != "" {
+        if err := m.client.List(m.ctx, out, client.InNamespace(namespace)); err != nil { return nil, err }
+    } else {
+        if err := m.client.List(m.ctx, out); err != nil { return nil, err }
+    }
+    return out, nil
+}
+
+// GetByGVR fetches a single object by name using controller-runtime's cache-backed reader.
+func (m *Manager) GetByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
+    if err := m.ensureDiscovery(); err != nil { return nil, err }
+    gvk, err := m.mapper.KindFor(gvr)
+    if err != nil { return nil, fmt.Errorf("kind for %s: %w", gvr.String(), err) }
+    obj := &unstructured.Unstructured{}
+    obj.SetGroupVersionKind(gvk)
+    key := client.ObjectKey{Namespace: namespace, Name: name}
+    if err := m.client.Get(m.ctx, key, obj); err != nil { return nil, err }
+    return obj, nil
+}
+
 // ListNamespaces lists namespaces generically without relying on typed clients
 func (m *Manager) ListNamespaces() (*unstructured.UnstructuredList, error) {
 	// Core v1 Namespace

@@ -693,7 +693,7 @@ func (a *App) openYAMLForSelection() tea.Cmd {
         if mp, ok := p.folder.(metaProv); ok {
             gvr, ns, mok := mp.ObjectListMeta()
             if mok {
-                obj, err := a.storeProvider.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ns}, id)
+    obj, err := a.resMgr.GetByGVR(context.Background(), gvr, ns, id)
                 if err != nil || obj == nil { return nil }
                 unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
                 yb, _ := yaml.Marshal(obj.Object)
@@ -1199,9 +1199,9 @@ func (a *App) initData() error {
 	tableFn := func(ctx context.Context, gvr schema.GroupVersionResource, ns string) (*metav1.Table, error) {
 		return a.resMgr.ListTableByGVR(ctx, gvr, ns)
 	}
-	nsDS := NewNamespacesDataSource(a.storeProvider, a.resMgr.GVKToGVR, tableFn)
-	a.leftPanel.SetNamespacesDataSource(nsDS)
-	a.rightPanel.SetNamespacesDataSource(nsDS)
+    nsDS := NewNamespacesDataSource(a.resMgr, a.resMgr.GVKToGVR, tableFn)
+    a.leftPanel.SetNamespacesDataSource(nsDS)
+    a.rightPanel.SetNamespacesDataSource(nsDS)
 	// Discovery-backed catalog
 	if infos, err := a.resMgr.GetResourceInfos(); err == nil {
 		a.leftPanel.SetResourceCatalog(infos)
@@ -1217,9 +1217,9 @@ func (a *App) initData() error {
 		fmt.Printf("Warning: discovery resources: %v\n", err)
 	}
 	// Generic data source factory (per-GVK)
-	factory := func(gvk schema.GroupVersionKind) *GenericDataSource {
-		return NewGenericDataSource(a.storeProvider, a.resMgr.GVKToGVR, tableFn, gvk)
-	}
+    factory := func(gvk schema.GroupVersionKind) *GenericDataSource {
+        return NewGenericDataSource(a.resMgr, a.resMgr.GVKToGVR, tableFn, gvk)
+    }
 	a.leftPanel.SetGenericDataSourceFactory(factory)
 	a.rightPanel.SetGenericDataSourceFactory(factory)
 	a.genericFactory = factory
@@ -1244,7 +1244,7 @@ func (a *App) buildNamespacesFolder() navui.Folder {
     gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
     gvr, err := a.resMgr.GVKToGVR(gvk)
     if err != nil { return navui.NewNamespacesFolder(a.currentCtx.Name, nil) }
-    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
+    lst, err := a.resMgr.ListByGVR(context.Background(), gvr, "")
     if err != nil { return navui.NewNamespacesFolder(a.currentCtx.Name, nil) }
     rows := make([]table.Row, 0, len(lst.Items))
     sty := navui.WhiteStyle()
@@ -1278,7 +1278,7 @@ func (a *App) buildNamespacedGroupsFolder(namespace string) navui.Folder {
         if err != nil { continue }
         // Count namespaced objects
         n := 0
-        if lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}); err == nil { n = len(lst.Items) }
+        if lst, err := a.resMgr.ListByGVR(context.Background(), gvr, namespace); err == nil { n = len(lst.Items) }
         gv := info.GVK.Group
         if gv == "" { gv = "core" }
         gv = gv + "/" + info.GVK.Version
@@ -1295,7 +1295,7 @@ func (a *App) buildNamespacedGroupsFolder(namespace string) navui.Folder {
 
 // buildNamespacedObjectsFolder lists namespaced objects for a given GVR and namespace.
 func (a *App) buildNamespacedObjectsFolder(gvr schema.GroupVersionResource, namespace string) navui.Folder {
-    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace})
+    lst, err := a.resMgr.ListByGVR(context.Background(), gvr, namespace)
     if err != nil { return navui.NewObjectsFolder(a.currentCtx.Name, gvr, namespace, nil) }
     rows := make([]table.Row, 0, len(lst.Items))
     sty := navui.WhiteStyle()
@@ -1323,7 +1323,7 @@ func (a *App) buildNamespacedObjectsFolder(gvr schema.GroupVersionResource, name
 func (a *App) buildPodContainersFolder(namespace, pod string) navui.Folder {
     gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
     if err != nil { return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, nil) }
-    obj, err := a.storeProvider.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}, pod)
+    obj, err := a.resMgr.GetByGVR(context.Background(), gvr, namespace, pod)
     if err != nil || obj == nil { return navui.NewPodContainersFolder(a.currentCtx.Name, namespace, pod, nil) }
     rows := make([]table.Row, 0, 8)
     sty := navui.WhiteStyle()
@@ -1339,7 +1339,7 @@ func (a *App) buildPodContainersFolder(namespace, pod string) navui.Folder {
 func (a *App) buildConfigMapKeysFolder(namespace, name string) navui.Folder {
     gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
     if err != nil { return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, nil) }
-    obj, err := a.storeProvider.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}, name)
+    obj, err := a.resMgr.GetByGVR(context.Background(), gvr, namespace, name)
     if err != nil || obj == nil { return navui.NewConfigMapKeysFolder(a.currentCtx.Name, namespace, name, nil) }
     rows := make([]table.Row, 0, 8)
     sty := navui.WhiteStyle()
@@ -1350,7 +1350,7 @@ func (a *App) buildConfigMapKeysFolder(namespace, name string) navui.Folder {
 func (a *App) buildSecretKeysFolder(namespace, name string) navui.Folder {
     gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"})
     if err != nil { return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, nil) }
-    obj, err := a.storeProvider.Store().Get(context.Background(), resources.StoreKey{GVR: gvr, Namespace: namespace}, name)
+    obj, err := a.resMgr.GetByGVR(context.Background(), gvr, namespace, name)
     if err != nil || obj == nil { return navui.NewSecretKeysFolder(a.currentCtx.Name, namespace, name, nil) }
     rows := make([]table.Row, 0, 8)
     sty := navui.WhiteStyle()
@@ -1421,7 +1421,7 @@ func (a *App) buildRootFolder() navui.Folder {
 func (a *App) countClusterScoped(gvk schema.GroupVersionKind) int {
     gvr, err := a.resMgr.GVKToGVR(gvk)
     if err != nil { return 0 }
-    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
+    lst, err := a.resMgr.ListByGVR(context.Background(), gvr, "")
     if err != nil { return 0 }
     return len(lst.Items)
 }
@@ -1431,7 +1431,7 @@ func (a *App) namespaceExists(ns string) bool {
     if ns == "" { return false }
     gvr, err := a.resMgr.GVKToGVR(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
     if err != nil { return false }
-    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
+    lst, err := a.resMgr.ListByGVR(context.Background(), gvr, "")
     if err != nil { return false }
     for i := range lst.Items { if lst.Items[i].GetName() == ns { return true } }
     return false
@@ -1496,7 +1496,7 @@ func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
 
 // buildClusterObjectsFolder lists cluster-scoped objects for a given GVR.
 func (a *App) buildClusterObjectsFolder(gvr schema.GroupVersionResource) navui.Folder {
-    lst, err := a.storeProvider.Store().List(context.Background(), resources.StoreKey{GVR: gvr, Namespace: ""})
+    lst, err := a.resMgr.ListByGVR(context.Background(), gvr, "")
     if err != nil { return navui.NewObjectsFolder(a.currentCtx.Name, gvr, "", nil) }
     rows := make([]table.Row, 0, len(lst.Items))
     sty := navui.WhiteStyle()
