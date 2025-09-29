@@ -3,10 +3,11 @@ package navigation
 import (
     table "github.com/sttts/kc/internal/table"
     "k8s.io/apimachinery/pkg/runtime/schema"
+    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    kcache "k8s.io/client-go/tools/cache"
     "sync"
     "fmt"
     "strings"
-    "github.com/charmbracelet/lipgloss/v2"
 )
 
 // BaseFolder provides lazy population scaffolding for concrete folders.
@@ -20,12 +21,36 @@ type BaseFolder struct {
     gvr       schema.GroupVersionResource
     namespace string
     hasMeta   bool
+    watchOnce sync.Once
+    mu    sync.Mutex
+    dirty bool
 }
 
 func (b *BaseFolder) Columns() []table.Column { return b.cols }
 
 // table.List implementation delegates to the lazily-populated list.
-func (b *BaseFolder) ensure() { b.once.Do(func() { if b.list == nil { b.list = newEmptyList() }; if b.init != nil { b.init() } }) }
+func (b *BaseFolder) ensure() {
+    b.once.Do(func() { if b.list == nil { b.list = newEmptyList() }; if b.init != nil { b.init() } })
+    if b.dirty {
+        b.mu.Lock(); b.dirty = false; if b.init != nil { b.init() }; b.mu.Unlock()
+    }
+}
+
+func (b *BaseFolder) markDirty() { b.mu.Lock(); b.dirty = true; b.mu.Unlock() }
+
+func (b *BaseFolder) watchGVK(kind schema.GroupVersionKind) {
+    b.watchOnce.Do(func() {
+        u := &unstructured.Unstructured{}
+        u.SetGroupVersionKind(kind)
+        inf, err := b.deps.Cl.GetCache().GetInformer(b.deps.Ctx, u)
+        if err != nil { return }
+        inf.AddEventHandler(kcache.ResourceEventHandlerFuncs{
+            AddFunc: func(obj interface{}) { b.markDirty() },
+            UpdateFunc: func(oldObj, newObj interface{}) { b.markDirty() },
+            DeleteFunc: func(obj interface{}) { b.markDirty() },
+        })
+    })
+}
 func (b *BaseFolder) Lines(top, num int) []table.Row { b.ensure(); return b.list.Lines(top, num) }
 func (b *BaseFolder) Above(id string, n int) []table.Row { b.ensure(); return b.list.Above(id, n) }
 func (b *BaseFolder) Below(id string, n int) []table.Row { b.ensure(); return b.list.Below(id, n) }
