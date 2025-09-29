@@ -290,11 +290,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // shouldRouteToPanel determines if a key should be routed to the panel based on terminal state
 func (a *App) shouldRouteToPanel(key string) bool {
-	// Always route these keys to terminal
-	terminalKeys := []string{
-		"left", "right", // Always go to terminal
-		"space", // Never go to panels
-	}
+    // Always route these keys to terminal
+    terminalKeys := []string{
+        "space", // Never go to panels
+    }
 
 	for _, termKey := range terminalKeys {
 		if key == termKey {
@@ -302,16 +301,15 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		}
 	}
 
-	// Always route these keys to panels
-	// Always route specific keys to panels regardless of terminal state
-	panelKeys := []string{
-		// Navigation keys
-		"up", "down", "left", "right", // Navigate items
-		"home", "end", // Navigate to beginning/end
-		"pgup", "pgdown", // Page up/down
-		// Panel control keys
-		"tab",    // Switch panels
-		"ctrl+o", // Toggle fullscreen
+    // Always route these keys to panels (others handled below)
+    panelKeys := []string{
+        // Navigation keys
+        "up", "down", // Navigate items (left/right handled conditionally below)
+        "home", "end", // Navigate to beginning/end
+        "pgup", "pgdown", // Page up/down
+        // Panel control keys
+        "tab",    // Switch panels
+        "ctrl+o", // Toggle fullscreen
 		// Selection keys
 		"ctrl+t", "insert", // Toggle selection
 		"*",      // Invert selection
@@ -330,14 +328,22 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		}
 	}
 
-	// Special handling for Enter key
-	if key == "enter" {
-		// Check if terminal has non-empty input
-		if a.terminal != nil && a.terminal.HasInput() {
-			return false // Route Enter to terminal if user is typing
-		}
-		return true // Route Enter to panels if terminal is empty
-	}
+    // Special handling for Enter key
+    if key == "enter" {
+        // Check if terminal has non-empty input
+        if a.terminal != nil && a.terminal.HasInput() {
+            return false // Route Enter to terminal if user is typing
+        }
+        return true // Route Enter to panels if terminal is empty
+    }
+
+    // Special handling for Left/Right: route to panels only when terminal input is empty
+    if key == "left" || key == "right" {
+        if a.terminal != nil && a.terminal.HasInput() {
+            return false // typing → keep in terminal
+        }
+        return true
+    }
 
 	// Special handling for + and - keys (glob patterns)
 	if key == "+" || key == "-" {
@@ -397,8 +403,10 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 		contentHeight = 1
 	}
 
-	a.leftPanel.SetDimensions(contentWidth, contentHeight-1)  // -1 for footer space
-	a.rightPanel.SetDimensions(contentWidth, contentHeight-1) // -1 for footer space
+    // Panel content height must match the frame interior (frameHeight-2).
+    // contentHeight already equals (panelHeight-2), so subtract one more to account for the frame's top/bottom.
+    a.leftPanel.SetDimensions(contentWidth, contentHeight-2)
+    a.rightPanel.SetDimensions(contentWidth, contentHeight-2)
 	leftContentView := a.leftPanel.ViewContentOnlyFocused(a.activePanel == 0)
 	rightContentView := a.rightPanel.ViewContentOnlyFocused(a.activePanel == 1)
 
@@ -1264,7 +1272,6 @@ func (a *App) buildNamespacedGroupsFolder(namespace string) navui.Folder {
     // Columns: Name, Group, Count
     cols := []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}
     nameSty := navui.WhiteStyle()
-    dimSty := navui.DimStyle()
     rows := make([]table.Row, 0, 64)
     infos, err := a.resMgr.GetResourceInfos()
     if err != nil { return navui.NewSliceFolder("namespaces/"+namespace, a.currentCtx.Name+"/namespaces/"+namespace, cols, rows) }
@@ -1285,7 +1292,8 @@ func (a *App) buildNamespacedGroupsFolder(namespace string) navui.Folder {
         g := gvr // capture
         ns := namespace
         enter := func() (navui.Folder, error) { return a.buildNamespacedObjectsFolder(g, ns), nil }
-        rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{info.Resource, gv, fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, dimSty, nil}, enter))
+        // No special/dim style for Group column; let table default styling apply
+        rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{info.Resource, gv, fmt.Sprintf("%d", n)}, []*lipgloss.Style{nameSty, nil, nil}, enter))
     }
     title := "namespaces/" + namespace
     key := a.currentCtx.Name + "/namespaces/" + namespace
@@ -1381,17 +1389,16 @@ func (a *App) buildContextsFolder() navui.Folder {
 // Cluster-scoped resources will be added incrementally.
 func (a *App) buildRootFolder() navui.Folder {
     nameSty := navui.WhiteStyle()
-    dimSty := navui.DimStyle()
     rows := make([]table.Row, 0, 16)
     // Columns: Name, Group (dim), Count
     cols := []table.Column{{Title: " Name"}, {Title: "Group"}, {Title: "Count"}}
     // Row: contexts (enterable) with count of contexts
     enterContexts := func() (navui.Folder, error) { return a.buildContextsFolder(), nil }
     ctxCount := len(a.kubeMgr.GetContexts())
-    rows = append(rows, navui.NewEnterableItemStyled("contexts", []string{"contexts", "", fmt.Sprintf("%d", ctxCount)}, []*lipgloss.Style{nameSty, dimSty, nil}, enterContexts))
+    rows = append(rows, navui.NewEnterableItemStyled("contexts", []string{"contexts", "", fmt.Sprintf("%d", ctxCount)}, []*lipgloss.Style{nameSty, nil, nil}, enterContexts))
     // Row: namespaces (default context) with count and group
     nsCount := a.countClusterScoped(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"})
-    rows = append(rows, navui.NewEnterableItemStyled("namespaces", []string{"namespaces", "core/v1", fmt.Sprintf("%d", nsCount)}, []*lipgloss.Style{nameSty, dimSty, nil}, func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }))
+    rows = append(rows, navui.NewEnterableItemStyled("namespaces", []string{"namespaces", "core/v1", fmt.Sprintf("%d", nsCount)}, []*lipgloss.Style{nameSty, nil, nil}, func() (navui.Folder, error) { return a.buildNamespacesFolder(), nil }))
     // Namespaces are accessible under contexts; not listed at root.
     // Cluster-scoped resources with counts (excluding namespaces)
     if infos, err := a.resMgr.GetResourceInfos(); err == nil {
@@ -1410,7 +1417,7 @@ func (a *App) buildRootFolder() navui.Folder {
             if err != nil { continue }
             g := gvr
             enter := func() (navui.Folder, error) { return a.buildClusterObjectsFolder(g), nil }
-            rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{info.Resource, gv, fmt.Sprintf("%d", c)}, []*lipgloss.Style{nameSty, dimSty, nil}, enter))
+            rows = append(rows, navui.NewEnterableItemStyled(info.Resource, []string{info.Resource, gv, fmt.Sprintf("%d", c)}, []*lipgloss.Style{nameSty, nil, nil}, enter))
         }
     }
     return navui.NewSliceFolder("/", "root", cols, rows)
