@@ -929,7 +929,9 @@ func (a *App) renderFunctionKeys() string {
 
 		keys = []string{
 			renderKey("F1", "Help", true),
-			renderKey("F2", "Resources", true),
+                // Always label F2 as Options; it opens the appropriate dialog
+                // (Object Options or Resources Options) based on context.
+                renderKey("F2", "Options", true),
 			renderKey("F3", "View", canView),
 			renderKey("F4", "Edit", canEdit),
 			renderKey("F5", "Copy", false),
@@ -999,7 +1001,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
         }
         keys = []struct{ label string; enabled bool; action func() tea.Cmd }{
             {makeLbl("F1", "Help", true), true, a.showHelp},
-            {makeLbl("F2", "Resources", true), true, a.showResourceSelector},
+            {makeLbl("F2", "Options", true), true, a.showResourceSelector},
             {makeLbl("F3", "View", canView), canView, a.openYAMLForSelection},
             {makeLbl("F4", "Edit", canEdit), canEdit, a.editSelection},
             {makeLbl("F5", "Copy", false), false, a.copyItem},
@@ -1085,7 +1087,7 @@ func (a *App) showResourceSelector() tea.Cmd {
         // Prepare modal
         modal := a.modalManager.modals["object_options"]
         if modal == nil {
-            modal = NewModal("Objects", o)
+            modal = NewModal("Options", o)
             a.modalManager.Register("object_options", modal)
         } else {
             modal.SetContent(o)
@@ -1102,7 +1104,7 @@ func (a *App) showResourceSelector() tea.Cmd {
     showNonEmpty, order := curPanel.ResourceViewOptions()
     content := NewResourcesOptionsModel(showNonEmpty, order)
     modal := a.modalManager.modals["resources_options"]
-    if modal == nil { modal = NewModal("Resources", content); a.modalManager.Register("resources_options", modal) } else { modal.SetContent(content) }
+    if modal == nil { modal = NewModal("Options", content); a.modalManager.Register("resources_options", modal) } else { modal.SetContent(content); modal.title = "Options" }
     winW, winH := 50, 6
     bg, _ := a.renderMainView()
     modal.SetWindowed(winW, winH, bg)
