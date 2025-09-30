@@ -10,11 +10,8 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog/v2"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	kctesting "github.com/sttts/kc/internal/testing"
 )
 
 var (
@@ -25,10 +22,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(os.Stderr))
-	ctrl.SetLogger(logger)
-	klog.SetLogger(logger)
-	log.SetLogger(logger)
+	kctesting.SetupLogging()
 
 	utilruntime.Must(clientgoscheme.AddToScheme(testScheme))
 	utilruntime.Must(metav1.AddMetaToScheme(testScheme))
