@@ -381,9 +381,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "1":
 				a.escPressed = false
 				return a, a.showHelp() // Esc 1 = F1
-			case "2":
-				a.escPressed = false
-				return a, a.showResourceSelector() // Esc 2 = F2
+            case "2":
+                a.escPressed = false
+                return a, a.showViewOptionsModal() // Esc 2 = F2
 			case "3":
 				a.escPressed = false
 				return a, a.viewItem() // Esc 3 = F3
@@ -435,7 +435,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
             // Intercept F2/F3/F4 for app-level dialogs/viewers/editors
             if msg.String() == "f2" {
-                return a, a.showResourceSelector()
+                return a, a.showViewOptionsModal()
             }
             if msg.String() == "ctrl+w" {
                 // Toggle columns mode (Normal/Wide) on active panel
@@ -1001,7 +1001,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
         }
         keys = []struct{ label string; enabled bool; action func() tea.Cmd }{
             {makeLbl("F1", "Help", true), true, a.showHelp},
-            {makeLbl("F2", "Options", true), true, a.showResourceSelector},
+            {makeLbl("F2", "Options", true), true, a.showViewOptionsModal},
             {makeLbl("F3", "View", canView), canView, a.openYAMLForSelection},
             {makeLbl("F4", "Edit", canEdit), canEdit, a.editSelection},
             {makeLbl("F5", "Copy", false), false, a.copyItem},
@@ -1070,15 +1070,26 @@ func (a *App) setupModals() {
 }
 
 // Message handlers for function keys
-func (a *App) showResourceSelector() tea.Cmd {
-    // Depending on current view, open resources or objects options.
-    curPanel := a.leftPanel; if a.activePanel == 1 { curPanel = a.rightPanel }
-    // Heuristic: if folder is an object-list, open object options; else resources.
+// showViewOptionsModal opens the appropriate View Options dialog (Resources or Objects)
+// depending on the active view context.
+func (a *App) showViewOptionsModal() tea.Cmd {
+    // Depending on current view, open Resources or Objects view options.
+    curPanel := a.leftPanel
+    if a.activePanel == 1 { curPanel = a.rightPanel }
+
+    // Prefer navigator folder (unwrapped) to detect object lists.
+    var curFolder navui.Folder
+    if a.activePanel == 0 && a.leftNav != nil { curFolder = a.leftNav.Current() }
+    if a.activePanel == 1 && a.rightNav != nil { curFolder = a.rightNav.Current() }
+    if curFolder == nil { curFolder = curPanel.folder }
+
+    // Detect object-list via ObjectListMeta capability.
     isObjects := false
-    switch curPanel.folder.(type) {
-    case *navui.NamespacedObjectsFolder, *navui.ClusterObjectsFolder:
-        isObjects = true
+    type metaProv interface{ ObjectListMeta() (schema.GroupVersionResource, string, bool) }
+    if mp, ok := curFolder.(metaProv); ok {
+        if _, _, ok2 := mp.ObjectListMeta(); ok2 { isObjects = true }
     }
+
     if isObjects {
         mode := curPanel.TableMode()
         cols := curPanel.ColumnsMode()
@@ -1087,10 +1098,11 @@ func (a *App) showResourceSelector() tea.Cmd {
         // Prepare modal
         modal := a.modalManager.modals["object_options"]
         if modal == nil {
-            modal = NewModal("Options", o)
+            modal = NewModal("Objects View Options", o)
             a.modalManager.Register("object_options", modal)
         } else {
             modal.SetContent(o)
+            modal.title = "Objects View Options"
         }
         winW, winH := 50, 6
         bg, _ := a.renderMainView()
@@ -1100,11 +1112,18 @@ func (a *App) showResourceSelector() tea.Cmd {
         a.modalManager.Show("object_options")
         return nil
     }
+
     // Resources options
     showNonEmpty, order := curPanel.ResourceViewOptions()
     content := NewResourcesOptionsModel(showNonEmpty, order)
     modal := a.modalManager.modals["resources_options"]
-    if modal == nil { modal = NewModal("Options", content); a.modalManager.Register("resources_options", modal) } else { modal.SetContent(content); modal.title = "Options" }
+    if modal == nil {
+        modal = NewModal("Resources View Options", content)
+        a.modalManager.Register("resources_options", modal)
+    } else {
+        modal.SetContent(content)
+        modal.title = "Resources View Options"
+    }
     winW, winH := 50, 6
     bg, _ := a.renderMainView()
     modal.SetWindowed(winW, winH, bg)
