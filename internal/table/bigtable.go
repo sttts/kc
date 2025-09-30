@@ -468,6 +468,15 @@ func (m *BigTable) SetFocused(v bool) *BigTable { if m.focused != v { m.focused 
 // Focused reports whether the table is focused.
 func (m *BigTable) Focused() bool { return m.focused }
 
+// VisibleRowID returns the row ID at the given zero-based visible row index
+// within the current window (data rows only; header is not counted). It
+// returns ok=false when the index is out of bounds.
+func (m *BigTable) VisibleRowID(i int) (string, bool) {
+    if i < 0 || i >= len(m.window) { return "", false }
+    id, _, _, ok := m.window[i].Columns()
+    return id, ok
+}
+
 // bodyRowsHeight returns the number of data rows visible within the viewport
 // after subtracting sticky header lines.
 func (m *BigTable) bodyRowsHeight() int {

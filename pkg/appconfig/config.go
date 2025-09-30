@@ -28,6 +28,14 @@ type PanelConfig struct {
     Scrolling ScrollingConfig `json:"scrolling"`
 }
 
+type MouseConfig struct {
+    DoubleClickTimeout metav1.Duration `json:"doubleClickTimeout"`
+}
+
+type InputConfig struct {
+    Mouse MouseConfig `json:"mouse"`
+}
+
 type ClustersConfig struct {
     TTL metav1.Duration `json:"ttl"` // duration, e.g. 2m, 30s
 }
@@ -39,6 +47,7 @@ type KubernetesConfig struct {
 type Config struct {
     Viewer ViewerConfig `json:"viewer"`
     Panel  PanelConfig  `json:"panel"`
+    Input  InputConfig  `json:"input"`
     Kubernetes KubernetesConfig `json:"kubernetes"`
 }
 
@@ -46,6 +55,7 @@ func Default() *Config {
     return &Config{
         Viewer: ViewerConfig{Theme: "dracula"},
         Panel:  PanelConfig{Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}}},
+        Input:  InputConfig{Mouse: MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}}},
         Kubernetes: KubernetesConfig{Clusters: ClustersConfig{TTL: metav1.Duration{Duration: 2 * time.Minute}}},
     }
 }
@@ -81,6 +91,7 @@ func Load() (*Config, error) {
             cfg.Panel.Scrolling.Horizontal.Step = 4
         }
         if cfg.Kubernetes.Clusters.TTL.Duration == 0 { cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute} }
+        if cfg.Input.Mouse.DoubleClickTimeout.Duration == 0 { cfg.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: 300 * time.Millisecond} }
         return cfg, nil
     }
 	// Fallback: tolerate legacy/mixed-case keys by normalizing
@@ -144,6 +155,7 @@ func Load() (*Config, error) {
     }
     if cfg.Panel.Scrolling.Horizontal.Step <= 0 { cfg.Panel.Scrolling.Horizontal.Step = 4 }
     if cfg.Kubernetes.Clusters.TTL.Duration == 0 { cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute} }
+    if cfg.Input.Mouse.DoubleClickTimeout.Duration == 0 { cfg.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: 300 * time.Millisecond} }
     return cfg, nil
 }
 
