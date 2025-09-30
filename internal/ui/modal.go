@@ -248,8 +248,9 @@ func (m *Modal) View() string {
 			Foreground(boxStyle.GetBorderTopForeground()).
 			Background(boxStyle.GetBorderTopBackground()).
 			Render
-		topLeft := topBorderStyler(border.TopLeft)
-		topRight := topBorderStyler(border.TopRight)
+        // In windowed settings dialogs we keep corners; viewers don't use windowed mode.
+        topLeft := topBorderStyler(border.TopLeft)
+        topRight := topBorderStyler(border.TopRight)
 		available := winW - lipgloss.Width(topLeft+topRight)
 		lw := lipgloss.Width(label)
 		var top string
@@ -339,20 +340,26 @@ func (m *Modal) View() string {
 		Background(boxStyle.GetBorderTopBackground()).
 		Render
 
-	topLeft := topBorderStyler(border.TopLeft)
-	topRight := topBorderStyler(border.TopRight)
-	available := m.width - lipgloss.Width(topLeft+topRight)
+    // For viewers, do not show corner glyphs; use '-' for the entire top line.
+    // For viewers, use the horizontal border rune for the entire top line,
+    // including the ends, instead of corner glyphs.
+    topRune := border.Top
+    tl := border.TopLeft; tr := border.TopRight
+    if isViewer { tl, tr = topRune, topRune }
+    topLeft := topBorderStyler(tl)
+    topRight := topBorderStyler(tr)
+    available := m.width - lipgloss.Width(topLeft+topRight)
 	lw := lipgloss.Width(label)
 	var top string
 	if lw >= available {
-		gap := strings.Repeat(border.Top, max(0, available-lw))
-		top = topLeft + label + topBorderStyler(gap) + topRight
-	} else {
-		total := available - lw
-		left := total / 2
-		right := total - left
-		top = topLeft + topBorderStyler(strings.Repeat(border.Top, left)) + label + topBorderStyler(strings.Repeat(border.Top, right)) + topRight
-	}
+        gap := strings.Repeat(string(topRune), max(0, available-lw))
+        top = topLeft + label + topBorderStyler(gap) + topRight
+    } else {
+        total := available - lw
+        left := total / 2
+        right := total - left
+        top = topLeft + topBorderStyler(strings.Repeat(string(topRune), left)) + label + topBorderStyler(strings.Repeat(string(topRune), right)) + topRight
+    }
 
 	// Box content under header (no footer inside the frame)
     bottomSty := boxStyle.Copy().
@@ -361,8 +368,8 @@ func (m *Modal) View() string {
         // Reserve one terminal line for the footer outside the frame
         Height(m.height - 2)
     if isViewer {
-        // Remove vertical borders to allow clean copy/paste of YAML lines.
-        bottomSty = bottomSty.BorderLeft(false).BorderRight(false)
+        // Remove vertical borders and bottom border for viewers.
+        bottomSty = bottomSty.BorderLeft(false).BorderRight(false).BorderBottom(false)
     }
     bottom := bottomSty.Render(inner)
 
