@@ -53,6 +53,12 @@ type Folder interface {
     Key() string              // stable identity for history/restore (e.g., context/ns/GVR and child kind)
 }
 
+// Refreshable allows external triggers (like view option changes) to request
+// that a Folder rebuild its listing on next access.
+type Refreshable interface {
+    Refresh()
+}
+
 // KeyFolder is implemented by folders that list key-value entries under a
 // parent Kubernetes object (e.g., ConfigMap/Secret data). It returns the
 // parent object's coordinates.

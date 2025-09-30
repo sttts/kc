@@ -15,8 +15,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
-	navui "github.com/sttts/kc/internal/navigation"
-	"github.com/sttts/kc/pkg/appconfig"
+    navui "github.com/sttts/kc/internal/navigation"
+    "github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -64,6 +64,11 @@ type App struct {
     lastClickRowID string
     // Suppress forwarding of mouse to terminal immediately after toggling fullscreen
     suppressMouseUntil time.Time
+    // Resources options dialog state
+    prevResShowNonEmpty bool
+    prevResOrder        string
+    resOptsChanged      bool
+    resOptsConfirmed    bool
 }
 
 // Invariant: a.cfg is always non-nil. NewApp initializes it with defaults and
@@ -112,6 +117,23 @@ func (a *App) Init() tea.Cmd {
 	)
 }
 
+// viewOptions returns a snapshot of current resource view options for folders.
+func (a *App) favSet() map[string]bool {
+    fav := map[string]bool{}
+    if a.cfg != nil {
+        for _, r := range a.cfg.Resources.Favorites { if r != "" { fav[strings.ToLower(r)] = true } }
+    }
+    return fav
+}
+func (a *App) leftViewOptions() navui.ViewOptions {
+    show, order := a.leftPanel.ResourceViewOptions()
+    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet()}
+}
+func (a *App) rightViewOptions() navui.ViewOptions {
+    show, order := a.rightPanel.ResourceViewOptions()
+    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet()}
+}
+
 // Update handles messages and updates the application state
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -124,6 +146,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		a.width = msg.Width
 		a.height = msg.Height
+
+		// Ensure active modal scales with terminal size
+		if a.modalManager != nil && a.modalManager.IsModalVisible() {
+			if m := a.modalManager.GetActiveModal(); m != nil {
+				m.SetDimensions(a.width, a.height)
+				// If the resources dialog is open, re-center and resnapshot background
+				// to keep proportions and stack drawing correct on resize.
+				// Window size: clamp to 60% of width, minimum 40, height fixed to content+frame.
+				// This avoids sprawling on very large terminals but scales on smaller ones.
+				winW := a.width * 6 / 10
+				if winW < 40 { winW = 40 }
+				if winW > a.width-2 { winW = a.width - 2 }
+				winH := 6
+				bg, _ := a.renderMainView()
+				m.SetWindowed(winW, winH, bg)
+			}
+		}
 
 		if a.terminal != nil {
 			// Reserve space for status bar (1 line)
@@ -138,20 +177,55 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Handle modals first
-	if a.modalManager.IsModalVisible() {
-		model, cmd := a.modalManager.Update(msg)
-		a.modalManager = model.(*ModalManager)
-		cmds = append(cmds, cmd)
-		// While a modal is open, still forward non-key messages to the terminal
-		// (process output, window size, timers) so the 2-line terminal stays fresh.
-		if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
-			tmodel, tcmd := a.terminal.Update(msg)
-			a.terminal = tmodel.(*Terminal)
-			cmds = append(cmds, tcmd)
-		}
-		return a, tea.Batch(cmds...)
-	}
+    // Handle modals first
+    if a.modalManager.IsModalVisible() {
+        // Intercept resource options changes even while modal is visible
+        switch m := msg.(type) {
+        case ResourcesOptionsChangedMsg:
+            if m.SaveDefault {
+                // Persist current dialog values to config defaults
+                if a.cfg == nil { a.cfg = appconfig.Default() }
+                a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
+                a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
+                _ = appconfig.Save(a.cfg)
+            }
+            if m.Accept {
+                // Apply to active panel only; do not persist
+                if a.activePanel == 0 {
+                    a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+                } else {
+                    a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+                }
+                // Refresh only the active panel's folder
+                if a.activePanel == 0 && a.leftNav != nil {
+                    if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }
+                    a.leftPanel.SetFolder(a.leftNav.Current(), a.leftNav.HasBack())
+                    a.leftPanel.SetCurrentPath(a.leftNav.Path())
+                    a.leftPanel.RefreshFolder()
+                }
+                if a.activePanel == 1 && a.rightNav != nil {
+                    if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }
+                    a.rightPanel.SetFolder(a.rightNav.Current(), a.rightNav.HasBack())
+                    a.rightPanel.SetCurrentPath(a.rightNav.Path())
+                    a.rightPanel.RefreshFolder()
+                }
+            }
+            if m.Close { a.modalManager.Hide() }
+            return a, nil
+        }
+        model, cmd := a.modalManager.Update(msg)
+        a.modalManager = model.(*ModalManager)
+        cmds = append(cmds, cmd)
+        // While a modal is open, still forward non-key messages to the
+        // terminal (process output, window size). Background is snapshotted,
+        // so this stays light and keeps the 2-line terminal fresh.
+        if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
+            tmodel, tcmd := a.terminal.Update(msg)
+            a.terminal = tmodel.(*Terminal)
+            cmds = append(cmds, tcmd)
+        }
+        return a, tea.Batch(cmds...)
+    }
 
 	// Check if terminal process has exited (check on every message)
 	if a.terminal.IsProcessExited() {
@@ -274,13 +348,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.terminal.ClearTyped() // reset typed; next keys route to panels
 				return a, cmd
 			}
-			// Intercept F3/F4 to open viewers/editors
-			if msg.String() == "f3" {
-				return a, a.openYAMLForSelection()
-			}
-			if msg.String() == "f4" {
-				return a, a.editSelection()
-			}
+            // Intercept F2/F3/F4 for app-level dialogs/viewers/editors
+            if msg.String() == "f2" {
+                return a, a.showResourceSelector()
+            }
+            if msg.String() == "f3" {
+                return a, a.openYAMLForSelection()
+            }
+            if msg.String() == "f4" {
+                return a, a.editSelection()
+            }
 			if a.shouldRouteToPanel(msg.String()) {
 				// Handle panel-specific keys
 				if a.activePanel == 0 {
@@ -630,6 +707,23 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
     return combinedView, nil
 }
 
+// refreshFoldersAfterViewChange reapplies the current folders to panels so that
+// folder population re-reads the latest ViewOptions.
+func (a *App) refreshFoldersAfterViewChange() {
+    if a.leftNav != nil {
+        cur := a.leftNav.Current()
+        a.leftPanel.SetFolder(cur, a.leftNav.HasBack())
+        a.leftPanel.SetCurrentPath(a.leftNav.Path())
+        a.leftPanel.RefreshFolder()
+    }
+    if a.rightNav != nil {
+        cur := a.rightNav.Current()
+        a.rightPanel.SetFolder(cur, a.rightNav.HasBack())
+        a.rightPanel.SetCurrentPath(a.rightNav.Path())
+        a.rightPanel.RefreshFolder()
+    }
+}
+
 // renderFunctionKeys renders the function key bar
 func (a *App) renderFunctionKeys() string {
 	var keys []string
@@ -815,14 +909,10 @@ func (a *App) renderToggleMessage() string {
 
 // setupModals sets up the modal dialogs
 func (a *App) setupModals() {
-	// Resource selector modal
-	resourceSelector := NewResourceSelector(a.allResources)
-	resourceModal := NewModal("Resource Selection", resourceSelector)
-	resourceModal.SetOnClose(func() tea.Cmd {
-		// TODO: Apply selected resources to panels
-		return nil
-	})
-	a.modalManager.Register("resource_selector", resourceModal)
+    // Resources options modal (content set dynamically on open)
+    opts := NewResourcesOptionsModel(false, "favorites")
+    resModal := NewModal("Resources", opts)
+    a.modalManager.Register("resources_options", resModal)
 
 	// Theme selector modal; content is set dynamically when opened
 	themeSelector := NewThemeSelector(nil)
@@ -832,8 +922,28 @@ func (a *App) setupModals() {
 
 // Message handlers for function keys
 func (a *App) showResourceSelector() tea.Cmd {
-	a.modalManager.Show("resource_selector")
-	return nil
+    // Build content from ACTIVE PANEL values
+    showNonEmpty, order := a.leftPanel.ResourceViewOptions()
+    if a.activePanel == 1 { showNonEmpty, order = a.rightPanel.ResourceViewOptions() }
+    content := NewResourcesOptionsModel(showNonEmpty, order)
+    // Configure as centered window overlay so main UI remains visible beneath
+    modal := a.modalManager.modals["resources_options"]
+    if modal == nil {
+        modal = NewModal("Resources", content)
+        a.modalManager.Register("resources_options", modal)
+    } else {
+        modal.SetContent(content)
+    }
+    // size: 50x6 fits two lines nicely
+    winW, winH := 50, 6
+    // Snapshot the current main view once as background to avoid heavy
+    // re-rendering while the dialog is open.
+    bg, _ := a.renderMainView()
+    modal.SetWindowed(winW, winH, bg)
+    modal.SetOnClose(func() tea.Cmd { return nil })
+    modal.SetDimensions(a.width, a.height)
+    a.modalManager.Show("resources_options")
+    return nil
 }
 
 func (a *App) viewResource() tea.Cmd {
@@ -1451,7 +1561,7 @@ func Run() error {
 
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
 func (a *App) initData() error {
-	// Kubeconfig manager and discovery
+    // Kubeconfig manager and discovery
 	a.kubeMgr = kubeconfig.NewManager()
 	if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
 		return fmt.Errorf("discover kubeconfigs: %w", err)
@@ -1471,7 +1581,7 @@ func (a *App) initData() error {
 		return fmt.Errorf("cluster pool get: %w", err)
 	}
 	a.cl = cl
-	// Discovery-backed catalog (for panel displays)
+    // Discovery-backed catalog (for panel displays)
 	if infos, err := a.cl.GetResourceInfos(); err == nil {
 		a.leftPanel.SetResourceCatalog(infos)
 		a.rightPanel.SetResourceCatalog(infos)
@@ -1484,7 +1594,12 @@ func (a *App) initData() error {
 	// Provide contexts count to panels for root display
 	a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	a.rightPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
-	// Preview: Use folder-backed rendering starting at root (not contexts listing)
+    // Initialize per-panel view options from config defaults
+    if a.cfg != nil {
+        a.leftPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
+        a.rightPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
+    }
+    // Preview: Use folder-backed rendering starting at root (not contexts listing)
 	{
 		// Programmatic navigation to current namespace for both panels
 		ns := "default"
@@ -1504,18 +1619,27 @@ func (a *App) goToNamespace(ns string) {
 	if ns == "" {
 		ns = "default"
 	}
-	deps := navui.Deps{
-		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
-		ListContexts: func() []string {
-			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-			for _, c := range a.kubeMgr.GetContexts() {
-				out = append(out, c.Name)
-			}
-			return out
-		},
-	}
+    // Build separate deps for left and right so each panel can have independent view options
+    depsLeft := navui.Deps{
+        Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+        ListContexts: func() []string {
+            out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+            for _, c := range a.kubeMgr.GetContexts() { out = append(out, c.Name) }
+            return out
+        },
+        ViewOptions: func() navui.ViewOptions { return a.leftViewOptions() },
+    }
+    depsRight := navui.Deps{
+        Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+        ListContexts: func() []string {
+            out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+            for _, c := range a.kubeMgr.GetContexts() { out = append(out, c.Name) }
+            return out
+        },
+        ViewOptions: func() navui.ViewOptions { return a.rightViewOptions() },
+    }
 	// set EnterContext after deps to avoid forward reference
-    deps.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
+    depsLeft.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
         var target *kubeconfig.Context
         for _, c := range a.kubeMgr.GetContexts() {
             if c.Name == name {
@@ -1531,23 +1655,36 @@ func (a *App) goToNamespace(ns string) {
         if err != nil {
             return nil, err
         }
-        ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: deps.ListContexts}
+        ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() navui.ViewOptions { return a.leftViewOptions() }}
         return navui.NewContextRootFolder(ndeps, basePath), nil
     }
-    root := navui.NewRootFolder(deps)
-    a.leftNav = navui.NewNavigator(root)
-    a.rightNav = navui.NewNavigator(root)
+    depsRight.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
+        var target *kubeconfig.Context
+        for _, c := range a.kubeMgr.GetContexts() {
+            if c.Name == name { target = c; break }
+        }
+        if target == nil { return nil, fmt.Errorf("context %q not found", name) }
+        key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
+        cl, err := a.clPool.Get(a.ctx, key)
+        if err != nil { return nil, err }
+        ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, ViewOptions: func() navui.ViewOptions { return a.rightViewOptions() }}
+        return navui.NewContextRootFolder(ndeps, basePath), nil
+    }
+    rootLeft := navui.NewRootFolder(depsLeft)
+    rootRight := navui.NewRootFolder(depsRight)
+    a.leftNav = navui.NewNavigator(rootLeft)
+    a.rightNav = navui.NewNavigator(rootRight)
     if a.namespaceExists(ns) {
         // Left panel: remember selection when entering
         a.leftNav.SetSelectionID("namespaces")
-        a.leftNav.Push(navui.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
+        a.leftNav.Push(navui.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
         a.leftNav.SetSelectionID(ns)
-        a.leftNav.Push(navui.NewNamespacedGroupsFolder(deps, ns, []string{"namespaces", ns}))
+        a.leftNav.Push(navui.NewNamespacedGroupsFolder(depsLeft, ns, []string{"namespaces", ns}))
         // Right panel: same
         a.rightNav.SetSelectionID("namespaces")
-        a.rightNav.Push(navui.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
+        a.rightNav.Push(navui.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
         a.rightNav.SetSelectionID(ns)
-        a.rightNav.Push(navui.NewNamespacedGroupsFolder(deps, ns, []string{"namespaces", ns}))
+        a.rightNav.Push(navui.NewNamespacedGroupsFolder(depsRight, ns, []string{"namespaces", ns}))
     }
     curL := a.leftNav.Current(); hasBackL := a.leftNav.HasBack()
     curR := a.rightNav.Current(); hasBackR := a.rightNav.HasBack()
@@ -1574,12 +1711,18 @@ func (a *App) currentNav() *navui.Navigator {
 func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
     // Use navigator for current active panel
     ensure := func() *navui.Navigator {
+        // Build deps bound to the current active panel
+        vo := func() navui.ViewOptions {
+            if a.activePanel == 0 { return a.leftViewOptions() }
+            return a.rightViewOptions()
+        }
         deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
             ListContexts: func() []string {
                 out := make([]string, 0, len(a.kubeMgr.GetContexts()))
                 for _, c := range a.kubeMgr.GetContexts() { out = append(out, c.Name) }
                 return out
             },
+            ViewOptions: vo,
         }
         return navui.NewNavigator(navui.NewRootFolder(deps))
     }

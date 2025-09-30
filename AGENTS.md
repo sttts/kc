@@ -44,7 +44,14 @@
 - Examples:
   - Folder keys: `namespaces/<ns>/<group>/<version>/<resource>` (namespaced) or `<group>/<version>/<resource>` (cluster-scoped).
   - Row IDs: `group/version/resource` (not just `resource`).
-  - Avoid ad-hoc Kind/Version strings for identity; use GVR consistently.
+- Avoid ad-hoc Kind/Version strings for identity; use GVR consistently.
+
+### Config Defaults Consistency
+- Keep configuration defaults in sync across:
+  - Code: `pkg/appconfig.Default()`
+  - Documentation sample: `config-default.yaml` in the repo root
+  - README “Configuration” section
+- A unit test (`pkg/appconfig/defaults_test.go`) loads `config-default.yaml` and compares it with `Default()`. Update both when changing defaults; do not let them drift.
 
 ## Testing Guidelines
 - Framework: standard `testing` with table-driven tests and `t.Run` subtests.

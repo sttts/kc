@@ -109,6 +109,20 @@ kubernetes:
     # TTL for controller-runtime clusters in the shared pool; idle clusters are
     # evicted after this time. Duration format (e.g., 2m, 30s). Default: 2m.
     ttl: 2m
+
+resources:
+  # Whether to show only resource groups with non-zero object counts (true),
+  # or show all resources (false). Applies to cluster and namespace scope.
+  # Default: true
+  showNonEmptyOnly: true
+  # Ordering of resource groups:
+  # - alpha: alphabetic by resource plural
+  # - group: grouped by API group (group, then resource)
+  # - favorites: alphabetic, but with favorites listed first
+  # Default: alpha
+  order: alpha
+  # Favorites used when order=favorites. Plural resource names, lower-case.
+  favorites: [pods, services, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, configmaps, secrets, ingresses, networkpolicies, persistentvolumeclaims]
 ```
 
 Themes (lower-case)
@@ -129,7 +143,7 @@ Change theme at runtime: open a YAML (F3), press F9 to open the theme dialog. Mo
 
 ### Key Bindings
 - `F1`: Help
-- `F2`: Resource selector
+- `F2`: Resources (view options)
 - `F3`: View resource
 - `F4`: Edit resource
 - `F5`: Copy

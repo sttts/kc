@@ -56,6 +56,9 @@ type Panel struct {
     folder        nav.Folder
     folderHasBack bool
     folderHandler func(back bool, selID string, next nav.Folder)
+    // Per-panel resource group view options
+    resShowNonEmpty bool
+    resOrder string // "alpha", "group", "favorites"
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -117,8 +120,23 @@ func NewPanel(title string) *Panel {
         pathHistory:      make([]string, 0),
         positionMemory:   make(map[string]PositionInfo),
         tableViewEnabled: true,
+        resOrder:         "favorites",
     }
 }
+
+// SetResourceViewOptions sets the per-panel view toggles for resource groups.
+func (p *Panel) SetResourceViewOptions(showNonEmpty bool, order string) {
+    p.resShowNonEmpty = showNonEmpty
+    switch order {
+    case "alpha", "group", "favorites":
+        p.resOrder = order
+    default:
+        p.resOrder = "favorites"
+    }
+}
+
+// ResourceViewOptions returns current per-panel options.
+func (p *Panel) ResourceViewOptions() (bool, string) { return p.resShowNonEmpty, p.resOrder }
 
 // ResetSelectionTop moves the cursor to the top and resets scrolling.
 func (p *Panel) ResetSelectionTop() {
@@ -267,6 +285,7 @@ func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next nav.Fol
 func (p *Panel) RefreshFolder() {
     if p.useFolder && p.folder != nil && p.bt != nil {
         p.bt.SetList(p.folder)
+        p.bt.Refresh()
     }
 }
 
