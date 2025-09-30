@@ -147,11 +147,11 @@ func (a *App) favSet() map[string]bool {
 }
 func (a *App) leftViewOptions() navui.ViewOptions {
     show, order := a.leftPanel.ResourceViewOptions()
-    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet()}
+    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.leftPanel.ColumnsMode()}
 }
 func (a *App) rightViewOptions() navui.ViewOptions {
     show, order := a.rightPanel.ResourceViewOptions()
-    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet()}
+    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.rightPanel.ColumnsMode()}
 }
 
 // Update handles messages and updates the application state
@@ -218,6 +218,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 default:
                     a.cfg.Panel.Table.Mode = appconfig.TableModeScroll
                 }
+                // Persist columns mode default
+                if strings.EqualFold(m.Columns, "wide") { a.cfg.Resources.Columns = "wide" } else { a.cfg.Resources.Columns = "normal" }
                 _ = appconfig.Save(a.cfg)
             }
             if m.Accept {
@@ -225,9 +227,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 if a.activePanel == 0 {
                     a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
                     a.leftPanel.SetTableMode(m.TableMode)
+                    a.leftPanel.SetColumnsMode(m.Columns)
                 } else {
                     a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
                     a.rightPanel.SetTableMode(m.TableMode)
+                    a.rightPanel.SetColumnsMode(m.Columns)
                 }
                 // Refresh only the active panel's folder
                 if a.activePanel == 0 && a.leftNav != nil {
@@ -317,7 +321,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         // Schedule next tick (lightweight check)
         return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
 
-	case tea.KeyMsg:
+        case tea.KeyMsg:
 		// Handle global shortcuts first
 		switch msg.String() {
 		case "ctrl+o":
@@ -420,6 +424,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
             // Intercept F2/F3/F4 for app-level dialogs/viewers/editors
             if msg.String() == "f2" {
                 return a, a.showResourceSelector()
+            }
+            if msg.String() == "ctrl+w" {
+                // Toggle columns mode (Normal/Wide) on active panel
+                if a.activePanel == 0 {
+                    if a.leftPanel.ColumnsMode() == "wide" { a.leftPanel.SetColumnsMode("normal") } else { a.leftPanel.SetColumnsMode("wide") }
+                    if a.leftNav != nil { if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }; a.leftPanel.RefreshFolder() }
+                } else {
+                    if a.rightPanel.ColumnsMode() == "wide" { a.rightPanel.SetColumnsMode("normal") } else { a.rightPanel.SetColumnsMode("wide") }
+                    if a.rightNav != nil { if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }; a.rightPanel.RefreshFolder() }
+                }
+                return a, nil
             }
             if msg.String() == "f3" {
                 return a, a.openYAMLForSelection()
@@ -1045,9 +1060,11 @@ func (a *App) showResourceSelector() tea.Cmd {
     // Build content from ACTIVE PANEL values
     showNonEmpty, order := a.leftPanel.ResourceViewOptions()
     mode := a.leftPanel.TableMode()
-    if a.activePanel == 1 { showNonEmpty, order = a.rightPanel.ResourceViewOptions(); mode = a.rightPanel.TableMode() }
+    cols := a.leftPanel.ColumnsMode()
+    if a.activePanel == 1 { showNonEmpty, order = a.rightPanel.ResourceViewOptions(); mode = a.rightPanel.TableMode(); cols = a.rightPanel.ColumnsMode() }
     content := NewResourcesOptionsModel(showNonEmpty, order)
     if strings.EqualFold(mode, "fit") { content.modeIdx = 1 } else { content.modeIdx = 0 }
+    if strings.EqualFold(cols, "wide") { content.columnsIdx = 1 } else { content.columnsIdx = 0 }
     // Configure as centered window overlay so main UI remains visible beneath
     modal := a.modalManager.modals["resources_options"]
     if modal == nil {
@@ -1725,6 +1742,9 @@ func (a *App) initData() error {
         // Initialize table mode from config defaults
         a.leftPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
         a.rightPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
+        // Initialize columns mode from config defaults
+        a.leftPanel.SetColumnsMode(a.cfg.Resources.Columns)
+        a.rightPanel.SetColumnsMode(a.cfg.Resources.Columns)
     }
     // Preview: Use folder-backed rendering starting at root (not contexts listing)
 	{

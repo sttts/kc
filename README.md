@@ -123,6 +123,10 @@ resources:
   order: alpha
   # Favorites used when order=favorites. Plural resource names, lower-case.
   favorites: [pods, services, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, configmaps, secrets, ingresses, networkpolicies, persistentvolumeclaims]
+  # Columns mode for server-side Tables:
+  # - normal: show priority 0 columns (kubectl default)
+  # - wide: show all server-provided columns (like `kubectl get -o wide`)
+  columns: normal
 ```
 
 Themes (lower-case)
@@ -153,6 +157,7 @@ Change theme at runtime: open a YAML (F3), press F9 to open the theme dialog. Mo
 - `F9`: Context menu
 - `F10`: Quit
 - `Ctrl+O`: Toggle terminal
+- `Ctrl+W`: Toggle Normal/Wide columns (priority 0 vs all server-side table columns)
 - `Tab`: Switch panels
 - `Ctrl+C`: Quit
 

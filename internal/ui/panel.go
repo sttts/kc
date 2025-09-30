@@ -61,6 +61,7 @@ type Panel struct {
     resShowNonEmpty bool
     resOrder string // "alpha", "group", "favorites"
     lastColTitles []string
+    columnsMode   string // "normal" or "wide"
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -124,6 +125,7 @@ func NewPanel(title string) *Panel {
         tableViewEnabled: true,
         resOrder:         "favorites",
         tableMode:        table.ModeScroll,
+        columnsMode:      "normal",
     }
 }
 
@@ -279,6 +281,16 @@ func (p *Panel) TableMode() string {
     if p.tableMode == table.ModeFit { return "fit" }
     return "scroll"
 }
+
+// SetColumnsMode updates which server-side table columns to show (normal or wide).
+func (p *Panel) SetColumnsMode(mode string) {
+    if strings.EqualFold(mode, "wide") { p.columnsMode = "wide" } else { p.columnsMode = "normal" }
+    // Rebuild BigTable headers on next refresh via folder change detection.
+    p.RefreshFolder()
+}
+
+// ColumnsMode returns the current columns mode label.
+func (p *Panel) ColumnsMode() string { return p.columnsMode }
 
 // SelectByRowID moves the selection to the row with the given ID if present.
 // It matches against the folder's row IDs and adjusts for the synthetic back row.

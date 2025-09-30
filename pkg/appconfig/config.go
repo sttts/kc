@@ -63,6 +63,9 @@ type ResourcesViewConfig struct {
     Order ResourcesViewOrder `json:"order"`
     // Favorites lists resource plural names to prioritize when Order=="favorites".
     Favorites []string `json:"favorites"`
+    // Columns controls which server-side table columns are shown: normal (priority 0) or wide (all).
+    // Values: "normal" | "wide"
+    Columns string `json:"columns"`
 }
 
 type Config struct {
@@ -96,6 +99,7 @@ func Default() *Config {
         Resources: ResourcesViewConfig{
             ShowNonEmptyOnly: true,
             Order:            OrderAlpha,
+            Columns:          "normal",
             // Seed favorites with a sensible default set similar to `kubectl get all`.
             Favorites: []string{
                 "pods", "services", "deployments", "replicasets", "statefulsets",
@@ -149,6 +153,9 @@ func Load() (*Config, error) {
         }
         if cfg.Resources.Favorites == nil {
             cfg.Resources.Favorites = Default().Resources.Favorites
+        }
+        if strings.ToLower(cfg.Resources.Columns) != "wide" {
+            cfg.Resources.Columns = "normal"
         }
         return cfg, nil
     }
@@ -224,6 +231,9 @@ func Load() (*Config, error) {
     if cfg.Resources.Favorites == nil {
         cfg.Resources.Favorites = Default().Resources.Favorites
     }
+    if strings.ToLower(cfg.Resources.Columns) != "wide" {
+        cfg.Resources.Columns = "normal"
+    }
     return cfg, nil
 }
 
@@ -236,7 +246,7 @@ func Save(cfg *Config) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
-	// Enforce lower-case style names for consistency
+    // Enforce lower-case style names for consistency
     out := *cfg
     out.Viewer.Theme = strings.ToLower(out.Viewer.Theme)
     // Normalize order value
@@ -244,6 +254,9 @@ func Save(cfg *Config) error {
     case OrderAlpha, OrderGroup, OrderFavorites:
     default:
         out.Resources.Order = OrderFavorites
+    }
+    if strings.ToLower(out.Resources.Columns) != "wide" {
+        out.Resources.Columns = "normal"
     }
     data, err := yaml.Marshal(&out)
 	if err != nil {

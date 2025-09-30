@@ -386,10 +386,18 @@ func (f *NamespacedGroupsFolder) populate() {
 
 func (f *NamespacedObjectsFolder) populate() {
     nameSty := WhiteStyle()
+    // Read view options to decide columns mode (normal vs wide)
+    opts := ViewOptions{}
+    if f.deps.ViewOptions != nil { opts = f.deps.ViewOptions() }
     // Try server-side Rows via tablecache first for richer columns
     if rl, err := f.deps.Cl.ListRowsByGVR(f.deps.Ctx, f.gvr, f.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
-        cols := make([]table.Column, len(rl.Columns))
-        for i, c := range rl.Columns { cols[i] = table.Column{Title: c.Name, Width: 0} }
+        // Compute visible columns based on priority
+        vis := make([]int, 0, len(rl.Columns))
+        for i, c := range rl.Columns {
+            if opts.Columns == "wide" || c.Priority == 0 { vis = append(vis, i) }
+        }
+        cols := make([]table.Column, len(vis))
+        for i := range vis { c := rl.Columns[vis[i]]; cols[i] = table.Column{Title: c.Name, Width: 0} }
         f.cols = cols
         rows := make([]table.Row, 0, len(rl.Items))
         // Resolve child ctor and kind for details
@@ -401,8 +409,8 @@ func (f *NamespacedObjectsFolder) populate() {
             nm := rr.Name
             if nm == "" && len(rr.Cells) > 0 { if s, ok := rr.Cells[0].(string); ok { nm = s } }
             if nm == "" { nm = fmt.Sprintf("row-%d", i) }
-            cells := make([]string, len(rr.Cells))
-            for j := range rr.Cells { cells[j] = fmt.Sprint(rr.Cells[j]) }
+            cells := make([]string, len(vis))
+            for j := range vis { idx := vis[j]; if idx < len(rr.Cells) { cells[j] = fmt.Sprint(rr.Cells[idx]) } }
             base := append(append([]string(nil), f.path...), nm)
             if hasChild {
                 ns := f.namespace; name := nm
@@ -447,10 +455,14 @@ func (f *NamespacedObjectsFolder) populate() {
 
 func (f *ClusterObjectsFolder) populate() {
     nameSty := WhiteStyle()
+    opts := ViewOptions{}
+    if f.deps.ViewOptions != nil { opts = f.deps.ViewOptions() }
     // Try server-side Rows via tablecache first for richer columns
     if rl, err := f.deps.Cl.ListRowsByGVR(f.deps.Ctx, f.gvr, ""); err == nil && rl != nil && len(rl.Items) > 0 {
-        cols := make([]table.Column, len(rl.Columns))
-        for i, c := range rl.Columns { cols[i] = table.Column{Title: c.Name, Width: 0} }
+        vis := make([]int, 0, len(rl.Columns))
+        for i, c := range rl.Columns { if opts.Columns == "wide" || c.Priority == 0 { vis = append(vis, i) } }
+        cols := make([]table.Column, len(vis))
+        for i := range vis { c := rl.Columns[vis[i]]; cols[i] = table.Column{Title: c.Name, Width: 0} }
         f.cols = cols
         rows := make([]table.Row, 0, len(rl.Items))
         ctor, hasChild := childFor(f.gvr)
@@ -461,8 +473,8 @@ func (f *ClusterObjectsFolder) populate() {
             nm := rr.Name
             if nm == "" && len(rr.Cells) > 0 { if s, ok := rr.Cells[0].(string); ok { nm = s } }
             if nm == "" { nm = fmt.Sprintf("row-%d", i) }
-            cells := make([]string, len(rr.Cells))
-            for j := range rr.Cells { cells[j] = fmt.Sprint(rr.Cells[j]) }
+            cells := make([]string, len(vis))
+            for j := range vis { idx := vis[j]; if idx < len(rr.Cells) { cells[j] = fmt.Sprint(rr.Cells[idx]) } }
             base := append(append([]string(nil), f.path...), nm)
             if hasChild {
                 name := nm
