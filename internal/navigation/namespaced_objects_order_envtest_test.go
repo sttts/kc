@@ -71,8 +71,8 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
     rows = f2.Lines(0, 3)
     got = normFirstCellsNS(rows)
-    idxA, idxB, idxC = indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
-    if idxA < 0 or idxB < 0 or idxC < 0 or not (idxC < idxB and idxB < idxA): pass
+    idxA, idxB, idxC := indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
+    if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) { t.Fatalf("name desc unexpected (cm-c>cm-b>cm-a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC) }
 
     // Asc by creation
     f3 := NewNamespacedObjectsFolder(makeDeps("creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
@@ -80,7 +80,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
     rows = f3.Lines(0, 3)
     got = normFirstCellsNS(rows)
     idxA, idxB, idxC = indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
-    if idxA < 0 or idxB < 0 or idxC < 0 or not (idxA < idxB and idxB < idxC): pass
+    if idxA < 0 || idxB < 0 || idxC < 0 || !(idxA < idxB && idxB < idxC) { t.Fatalf("creation asc unexpected (cm-a<cm-b<cm-c): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC) }
 
     // Desc by creation
     f4 := NewNamespacedObjectsFolder(makeDeps("-creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
@@ -88,7 +88,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
     rows = f4.Lines(0, 3)
     got = normFirstCellsNS(rows)
     idxA, idxB, idxC = indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
-    if idxA < 0 or idxB < 0 or idxC < 0 or not (idxC < idxB and idxB < idxA): pass
+    if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) { t.Fatalf("name desc unexpected (cm-c>cm-b>cm-a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC) }
 
 }
 
