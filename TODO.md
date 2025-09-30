@@ -31,7 +31,7 @@ Hierarchy refactor and tests — ordered
 Detailed next steps (post‑compaction anchors)
 - [ ] Replace legacy folder builders in `internal/ui/app.go` (buildNamespacesFolder/buildNamespacedGroupsFolder/buildNamespacedObjectsFolder/buildClusterObjectsFolder) with the new self‑sufficient folders:
   - Root: `nav.NewRootFolder(nav.Deps{Cl:a.cl, Ctx:a.ctx, CtxName:a.currentCtx.Name})` [done]
-  - Namespaces: `nav.NewNamespacesFolder(deps, []string{"namespaces"})`
+  - Namespaces: `nav.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"})`
   - Groups: `nav.NewNamespacedGroupsFolder(deps, ns, []string{"namespaces", ns})`
   - Objects (namespaced/cluster): `nav.NewNamespacedObjectsFolder(deps, gvr, ns, []string{"namespaces", ns, gvr.Resource})` / `nav.NewClusterObjectsFolder(deps, gvr, []string{gvr.Resource})`
   - Virtual children (pods/configmaps/secrets): use the GVR→child registry; no string comparisons.
