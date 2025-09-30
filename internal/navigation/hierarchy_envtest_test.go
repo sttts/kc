@@ -54,7 +54,7 @@ func TestHierarchyEnvtest(t *testing.T) {
     if !foundNamespaces { t.Fatalf("root: /namespaces not found") }
 
     // 2) Enter /namespaces
-    nsFolder := NewNamespacesFolder(deps, []string{"namespaces"})
+    nsFolder := NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len() > 0 })
     rows = nsFolder.Lines(0, nsFolder.Len())
     foundTestns := false
@@ -206,7 +206,7 @@ func TestStartupSelectionRestore(t *testing.T) {
     nav := NewNavigator(root)
     // Simulate app startup sequence
     nav.SetSelectionID("namespaces")
-    nav.Push(NewNamespacesFolder(deps, []string{"namespaces"}))
+    nav.Push(NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
     nav.SetSelectionID("testns")
     nav.Push(NewNamespacedGroupsFolder(deps, "testns", []string{"namespaces", "testns"}))
 
@@ -249,7 +249,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
     nav := NewNavigator(root)
     // Simulate app startup sequence
     nav.SetSelectionID("namespaces")
-    nav.Push(NewNamespacesFolder(deps, []string{"namespaces"}))
+    nav.Push(NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
     nav.SetSelectionID("testns")
     nav.Push(NewNamespacedGroupsFolder(deps, "testns", []string{"namespaces", "testns"}))
 
@@ -285,7 +285,7 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
     root := NewRootFolder(deps)
     nav := NewNavigator(root)
     // Into namespaces -> testns -> groups
-    nav.SetSelectionID("namespaces"); nav.Push(NewNamespacesFolder(deps, []string{"namespaces"}))
+    nav.SetSelectionID("namespaces"); nav.Push(NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
     nav.SetSelectionID("testns"); nav.Push(NewNamespacedGroupsFolder(deps, "testns", []string{"namespaces", "testns"}))
     // Find configmaps group and enter objects
     var objs Folder

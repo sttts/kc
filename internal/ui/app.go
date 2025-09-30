@@ -1343,12 +1343,12 @@ func (a *App) goToNamespace(ns string) {
     if a.namespaceExists(ns) {
         // Left panel: remember selection when entering
         a.leftNav.SetSelectionID("namespaces")
-        a.leftNav.Push(navui.NewNamespacesFolder(deps, []string{"namespaces"}))
+        a.leftNav.Push(navui.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
         a.leftNav.SetSelectionID(ns)
         a.leftNav.Push(navui.NewNamespacedGroupsFolder(deps, ns, []string{"namespaces", ns}))
         // Right panel: same
         a.rightNav.SetSelectionID("namespaces")
-        a.rightNav.Push(navui.NewNamespacesFolder(deps, []string{"namespaces"}))
+        a.rightNav.Push(navui.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
         a.rightNav.SetSelectionID(ns)
         a.rightNav.Push(navui.NewNamespacedGroupsFolder(deps, ns, []string{"namespaces", ns}))
     }
