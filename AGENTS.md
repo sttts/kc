@@ -38,6 +38,14 @@
 - Prefer composition over wrapping: do not re-invent controller-runtime/client-go abstractions. Embed or compose original types instead of creating near-duplicates.
 - Use Kubernetes/client-go types and `controller-runtime` primitives directly (clients, caches, informers, RESTMapper). Add small adapters only where strictly needed.
 
+### Identity & Keys (Kubernetes)
+- Always use the full GroupVersionResource (GVR) when constructing keys/IDs for folders, items, history, or selection state. The resource name alone is NOT unique across groups and versions.
+- Prefer `gvr.GroupVersion().String()` when composing strings; for core resources this yields `v1` and for others `group/version`.
+- Examples:
+  - Folder keys: `namespaces/<ns>/<group>/<version>/<resource>` (namespaced) or `<group>/<version>/<resource>` (cluster-scoped).
+  - Row IDs: `group/version/resource` (not just `resource`).
+  - Avoid ad-hoc Kind/Version strings for identity; use GVR consistently.
+
 ## Testing Guidelines
 - Framework: standard `testing` with table-driven tests and `t.Run` subtests.
 - Location: `*_test.go` alongside sources (e.g., `pkg/handlers/handler_test.go`).

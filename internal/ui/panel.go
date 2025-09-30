@@ -981,17 +981,28 @@ func (p *Panel) formatRow(cells []string, widths []int) string {
 
 // renderFooter renders the panel footer
 func (p *Panel) renderFooter() string {
-	var footerText string
+    var footerText string
 
-	// Get current item info
-	currentItem := p.GetCurrentItem()
-	if currentItem != nil {
-		footerText = currentItem.GetFooterInfo()
-	} else {
-		// Fallback to item count
-		selectedCount := 0
-		for _, item := range p.items {
-			if item.Selected {
+    // Get current item info
+    currentItem := p.GetCurrentItem()
+    if currentItem != nil {
+        // Prefer folder-backed row Details() when available for precise breadcrumbs/kinds
+        if p.useFolder && p.folder != nil {
+            rows := p.folder.Lines(0, p.folder.Len())
+            if p.selected >= 0 && p.selected < len(rows) {
+                if id, _, _, ok := rows[p.selected].Columns(); ok && id != "__back__" {
+                    if ni, ok2 := rows[p.selected].(interface{ Details() string }); ok2 {
+                        if d := ni.Details(); d != "" { footerText = d }
+                    }
+                }
+            }
+        }
+        if footerText == "" { footerText = currentItem.GetFooterInfo() }
+    } else {
+        // Fallback to item count
+        selectedCount := 0
+        for _, item := range p.items {
+            if item.Selected {
 				selectedCount++
 			}
 		}
