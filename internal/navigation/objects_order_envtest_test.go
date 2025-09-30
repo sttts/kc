@@ -31,7 +31,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     ctx := context.TODO()
     for _, n := range []string{"a", "b", "c"} {
         if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: n}}); err != nil { t.Fatalf("create ns %s: %v", n, err) }
-        time.Sleep(20 * time.Millisecond)
+        time.Sleep(1100 * time.Millisecond) // kube timestamps are second precision; ensure unique creation times
     }
 
     // kc cluster
