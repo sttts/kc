@@ -37,4 +37,6 @@ type ViewOptions struct {
     Order string
     // Favorites: set of resource plural names to prioritize when Order=="favorites"
     Favorites map[string]bool
+    // Columns: "normal" (priority 0 only) or "wide" (all server columns)
+    Columns string
 }
