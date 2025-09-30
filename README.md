@@ -201,6 +201,19 @@ go test ./internal/ui/... -v
 Notes:
 - Some tests use Kubernetes envtest to spin up a local control plane for integration coverage (navigation, viewers, ordering/Age). These require a non‑sandboxed environment with permission to bind local ports. In restricted sandboxes, run the unit‑only subset as shown above.
 
+### Pre‑commit Hook
+Add a Git pre‑commit hook to run `go build ./...` and tests before each commit.
+
+Setup once per clone:
+```bash
+git config core.hooksPath .githooks
+```
+
+By default, the hook runs the full test suite (`go test -v ./...`). For a faster loop that skips envtests, set:
+```bash
+PRECOMMIT_FAST=1 git commit -m "your message"
+```
+
 ## Project Structure
 
 ```

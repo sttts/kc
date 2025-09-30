@@ -69,7 +69,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
     // Desc by name
     f2 := NewNamespacedObjectsFolder(makeDeps("-name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
-    rows = f2.Lines(0, 3)
+    rows = f2.Lines(0, f2.Len())
     got = normFirstCellsNS(rows)
     idxA, idxB, idxC := indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
     if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) { t.Fatalf("name desc unexpected (cm-c>cm-b>cm-a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC) }
@@ -77,7 +77,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
     // Asc by creation
     f3 := NewNamespacedObjectsFolder(makeDeps("creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len() >= 3 })
-    rows = f3.Lines(0, 3)
+    rows = f3.Lines(0, f3.Len())
     got = normFirstCellsNS(rows)
     idxA, idxB, idxC = indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
     if idxA < 0 || idxB < 0 || idxC < 0 || !(idxA < idxB && idxB < idxC) { t.Fatalf("creation asc unexpected (cm-a<cm-b<cm-c): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC) }
@@ -85,7 +85,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
     // Desc by creation
     f4 := NewNamespacedObjectsFolder(makeDeps("-creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len() >= 3 })
-    rows = f4.Lines(0, 3)
+    rows = f4.Lines(0, f4.Len())
     got = normFirstCellsNS(rows)
     idxA, idxB, idxC = indexOfNS(got, "cm-a"), indexOfNS(got, "cm-b"), indexOfNS(got, "cm-c")
     if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) { t.Fatalf("name desc unexpected (cm-c>cm-b>cm-a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC) }
