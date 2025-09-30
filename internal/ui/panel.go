@@ -220,11 +220,11 @@ func (p *Panel) syncFromFolder() {
     isKeysFolder := false
     var parentNS, parentName string
     var isSecret bool
-    switch p.folder.(type) {
-    case *nav.ConfigMapKeysFolder, *nav.SecretKeysFolder:
-        isKeysFolder = true
-        if kf, ok := p.folder.(interface{ Parent() (schema.GroupVersionResource, string, string) }); ok {
-            gvr, ns, name := kf.Parent()
+    // Detect key folders via the KeyFolder interface (works through wrappers like backFolder)
+    if kf, ok := p.folder.(interface{ Parent() (schema.GroupVersionResource, string, string) }); ok {
+        gvr, ns, name := kf.Parent()
+        if gvr.Resource == "configmaps" || gvr.Resource == "secrets" {
+            isKeysFolder = true
             parentNS, parentName = ns, name
             isSecret = (gvr.Resource == "secrets")
         }

@@ -31,6 +31,15 @@ func (b *backFolder) ObjectListMeta() (schema.GroupVersionResource, string, bool
     return schema.GroupVersionResource{}, "", false
 }
 
+// KeyFolder passthrough: if the inner folder exposes key-parent coordinates
+// (e.g., ConfigMap/Secret data folders), delegate to it so callers can detect
+// KeyFolder even when wrapped with back support.
+func (b *backFolder) Parent() (schema.GroupVersionResource, string, string) {
+    type keyFolder interface{ Parent() (schema.GroupVersionResource, string, string) }
+    if kf, ok := b.inner.(keyFolder); ok { return kf.Parent() }
+    return schema.GroupVersionResource{}, "", ""
+}
+
 // table.List implementation ----------------------------------------------------
 
 func (b *backFolder) Len() int {
@@ -72,4 +81,3 @@ func (b *backFolder) Find(rowID string) (int, table.Row, bool) {
     if !ok { return -1, nil, false }
     return idx + 1, r, true
 }
-
