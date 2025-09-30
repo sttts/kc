@@ -39,4 +39,7 @@ type ViewOptions struct {
     Favorites map[string]bool
     // Columns: "normal" (priority 0 only) or "wide" (all server columns)
     Columns string
+    // ObjectsOrder controls ordering within object lists:
+    // "name", "-name", "creation", "-creation"
+    ObjectsOrder string
 }
