@@ -62,6 +62,7 @@ type Panel struct {
     resOrder string // "alpha", "group", "favorites"
     lastColTitles []string
     columnsMode   string // "normal" or "wide"
+    objOrder      string // "name", "-name", "creation", "-creation"
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -126,6 +127,7 @@ func NewPanel(title string) *Panel {
         resOrder:         "favorites",
         tableMode:        table.ModeScroll,
         columnsMode:      "normal",
+        objOrder:         "name",
     }
 }
 
@@ -216,9 +218,16 @@ func (p *Panel) syncFromFolder() {
     // Build items aligned to rows and mark enterable where applicable
     // Detect special folders where rows represent file-like entries (e.g., configmap/secret keys)
     isKeysFolder := false
+    var parentNS, parentName string
+    var isSecret bool
     switch p.folder.(type) {
     case *nav.ConfigMapKeysFolder, *nav.SecretKeysFolder:
         isKeysFolder = true
+        if kf, ok := p.folder.(interface{ Parent() (schema.GroupVersionResource, string, string) }); ok {
+            gvr, ns, name := kf.Parent()
+            parentNS, parentName = ns, name
+            isSecret = (gvr.Resource == "secrets")
+        }
     }
     items := make([]Item, 0, len(cells)+1)
     tableRows := make([][]string, 0, len(cells)+1)
@@ -236,6 +245,9 @@ func (p *Panel) syncFromFolder() {
         typ := ItemTypeResource
         if isKeysFolder { typ = ItemTypeFile }
         it := Item{Name: name, Type: typ, Enterable: enter}
+        if isKeysFolder && name != "" {
+            it.Viewer = &viewpkg.ConfigKeyView{Namespace: parentNS, Name: parentName, Key: name, IsSecret: isSecret}
+        }
         // For group rows, strip leading slash in item.Name and set TypedGVR from row ID
         if strings.HasPrefix(name, "/") {
             if len(name) > 1 { it.Name = name[1:] }
@@ -291,6 +303,21 @@ func (p *Panel) SetColumnsMode(mode string) {
 
 // ColumnsMode returns the current columns mode label.
 func (p *Panel) ColumnsMode() string { return p.columnsMode }
+
+// SetObjectOrder updates object list ordering mode.
+func (p *Panel) SetObjectOrder(order string) {
+    switch strings.ToLower(order) {
+    case "name", "-name", "creation", "-creation":
+        p.objOrder = strings.ToLower(order)
+    default:
+        p.objOrder = "name"
+    }
+    if p.folder != nil {
+        p.RefreshFolder()
+    }
+}
+
+func (p *Panel) ObjectOrder() string { return p.objOrder }
 
 // SelectByRowID moves the selection to the row with the given ID if present.
 // It matches against the folder's row IDs and adjusts for the synthetic back row.

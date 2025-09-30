@@ -17,6 +17,7 @@ import (
     kccluster "github.com/sttts/kc/internal/cluster"
     navui "github.com/sttts/kc/internal/navigation"
     "github.com/sttts/kc/internal/overlay"
+    _ "github.com/sttts/kc/internal/ui/view"
     "github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
@@ -147,11 +148,11 @@ func (a *App) favSet() map[string]bool {
 }
 func (a *App) leftViewOptions() navui.ViewOptions {
     show, order := a.leftPanel.ResourceViewOptions()
-    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.leftPanel.ColumnsMode()}
+    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.leftPanel.ColumnsMode(), ObjectsOrder: a.leftPanel.ObjectOrder()}
 }
 func (a *App) rightViewOptions() navui.ViewOptions {
     show, order := a.rightPanel.ResourceViewOptions()
-    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.rightPanel.ColumnsMode()}
+    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.rightPanel.ColumnsMode(), ObjectsOrder: a.rightPanel.ObjectOrder()}
 }
 
 // Update handles messages and updates the application state
@@ -211,27 +212,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 if a.cfg == nil { a.cfg = appconfig.Default() }
                 a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
                 a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
-                // Persist table mode default
-                switch strings.ToLower(m.TableMode) {
-                case "fit":
-                    a.cfg.Panel.Table.Mode = appconfig.TableModeFit
-                default:
-                    a.cfg.Panel.Table.Mode = appconfig.TableModeScroll
-                }
-                // Persist columns mode default
-                if strings.EqualFold(m.Columns, "wide") { a.cfg.Resources.Columns = "wide" } else { a.cfg.Resources.Columns = "normal" }
                 _ = appconfig.Save(a.cfg)
             }
             if m.Accept {
                 // Apply to active panel only; do not persist
                 if a.activePanel == 0 {
                     a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
-                    a.leftPanel.SetTableMode(m.TableMode)
-                    a.leftPanel.SetColumnsMode(m.Columns)
                 } else {
                     a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
-                    a.rightPanel.SetTableMode(m.TableMode)
-                    a.rightPanel.SetColumnsMode(m.Columns)
                 }
                 // Refresh only the active panel's folder
                 if a.activePanel == 0 && a.leftNav != nil {
@@ -246,6 +234,30 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                     a.rightPanel.SetCurrentPath(a.rightNav.Path())
                     a.rightPanel.RefreshFolder()
                 }
+            }
+            if m.Close { a.modalManager.Hide() }
+            return a, nil
+        case ObjectOptionsChangedMsg:
+            if m.SaveDefault {
+                if a.cfg == nil { a.cfg = appconfig.Default() }
+                // Save table mode
+                switch strings.ToLower(m.TableMode) { case "fit": a.cfg.Panel.Table.Mode = appconfig.TableModeFit; default: a.cfg.Panel.Table.Mode = appconfig.TableModeScroll }
+                // Save columns mode to objects.columns
+                if strings.EqualFold(m.Columns, "wide") { a.cfg.Objects.Columns = "wide" } else { a.cfg.Objects.Columns = "normal" }
+                // Save objects order
+                a.cfg.Objects.Order = m.ObjectsOrder
+                _ = appconfig.Save(a.cfg)
+            }
+            if a.activePanel == 0 {
+                a.leftPanel.SetTableMode(m.TableMode)
+                a.leftPanel.SetColumnsMode(m.Columns)
+                a.leftPanel.SetObjectOrder(m.ObjectsOrder)
+                if a.leftNav != nil { if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }; a.leftPanel.RefreshFolder() }
+            } else {
+                a.rightPanel.SetTableMode(m.TableMode)
+                a.rightPanel.SetColumnsMode(m.Columns)
+                a.rightPanel.SetObjectOrder(m.ObjectsOrder)
+                if a.rightNav != nil { if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }; a.rightPanel.RefreshFolder() }
             }
             if m.Close { a.modalManager.Hide() }
             return a, nil
@@ -1057,26 +1069,41 @@ func (a *App) setupModals() {
 
 // Message handlers for function keys
 func (a *App) showResourceSelector() tea.Cmd {
-    // Build content from ACTIVE PANEL values
-    showNonEmpty, order := a.leftPanel.ResourceViewOptions()
-    mode := a.leftPanel.TableMode()
-    cols := a.leftPanel.ColumnsMode()
-    if a.activePanel == 1 { showNonEmpty, order = a.rightPanel.ResourceViewOptions(); mode = a.rightPanel.TableMode(); cols = a.rightPanel.ColumnsMode() }
-    content := NewResourcesOptionsModel(showNonEmpty, order)
-    if strings.EqualFold(mode, "fit") { content.modeIdx = 1 } else { content.modeIdx = 0 }
-    if strings.EqualFold(cols, "wide") { content.columnsIdx = 1 } else { content.columnsIdx = 0 }
-    // Configure as centered window overlay so main UI remains visible beneath
-    modal := a.modalManager.modals["resources_options"]
-    if modal == nil {
-        modal = NewModal("Resources", content)
-        a.modalManager.Register("resources_options", modal)
-    } else {
-        modal.SetContent(content)
+    // Depending on current view, open resources or objects options.
+    curPanel := a.leftPanel; if a.activePanel == 1 { curPanel = a.rightPanel }
+    // Heuristic: if folder is an object-list, open object options; else resources.
+    isObjects := false
+    switch curPanel.folder.(type) {
+    case *navui.NamespacedObjectsFolder, *navui.ClusterObjectsFolder:
+        isObjects = true
     }
-    // size: 50x6 fits two lines nicely
+    if isObjects {
+        mode := curPanel.TableMode()
+        cols := curPanel.ColumnsMode()
+        order := curPanel.ObjectOrder()
+        o := NewObjectOptionsModel(mode, cols, order)
+        // Prepare modal
+        modal := a.modalManager.modals["object_options"]
+        if modal == nil {
+            modal = NewModal("Objects", o)
+            a.modalManager.Register("object_options", modal)
+        } else {
+            modal.SetContent(o)
+        }
+        winW, winH := 50, 6
+        bg, _ := a.renderMainView()
+        modal.SetWindowed(winW, winH, bg)
+        modal.SetOnClose(func() tea.Cmd { return nil })
+        modal.SetDimensions(a.width, a.height)
+        a.modalManager.Show("object_options")
+        return nil
+    }
+    // Resources options
+    showNonEmpty, order := curPanel.ResourceViewOptions()
+    content := NewResourcesOptionsModel(showNonEmpty, order)
+    modal := a.modalManager.modals["resources_options"]
+    if modal == nil { modal = NewModal("Resources", content); a.modalManager.Register("resources_options", modal) } else { modal.SetContent(content) }
     winW, winH := 50, 6
-    // Snapshot the current main view once as background to avoid heavy
-    // re-rendering while the dialog is open.
     bg, _ := a.renderMainView()
     modal.SetWindowed(winW, winH, bg)
     modal.SetOnClose(func() tea.Cmd { return nil })
@@ -1265,11 +1292,16 @@ func (a *App) openYAMLForSelection() tea.Cmd {
 		if err != nil {
 			return nil
 		}
-		theme := "dracula"
-		if a.cfg != nil && a.cfg.Viewer.Theme != "" {
-			theme = a.cfg.Viewer.Theme
-		}
-        viewer := NewTextViewer(titleName, body, "yaml", "application/yaml", titleName, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
+        theme := "dracula"
+        if a.cfg != nil && a.cfg.Viewer.Theme != "" {
+            theme = a.cfg.Viewer.Theme
+        }
+        // Let the viewer decide how it prefers to be displayed; fallback to autodetect.
+        lang, mime, filename := "", "", titleName
+        if hp, ok := item.Viewer.(interface{ DisplayHints() (string, string, string) }); ok {
+            lang, mime, filename = hp.DisplayHints()
+        }
+        viewer := NewTextViewer(titleName, body, lang, mime, filename, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
         viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
         // Prefer breadcrumbs from parsed path when available
         title := path
@@ -1742,9 +1774,11 @@ func (a *App) initData() error {
         // Initialize table mode from config defaults
         a.leftPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
         a.rightPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
-        // Initialize columns mode from config defaults
-        a.leftPanel.SetColumnsMode(a.cfg.Resources.Columns)
-        a.rightPanel.SetColumnsMode(a.cfg.Resources.Columns)
+        // Initialize columns mode and objects order from config defaults
+        a.leftPanel.SetColumnsMode(a.cfg.Objects.Columns)
+        a.rightPanel.SetColumnsMode(a.cfg.Objects.Columns)
+        a.leftPanel.SetObjectOrder(a.cfg.Objects.Order)
+        a.rightPanel.SetObjectOrder(a.cfg.Objects.Order)
     }
     // Preview: Use folder-backed rendering starting at root (not contexts listing)
 	{

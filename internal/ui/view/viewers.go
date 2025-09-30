@@ -18,7 +18,14 @@ type Context interface {
 
 // ViewProvider renders a title and body for F3 viewing.
 type ViewProvider interface {
-	BuildView(ctx Context) (title string, body string, err error)
+    BuildView(ctx Context) (title string, body string, err error)
+}
+
+// DisplayHintsProvider is an optional capability that lets a viewer influence
+// how its content should be highlighted or labeled. Returning empty strings
+// means "autodetect".
+type DisplayHintsProvider interface {
+    DisplayHints() (lang string, mime string, filename string)
 }
 
 // KubeObjectView shows an entire object as YAML.
@@ -44,6 +51,10 @@ func (v *KubeObjectView) BuildView(a Context) (string, string, error) {
 	unstructured.RemoveNestedField(obj, "metadata", "managedFields")
 	yb, _ := yaml.Marshal(obj)
 	return v.Name, string(yb), nil
+}
+
+func (v *KubeObjectView) DisplayHints() (string, string, string) {
+    return "yaml", "application/yaml", v.Name + ".yaml"
 }
 
 // ConfigKeyView shows only a single key value; secrets decoded when textual.
@@ -88,6 +99,11 @@ func (v *ConfigKeyView) BuildView(a Context) (string, string, error) {
 	return v.Name + ":" + v.Key, "", nil
 }
 
+func (v *ConfigKeyView) DisplayHints() (string, string, string) {
+    // Autodetect for config/secret values; provide a filename hint with key.
+    return "", "", v.Name + ":" + v.Key
+}
+
 // PodContainerView shows the YAML spec for a single container within a pod.
 type PodContainerView struct {
 	Namespace string
@@ -109,6 +125,10 @@ func (v *PodContainerView) BuildView(a Context) (string, string, error) {
 		return v.Pod + "/" + v.Container, string(yb), nil
 	}
 	return v.Pod + "/" + v.Container, "", nil
+}
+
+func (v *PodContainerView) DisplayHints() (string, string, string) {
+    return "yaml", "application/yaml", v.Pod + "_" + v.Container + ".yaml"
 }
 
 func findContainer(pod map[string]interface{}, name string) map[string]interface{} {

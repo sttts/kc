@@ -123,6 +123,15 @@ resources:
   order: alpha
   # Favorites used when order=favorites. Plural resource names, lower-case.
   favorites: [pods, services, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, configmaps, secrets, ingresses, networkpolicies, persistentvolumeclaims]
+ 
+objects:
+  # Object list ordering:
+  # - name | -name | creation | -creation
+  order: name
+  # Columns mode for server-side Tables:
+  # - normal: show priority 0 columns (kubectl default)
+  # - wide: show all server-provided columns (like `kubectl get -o wide`)
+  columns: normal
   # Columns mode for server-side Tables:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)

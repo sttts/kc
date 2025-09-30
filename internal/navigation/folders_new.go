@@ -14,6 +14,8 @@ import (
     "fmt"
     "strings"
     "sort"
+    "time"
+    utilduration "k8s.io/apimachinery/pkg/util/duration"
 )
 
 // BaseFolder provides lazy population scaffolding for concrete folders.
@@ -393,24 +395,39 @@ func (f *NamespacedObjectsFolder) populate() {
     if rl, err := f.deps.Cl.ListRowsByGVR(f.deps.Ctx, f.gvr, f.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
         // Compute visible columns based on priority
         vis := make([]int, 0, len(rl.Columns))
-        for i, c := range rl.Columns {
-            if opts.Columns == "wide" || c.Priority == 0 { vis = append(vis, i) }
-        }
-        cols := make([]table.Column, len(vis))
+        for i, c := range rl.Columns { if opts.Columns == "wide" || c.Priority == 0 { vis = append(vis, i) } }
+        cols := make([]table.Column, len(vis)+1)
         for i := range vis { c := rl.Columns[vis[i]]; cols[i] = table.Column{Title: c.Name, Width: 0} }
+        cols[len(cols)-1] = table.Column{Title: "Age"}
         f.cols = cols
+        // Determine order
+        idxs := make([]int, len(rl.Items))
+        for i := range idxs { idxs[i] = i }
+        switch strings.ToLower(opts.ObjectsOrder) {
+        case "-name":
+            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].Name > rl.Items[idxs[j]].Name })
+        case "creation":
+            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].ObjectMeta.CreationTimestamp.Time.Before(rl.Items[idxs[j]].ObjectMeta.CreationTimestamp.Time) })
+        case "-creation":
+            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].ObjectMeta.CreationTimestamp.Time.After(rl.Items[idxs[j]].ObjectMeta.CreationTimestamp.Time) })
+        default:
+            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].Name < rl.Items[idxs[j]].Name })
+        }
         rows := make([]table.Row, 0, len(rl.Items))
         // Resolve child ctor and kind for details
         ctor, hasChild := childFor(f.gvr)
         kind := ""; if k, e := f.deps.Cl.RESTMapper().KindFor(f.gvr); e == nil { kind = k.Kind }
         gvStr := f.gvr.GroupVersion().String()
-        for i := range rl.Items {
-            rr := &rl.Items[i]
+        for _, ii := range idxs {
+            rr := &rl.Items[ii]
             nm := rr.Name
             if nm == "" && len(rr.Cells) > 0 { if s, ok := rr.Cells[0].(string); ok { nm = s } }
-            if nm == "" { nm = fmt.Sprintf("row-%d", i) }
-            cells := make([]string, len(vis))
+            if nm == "" { nm = fmt.Sprintf("row-%d", ii) }
+            cells := make([]string, len(vis)+1)
             for j := range vis { idx := vis[j]; if idx < len(rr.Cells) { cells[j] = fmt.Sprint(rr.Cells[idx]) } }
+            var age string
+            if !rr.ObjectMeta.CreationTimestamp.IsZero() { age = utilduration.HumanDuration(time.Since(rr.ObjectMeta.CreationTimestamp.Time)) }
+            cells[len(cells)-1] = age
             base := append(append([]string(nil), f.path...), nm)
             if hasChild {
                 ns := f.namespace; name := nm
@@ -461,20 +478,36 @@ func (f *ClusterObjectsFolder) populate() {
     if rl, err := f.deps.Cl.ListRowsByGVR(f.deps.Ctx, f.gvr, ""); err == nil && rl != nil && len(rl.Items) > 0 {
         vis := make([]int, 0, len(rl.Columns))
         for i, c := range rl.Columns { if opts.Columns == "wide" || c.Priority == 0 { vis = append(vis, i) } }
-        cols := make([]table.Column, len(vis))
+        cols := make([]table.Column, len(vis)+1)
         for i := range vis { c := rl.Columns[vis[i]]; cols[i] = table.Column{Title: c.Name, Width: 0} }
+        cols[len(cols)-1] = table.Column{Title: "Age"}
         f.cols = cols
+        idxs := make([]int, len(rl.Items))
+        for i := range idxs { idxs[i] = i }
+        switch strings.ToLower(opts.ObjectsOrder) {
+        case "-name":
+            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].Name > rl.Items[idxs[j]].Name })
+        case "creation":
+            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].ObjectMeta.CreationTimestamp.Time.Before(rl.Items[idxs[j]].ObjectMeta.CreationTimestamp.Time) })
+        case "-creation":
+            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].ObjectMeta.CreationTimestamp.Time.After(rl.Items[idxs[j]].ObjectMeta.CreationTimestamp.Time) })
+        default:
+            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].Name < rl.Items[idxs[j]].Name })
+        }
         rows := make([]table.Row, 0, len(rl.Items))
         ctor, hasChild := childFor(f.gvr)
         kind := ""; if k, e := f.deps.Cl.RESTMapper().KindFor(f.gvr); e == nil { kind = k.Kind }
         gvStr := f.gvr.GroupVersion().String()
-        for i := range rl.Items {
-            rr := &rl.Items[i]
+        for _, ii := range idxs {
+            rr := &rl.Items[ii]
             nm := rr.Name
             if nm == "" && len(rr.Cells) > 0 { if s, ok := rr.Cells[0].(string); ok { nm = s } }
-            if nm == "" { nm = fmt.Sprintf("row-%d", i) }
-            cells := make([]string, len(vis))
+            if nm == "" { nm = fmt.Sprintf("row-%d", ii) }
+            cells := make([]string, len(vis)+1)
             for j := range vis { idx := vis[j]; if idx < len(rr.Cells) { cells[j] = fmt.Sprint(rr.Cells[idx]) } }
+            var age string
+            if !rr.ObjectMeta.CreationTimestamp.IsZero() { age = utilduration.HumanDuration(time.Since(rr.ObjectMeta.CreationTimestamp.Time)) }
+            cells[len(cells)-1] = age
             base := append(append([]string(nil), f.path...), nm)
             if hasChild {
                 name := nm

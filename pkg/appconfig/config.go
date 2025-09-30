@@ -66,6 +66,9 @@ type ResourcesViewConfig struct {
     // Columns controls which server-side table columns are shown: normal (priority 0) or wide (all).
     // Values: "normal" | "wide"
     Columns string `json:"columns"`
+    // ObjectsOrder controls ordering within object lists:
+    // name, -name, creation, -creation
+    ObjectsOrder string `json:"objectsOrder"`
 }
 
 type Config struct {
@@ -74,6 +77,15 @@ type Config struct {
     Input  InputConfig  `json:"input"`
     Kubernetes KubernetesConfig `json:"kubernetes"`
     Resources ResourcesViewConfig `json:"resources"`
+    Objects   ObjectsConfig       `json:"objects"`
+}
+
+// ObjectsConfig controls object-list specific options.
+type ObjectsConfig struct {
+    // Order controls ordering within object lists: name, -name, creation, -creation
+    Order string `json:"order"`
+    // Columns controls which server-side table columns are shown: normal (priority 0) or wide (all)
+    Columns string `json:"columns"`
 }
 
 // TableMode selects how tables render horizontally.
@@ -107,6 +119,7 @@ func Default() *Config {
                 "ingresses", "networkpolicies", "persistentvolumeclaims",
             },
         },
+        Objects: ObjectsConfig{Order: "name", Columns: "normal"},
     }
 }
 
@@ -156,6 +169,11 @@ func Load() (*Config, error) {
         }
         if strings.ToLower(cfg.Resources.Columns) != "wide" {
             cfg.Resources.Columns = "normal"
+        }
+        switch strings.ToLower(cfg.Objects.Order) {
+        case "name", "-name", "creation", "-creation":
+        default:
+            cfg.Objects.Order = "name"
         }
         return cfg, nil
     }
@@ -234,6 +252,11 @@ func Load() (*Config, error) {
     if strings.ToLower(cfg.Resources.Columns) != "wide" {
         cfg.Resources.Columns = "normal"
     }
+    switch strings.ToLower(cfg.Objects.Order) {
+    case "name", "-name", "creation", "-creation":
+    default:
+        cfg.Objects.Order = "name"
+    }
     return cfg, nil
 }
 
@@ -257,6 +280,11 @@ func Save(cfg *Config) error {
     }
     if strings.ToLower(out.Resources.Columns) != "wide" {
         out.Resources.Columns = "normal"
+    }
+    switch strings.ToLower(out.Objects.Order) {
+    case "name", "-name", "creation", "-creation":
+    default:
+        out.Objects.Order = "name"
     }
     data, err := yaml.Marshal(&out)
 	if err != nil {
