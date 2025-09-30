@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "[pre-commit] go build ./..."
+go build ./...
+
+# Default: run full test suite. Set PRECOMMIT_FAST=1 to only run unit tests.
+if [[ "${PRECOMMIT_FAST:-}" == "1" ]]; then
+  echo "[pre-commit] PRECOMMIT_FAST=1 → running unit test subset"
+  pkgs=(
+    ./internal/table \
+    ./internal/ui \
+    ./internal/tablecache \
+    ./pkg/appconfig \
+    ./pkg/handlers \
+    ./pkg/kubeconfig \
+    ./pkg/navigation
+  )
+  echo "[pre-commit] go test -v ${pkgs[*]}"
+  go test -v "${pkgs[@]}"
+else
+  echo "[pre-commit] go test -v ./..."
+  go test -v ./...
+fi
+
+echo "[pre-commit] Success"
+
