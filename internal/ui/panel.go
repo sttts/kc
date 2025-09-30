@@ -59,6 +59,7 @@ type Panel struct {
     // Per-panel resource group view options
     resShowNonEmpty bool
     resOrder string // "alpha", "group", "favorites"
+    lastColTitles []string
 }
 
 // PositionInfo stores the cursor position and scroll state for a path
@@ -165,6 +166,7 @@ func (p *Panel) SetFolder(f nav.Folder, hasBack bool) {
     // Initialize or refresh BigTable from folder columns and data when enabled
     if p.useFolder && p.folder != nil {
         cols := p.folder.Columns()
+        p.lastColTitles = nav.ColumnsToTitles(cols)
         bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
         // Apply panel-aligned styles
         st := table.DefaultStyles()
@@ -284,8 +286,35 @@ func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next nav.Fol
 // Used by periodic ticks to reflect informer-driven changes with a max 1s delay.
 func (p *Panel) RefreshFolder() {
     if p.useFolder && p.folder != nil && p.bt != nil {
-        p.bt.SetList(p.folder)
-        p.bt.Refresh()
+        // If folder's visible columns changed (e.g., server-side Table columns),
+        // rebuild the BigTable with the new headers.
+        newCols := p.folder.Columns()
+        // Compare titles only (width hints are advisory)
+        titles := nav.ColumnsToTitles(newCols)
+        same := len(titles) == len(p.lastColTitles)
+        if same {
+            for i := range titles { if titles[i] != p.lastColTitles[i] { same = false; break } }
+        }
+        if !same {
+            bt := table.NewBigTable(newCols, p.folder, max(1, p.width), max(1, p.height))
+            p.lastColTitles = titles
+            st := table.DefaultStyles()
+            st.Header = PanelTableHeaderStyle
+            st.Cell = PanelItemStyle
+            st.Selector = PanelItemSelectedStyle
+            st.Marked = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Bold(true)
+            st.Border = lipgloss.NewStyle().
+                Foreground(lipgloss.White).
+                Background(lipgloss.Blue).
+                BorderForeground(lipgloss.White).
+                BorderBackground(lipgloss.Blue)
+            bt.SetStyles(st)
+            bt.BorderVertical(true)
+            p.bt = &bt
+        } else {
+            p.bt.SetList(p.folder)
+            p.bt.Refresh()
+        }
     }
 }
 
@@ -577,6 +606,7 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
         // Ensure BigTable exists and is sized
         if p.bt == nil {
             cols := p.folder.Columns()
+            p.lastColTitles = nav.ColumnsToTitles(cols)
             bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
             st := table.DefaultStyles()
             st.Header = PanelTableHeaderStyle

@@ -59,6 +59,13 @@ type Refreshable interface {
     Refresh()
 }
 
+// DirtyAware is implemented by folders that can report if their content is out
+// of date (e.g., due to informer events) and should be repopulated on next
+// access.
+type DirtyAware interface {
+    IsDirty() bool
+}
+
 // KeyFolder is implemented by folders that list key-value entries under a
 // parent Kubernetes object (e.g., ConfigMap/Secret data). It returns the
 // parent object's coordinates.
