@@ -56,10 +56,15 @@ type Row struct {
 
 `RowList` mirrors Kubernetes list conventions, embeds `metav1.TypeMeta` + `metav1.ListMeta`, and stores items as `[]Row`. The list
 metadata is copied straight from the table response so Continue tokens and counts behave normally.
+Rows and RowLists carry the target resource identity through a `TableTarget` interface. Callers set the
+target `GroupVersionKind` (e.g., via `tableclient.NewRowList(gvk)`) before invoking `List`/`Watch`, letting the
+wrapper resolve the real REST mapping while still returning table-shaped objects.
+
 
 ## Request path
 
-1. Determine the GVR from the requested object/list type using the RESTMapper already owned by the manager.
+1. Retrieve the target GVK from the `TableTarget` list (set by the caller) and resolve the matching GVR via the
+   shared RESTMapper owned by the manager.
 2. Use a dedicated REST client (`rest.Interface`) built from the manager’s `rest.Config`, but override the `Accept` header to
    prefer table formats and set `includeObject=Object` so rows embed the original object.
 3. Send list/watch requests through that REST client instead of the default cached reader; decode into `*metav1.Table`.
