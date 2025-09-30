@@ -30,6 +30,7 @@ func (a *App) ShowToast(text string, ttl time.Duration) tea.Cmd {
 func (a *App) withBusy(label string, delay time.Duration, work func() tea.Msg) tea.Cmd {
     tok := a.busyToken + 1
     a.busyToken = tok
+    a.busyLabel = label
     show := tea.Tick(delay, func(time.Time) tea.Msg { return BusyShowMsg{token: tok} })
     run := func() tea.Msg { return busyDoneMsg{token: tok, msg: work()} }
     return tea.Batch(show, run)

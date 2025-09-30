@@ -14,8 +14,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
-	kccluster "github.com/sttts/kc/internal/cluster"
+    kccluster "github.com/sttts/kc/internal/cluster"
     navui "github.com/sttts/kc/internal/navigation"
+    "github.com/sttts/kc/internal/overlay"
     "github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
@@ -78,6 +79,9 @@ type App struct {
     toastActive bool
     toastText   string
     toastUntil  time.Time
+    // Logger that emits toasts on errors with rate limiting
+    toastLogger *ToastLogger
+    pendingCmds []tea.Cmd
 }
 
 // Invariant: a.cfg is always non-nil. NewApp initializes it with defaults and
@@ -98,6 +102,7 @@ func NewApp() *App {
         // Invariant: cfg is always non-nil; initialize with defaults
         cfg:          appconfig.Default(),
     }
+    app.toastLogger = NewToastLogger(app, 2*time.Second)
 
 	// Register modals
 	app.setupModals()
@@ -113,17 +118,23 @@ func (a *App) Init() tea.Cmd {
 		cfg = appconfig.Default()
 	}
 	a.cfg = cfg
-	return tea.Batch(
-		a.leftPanel.Init(),
-		a.rightPanel.Init(),
-		a.terminal.Init(),
-		func() tea.Msg {
-			// Focus the terminal initially since it's the main input area
-			a.terminal.Focus()
-			return nil
-		},
-		tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} }),
-	)
+    return tea.Batch(
+        a.leftPanel.Init(),
+        a.rightPanel.Init(),
+        a.terminal.Init(),
+        func() tea.Msg {
+            // Focus the terminal initially since it's the main input area
+            a.terminal.Focus()
+            return nil
+        },
+        tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} }),
+    )
+}
+
+// enqueueCmd appends a command to be executed on the next Update cycle.
+func (a *App) enqueueCmd(cmd tea.Cmd) {
+    if cmd == nil { return }
+    a.pendingCmds = append(a.pendingCmds, cmd)
 }
 
 // viewOptions returns a snapshot of current resource view options for folders.
@@ -145,7 +156,11 @@ func (a *App) rightViewOptions() navui.ViewOptions {
 
 // Update handles messages and updates the application state
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
+    var cmds []tea.Cmd
+    if len(a.pendingCmds) > 0 {
+        cmds = append(cmds, a.pendingCmds...)
+        a.pendingCmds = nil
+    }
 
 	// Always adapt size
 	switch msg := msg.(type) {
@@ -259,7 +274,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         if msg.token == a.busyToken { a.busyActive = false }
         return a, nil
     case busyDoneMsg:
-        if msg.token == a.busyToken { a.busyActive = false }
+        if msg.token == a.busyToken { a.busyActive = false; a.busyToken++ }
         // Re-dispatch the original message for normal handling
         return a, func() tea.Msg { return msg.msg }
     case showToastMsg:
@@ -726,6 +741,14 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
         functionKeys,
     )
 
+    // Busy overlay: show a small 2x2 ASCII animation centered over the main view
+    if a.busyActive {
+        ov := a.renderBusyOverlay()
+        if ov != "" {
+            combinedView = overlay.Composite(ov, combinedView, overlay.Center, overlay.Center, 0, 0)
+        }
+    }
+
 	// Adjust cursor position for the combined view
 	// The cursor needs to be offset by the height of panels
 	if terminalCursor != nil {
@@ -739,6 +762,21 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	}
 
 	return combinedView, nil
+}
+
+// renderBusyOverlay returns a small 2x2 ASCII animation based on busyFrame.
+func (a *App) renderBusyOverlay() string {
+    // 2x2 ASCII frames: cross and bar alternation
+    frames := []string{
+        "\\/\n/\\", // star
+        "||\n||",
+        "/\\\n\\/",
+        "--\n--",
+    }
+    f := frames[a.busyFrame%len(frames)]
+    // Add a faint box/spacing around for visibility (optional)
+    st := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White).Background(lipgloss.Color("238")).Padding(0, 1)
+    return st.Render(f)
 }
 
 // renderTerminalArea renders the 2-line terminal area in main view
@@ -866,14 +904,6 @@ func (a *App) renderFunctionKeys() string {
 
     // Join keys
     joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
-
-    // Optional spinner at far left
-    if a.busyActive {
-        frames := []rune{'⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'}
-        ch := frames[a.busyFrame%len(frames)]
-        spinner := FunctionKeyDescriptionStyle.Render(string(ch)+" "+a.busyLabel) + " "
-        joined = spinner + joined
-    }
 
 	// Always add "Kubernetes Commander" right-aligned
 	title := " Kubernetes Commander "
@@ -1640,9 +1670,11 @@ func Run() error {
 func (a *App) initData() error {
     // Kubeconfig manager and discovery
 	a.kubeMgr = kubeconfig.NewManager()
-	if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
-		return fmt.Errorf("discover kubeconfigs: %w", err)
-	}
+    if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
+        // Log and show toast
+        if a.toastLogger != nil { a.enqueueCmd(a.toastLogger.Errorf("Kubeconfig discovery failed: %v", err)) }
+        return fmt.Errorf("discover kubeconfigs: %w", err)
+    }
 	// Select current context (prefer env KUBECONFIG first path)
 	a.currentCtx = a.selectCurrentContext()
 	if a.currentCtx == nil {
@@ -1659,12 +1691,12 @@ func (a *App) initData() error {
 	}
 	a.cl = cl
     // Discovery-backed catalog (for panel displays)
-	if infos, err := a.cl.GetResourceInfos(); err == nil {
-		a.leftPanel.SetResourceCatalog(infos)
-		a.rightPanel.SetResourceCatalog(infos)
-	} else {
-		fmt.Printf("Warning: discovery resources: %v\n", err)
-	}
+    if infos, err := a.cl.GetResourceInfos(); err == nil {
+        a.leftPanel.SetResourceCatalog(infos)
+        a.rightPanel.SetResourceCatalog(infos)
+    } else {
+        if a.toastLogger != nil { a.enqueueCmd(a.toastLogger.Errorf("Discovery resources failed: %v", err)) }
+    }
 	// Legacy generic data sources removed; folders provide data directly
 	a.leftPanel.SetViewConfig(a.viewConfig)
 	a.rightPanel.SetViewConfig(a.viewConfig)
@@ -1754,14 +1786,22 @@ func (a *App) goToNamespace(ns string) {
     if a.namespaceExists(ns) {
         // Left panel: remember selection when entering
         a.leftNav.SetSelectionID("namespaces")
-        a.leftNav.Push(navui.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
+        leftNS := navui.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"})
+        a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = leftNS.Len(); return nil }))
+        a.leftNav.Push(leftNS)
         a.leftNav.SetSelectionID(ns)
-        a.leftNav.Push(navui.NewNamespacedGroupsFolder(depsLeft, ns, []string{"namespaces", ns}))
+        leftGroups := navui.NewNamespacedGroupsFolder(depsLeft, ns, []string{"namespaces", ns})
+        a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = leftGroups.Len(); return nil }))
+        a.leftNav.Push(leftGroups)
         // Right panel: same
         a.rightNav.SetSelectionID("namespaces")
-        a.rightNav.Push(navui.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"}))
+        rightNS := navui.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"})
+        a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = rightNS.Len(); return nil }))
+        a.rightNav.Push(rightNS)
         a.rightNav.SetSelectionID(ns)
-        a.rightNav.Push(navui.NewNamespacedGroupsFolder(depsRight, ns, []string{"namespaces", ns}))
+        rightGroups := navui.NewNamespacedGroupsFolder(depsRight, ns, []string{"namespaces", ns})
+        a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = rightGroups.Len(); return nil }))
+        a.rightNav.Push(rightGroups)
     }
     curL := a.leftNav.Current(); hasBackL := a.leftNav.HasBack()
     curR := a.rightNav.Current(); hasBackR := a.rightNav.HasBack()
@@ -1823,6 +1863,13 @@ func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
     if back {
         nav.Back()
     } else if next != nil {
+        // Pre-warm the next folder in background to trigger informer/lister start.
+        // This shows a spinner if it takes longer than the delay and avoids UI freeze.
+        if a.activePanel == 0 {
+            a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
+        } else {
+            a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
+        }
         nav.SetSelectionID(selID)
         nav.Push(next)
     }
