@@ -1026,21 +1026,28 @@ func (p *Panel) renderFooter() string {
 
 // Navigation methods
 func (p *Panel) moveUp() {
-	if p.selected > 0 {
-		p.selected--
-		p.adjustScroll()
-		// Save position after moving
-		p.saveCurrentPosition()
-	}
+    if p.useFolder && p.folder != nil && p.bt != nil {
+        if p.selected > 0 { p.selected-- }
+        rows := p.folder.Lines(0, p.folder.Len())
+        if p.selected >= 0 && p.selected < len(rows) {
+            if id, _, _, ok := rows[p.selected].Columns(); ok { p.SelectByRowID(id) }
+        }
+        p.saveCurrentPosition(); return
+    }
+    if p.selected > 0 { p.selected--; p.adjustScroll(); p.saveCurrentPosition() }
 }
 
 func (p *Panel) moveDown() {
-	if p.selected < len(p.items)-1 {
-		p.selected++
-		p.adjustScroll()
-		// Save position after moving
-		p.saveCurrentPosition()
-	}
+    if p.useFolder && p.folder != nil && p.bt != nil {
+        max := p.folder.Len()-1
+        if p.selected < max { p.selected++ }
+        rows := p.folder.Lines(0, p.folder.Len())
+        if p.selected >= 0 && p.selected < len(rows) {
+            if id, _, _, ok := rows[p.selected].Columns(); ok { p.SelectByRowID(id) }
+        }
+        p.saveCurrentPosition(); return
+    }
+    if p.selected < len(p.items)-1 { p.selected++; p.adjustScroll(); p.saveCurrentPosition() }
 }
 
 func (p *Panel) adjustScroll() {
@@ -1646,9 +1653,9 @@ func (p *Panel) GetCurrentItem() *Item {
 
 // Navigation methods
 func (p *Panel) moveToTop() {
-	p.selected = 0
-	p.scrollTop = 0
-	p.saveCurrentPosition()
+    p.selected = 0
+    p.scrollTop = 0
+    p.saveCurrentPosition()
 }
 
 func (p *Panel) moveToBottom() {

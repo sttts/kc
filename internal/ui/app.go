@@ -62,6 +62,8 @@ type App struct {
     lastClickTime time.Time
     lastClickPanel int
     lastClickRowID string
+    // Suppress forwarding of mouse to terminal immediately after toggling fullscreen
+    suppressMouseUntil time.Time
 }
 
 // Invariant: a.cfg is always non-nil. NewApp initializes it with defaults and
@@ -300,17 +302,39 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		// Mouse and other messages
         if mm, ok := msg.(tea.MouseMsg); ok {
-            // In fullscreen terminal mode, let terminal handle mouse
+            // In fullscreen terminal mode, intercept clicks on the toggle message
             if a.showTerminal {
+                // Never forward mouse events that occur on the bottom toggle line
+                m := mm.Mouse()
+                if m.Y == a.height-1 {
+                    if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
+                        // Toggle back to panels on release
+                        a.showTerminal = false
+                        a.terminal.SetShowPanels(true)
+                    }
+                    // Swallow all mouse events on the toggle line
+                    return a, nil
+                }
+                // Forward all other mouse events to the terminal in fullscreen
                 model, cmd := a.terminal.Update(mm)
                 a.terminal = model.(*Terminal)
                 cmds = append(cmds, cmd)
                 return a, tea.Batch(cmds...)
             }
-            // Panel mode: only act on specific mouse messages
+            // Panel mode: only act on specific mouse messages; do NOT forward
+            // any mouse events to the terminal while panels are visible to
+            // avoid escape sequences leaking into the 2‑line terminal view.
             switch e := mm.(type) {
             case tea.MouseWheelMsg:
-                if a.activePanel == 0 { a.leftPanel.moveUp() } else { a.rightPanel.moveDown() }
+                m := e.Mouse()
+                target := a.leftPanel
+                if a.activePanel == 1 { target = a.rightPanel }
+                switch m.Button {
+                case tea.MouseWheelUp:
+                    target.moveUp()
+                case tea.MouseWheelDown:
+                    target.moveDown()
+                }
                 return a, tea.Batch(cmds...)
             case tea.MouseClickMsg:
                 m := e.Mouse()
@@ -324,7 +348,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                     if contentY < 0 { contentY = 0 }
                     target := a.leftPanel
                     if a.activePanel == 1 { target = a.rightPanel }
-                    // Select row under cursor
+                    // Right-click: open context menu (future wiring)
+                    if m.Button == tea.MouseRight {
+                        return a, a.showContextMenu()
+                    }
+                    // Left-click: select row under cursor
                     var clickedID string
                     if target.useFolder && target.folder != nil && target.bt != nil {
                         if id, ok := target.bt.VisibleRowID(contentY); ok {
@@ -360,11 +388,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                     }
                     return a, tea.Batch(cmds...)
                 }
-                // Function key bar
+                // Ignore click on function key bar; act on release instead (below)
+                if y == a.height-1 { return a, tea.Batch(cmds...) }
+                return a, tea.Batch(cmds...)
+            case tea.MouseReleaseMsg:
+                m := e.Mouse()
+                x, y := m.X, m.Y
+                // Function key bar (act on release only)
                 if y == a.height-1 {
                     if cmd := a.handleFunctionKeyClick(x); cmd != nil { return a, cmd }
                     return a, tea.Batch(cmds...)
                 }
+                // Swallow click messages not on bars/panels
+                return a, tea.Batch(cmds...)
+            default:
+                // Mouse motion/release and any other mouse-related events are
+                // swallowed in panel mode.
+                return a, tea.Batch(cmds...)
             }
         }
 		// Pass other messages to terminal (e.g., process exit)
@@ -557,26 +597,37 @@ func (a *App) renderTerminalArea() (string, *tea.Cursor) {
 
 // renderTerminalView renders the full-screen terminal view
 func (a *App) renderTerminalView() (string, *tea.Cursor) {
-	// Get terminal view
-	terminalView, terminalCursor := a.terminal.View()
+    // Get terminal view
+    terminalView, terminalCursor := a.terminal.View()
 
-	// Add toggle message
-	toggleMsg := a.renderToggleMessage()
+    // Compose with a one-line toggle message at the bottom. To ensure it's visible,
+    // clamp the terminal content to a.height-1 lines.
+    toggleMsg := a.renderToggleMessage()
+    lines := strings.Split(terminalView, "\n")
+    maxTerm := a.height - 1
+    if maxTerm < 1 { maxTerm = 1 }
+    if len(lines) > maxTerm {
+        lines = lines[:maxTerm]
+    } else if len(lines) < maxTerm {
+        // pad with empty lines to keep layout stable
+        pad := make([]string, maxTerm-len(lines))
+        lines = append(lines, pad...)
+    }
+    clamped := strings.Join(lines, "\n")
+    combinedView := lipgloss.JoinVertical(lipgloss.Left, clamped, toggleMsg)
 
-	// Combine terminal and toggle message
-	combinedView := lipgloss.JoinVertical(
-		lipgloss.Left,
-		terminalView,
-		toggleMsg,
-	)
-
-	// Adjust cursor position for the combined view
-	if terminalCursor != nil {
-		// Cursor position doesn't need adjustment since toggle message is below terminal
-		return combinedView, terminalCursor
-	}
-
-	return combinedView, nil
+    // Adjust cursor position so it never overlaps the toggle message
+    if terminalCursor != nil {
+        cy := terminalCursor.Y
+        if cy >= maxTerm { cy = maxTerm - 1 }
+        if cy < 0 { cy = 0 }
+        adjusted := tea.NewCursor(terminalCursor.X, cy)
+        adjusted.Blink = terminalCursor.Blink
+        adjusted.Color = terminalCursor.Color
+        adjusted.Shape = terminalCursor.Shape
+        return combinedView, adjusted
+    }
+    return combinedView, nil
 }
 
 // renderFunctionKeys renders the function key bar
@@ -679,7 +730,11 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
     var keys []struct{ label string; enabled bool; action func() tea.Cmd }
     if a.showTerminal {
         keys = []struct{ label string; enabled bool; action func() tea.Cmd }{
-            {label: FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels"), enabled: true, action: func() tea.Cmd { a.showTerminal = false; return nil }},
+            {label: FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels"), enabled: true, action: func() tea.Cmd {
+                a.showTerminal = false
+                a.terminal.SetShowPanels(true)
+                return nil
+            }},
         }
     } else {
         p := a.leftPanel
@@ -712,7 +767,15 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
             {makeLbl("F8", "Delete", canDelete), canDelete, a.deleteResource},
             {FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"), true, a.showContextMenu},
             {FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
-            {FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd { a.showTerminal = true; a.terminal.Focus(); return nil }},
+            {FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
+                a.showTerminal = true
+                a.terminal.SetShowPanels(false)
+                a.terminal.Focus()
+                // Suppress trailing mouse events from this click to avoid
+                // sending them to the PTY immediately after toggling.
+                a.suppressMouseUntil = time.Now().Add(150 * time.Millisecond)
+                return nil
+            }},
         }
     }
     // Map x to index by accumulating rendered widths
