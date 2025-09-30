@@ -80,6 +80,10 @@ Notes:
 - `Path()` is the canonical breadcrumb path for this row (e.g., ["namespaces","ns1","pods","web-0"]). Panels/viewers render it with "/"+strings.Join(path, "/").
 - Row styling is set per-cell via the `styles` returned from `Columns()`. Default: make all cells green here; selection/other modes can override.
 - `ObjectItem` provides precise identity via accessors instead of brittle paths.
+ - Details semantics:
+   - Resource groups (pods/configmaps/…): show "<resource> (<group>/<version>)" or just "<version>" for core.
+  - Object rows: show "<ns>/<name> (Kind <group>/<version>)" when the group is set, otherwise "<ns>/<name> (Kind <version>)" for core; for cluster-scoped, drop the namespace prefix. Kind resolves via RESTMapper for the list GVR. Implementation uses `gvr.GroupVersion().String()` and `types.NamespacedName.String()`.
+   - Panels prefer `Item.Details()` for the footer when available; otherwise fall back to the item’s `TypedGVR`.
 
 ### Panel (internal/ui)
 

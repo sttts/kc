@@ -8,6 +8,7 @@ import (
     "k8s.io/apimachinery/pkg/runtime"
     "k8s.io/apimachinery/pkg/runtime/schema"
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    types "k8s.io/apimachinery/pkg/types"
     kcache "k8s.io/client-go/tools/cache"
     "sync"
     "fmt"
@@ -115,7 +116,11 @@ func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, ns s
     return f
 }
 func (f *NamespacedObjectsFolder) Title() string { return f.gvr.Resource }
-func (f *NamespacedObjectsFolder) Key() string   { return depsKey(f.deps, "namespaces/"+f.namespace+"/"+f.gvr.Resource) }
+func (f *NamespacedObjectsFolder) Key() string {
+    // Use full GVR to avoid collisions between same resource names in different groups/versions
+    gv := f.gvr.GroupVersion().String()
+    return depsKey(f.deps, "namespaces/"+f.namespace+"/"+gv+"/"+f.gvr.Resource)
+}
 
 // ClusterObjectsFolder lists cluster-scoped objects for a GVR.
 type ClusterObjectsFolder struct{ BaseFolder }
@@ -125,7 +130,11 @@ func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource, basePat
     return f
 }
 func (f *ClusterObjectsFolder) Title() string { return f.gvr.Resource }
-func (f *ClusterObjectsFolder) Key() string   { return depsKey(f.deps, f.gvr.Resource) }
+func (f *ClusterObjectsFolder) Key() string {
+    // Use full GVR for stable uniqueness across groups/versions
+    gv := f.gvr.GroupVersion().String()
+    return depsKey(f.deps, gv+"/"+f.gvr.Resource)
+}
 
 // PodContainersFolder lists containers + initContainers for a pod.
 type PodContainersFolder struct{ BaseFolder; ns, pod string }
@@ -322,13 +331,28 @@ func (f *NamespacedObjectsFolder) populate() {
     for i := range lst.Items { names = append(names, lst.Items[i].GetName()) }
     sort.Strings(names)
     rows := make([]table.Row, 0, len(names))
+    // Resolve Kind once for details
+    kind := ""
+    if k, err := f.deps.Cl.RESTMapper().KindFor(f.gvr); err == nil { kind = k.Kind }
+    gvStr := f.gvr.GroupVersion().String()
     for _, nm := range names {
         if ctor, ok := childFor(f.gvr); ok {
             ns := f.namespace; name := nm
             base := append(append([]string(nil), f.path...), nm)
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, base, func() (Folder, error) { return ctor(f.deps, ns, name, base), nil }, nameSty))
+            it := NewEnterableItem(nm, []string{nm}, base, func() (Folder, error) { return ctor(f.deps, ns, name, base), nil }, nameSty)
+            if kind != "" {
+                nn := types.NamespacedName{Namespace: f.namespace, Name: nm}.String()
+                it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nn, kind, gvStr))
+            }
+            rows = append(rows, it)
         } else {
-            rows = append(rows, NewSimpleItem(nm, []string{nm}, append(append([]string(nil), f.path...), nm), nameSty))
+            base := append(append([]string(nil), f.path...), nm)
+            it := NewSimpleItem(nm, []string{nm}, base, nameSty)
+            if kind != "" {
+                nn := types.NamespacedName{Namespace: f.namespace, Name: nm}.String()
+                it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nn, kind, gvStr))
+            }
+            rows = append(rows, it)
         }
     }
     f.list = table.NewSliceList(rows)
@@ -343,13 +367,22 @@ func (f *ClusterObjectsFolder) populate() {
     for i := range lst.Items { names = append(names, lst.Items[i].GetName()) }
     sort.Strings(names)
     rows := make([]table.Row, 0, len(names))
+    // Resolve Kind once for details
+    kind := ""
+    if k, err := f.deps.Cl.RESTMapper().KindFor(f.gvr); err == nil { kind = k.Kind }
+    gvStr := f.gvr.GroupVersion().String()
     for _, nm := range names {
         if ctor, ok := childFor(f.gvr); ok {
             name := nm
             base := append(append([]string(nil), f.path...), nm)
-            rows = append(rows, NewEnterableItem(nm, []string{nm}, base, func() (Folder, error) { return ctor(f.deps, "", name, base), nil }, nameSty))
+            it := NewEnterableItem(nm, []string{nm}, base, func() (Folder, error) { return ctor(f.deps, "", name, base), nil }, nameSty)
+            if kind != "" { it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nm, kind, gvStr)) }
+            rows = append(rows, it)
         } else {
-            rows = append(rows, NewSimpleItem(nm, []string{nm}, append(append([]string(nil), f.path...), nm), nameSty))
+            base := append(append([]string(nil), f.path...), nm)
+            it := NewSimpleItem(nm, []string{nm}, base, nameSty)
+            if kind != "" { it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nm, kind, gvStr)) }
+            rows = append(rows, it)
         }
     }
     f.list = table.NewSliceList(rows)
