@@ -1,6 +1,6 @@
 //go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0 object paths=.
 
-package tableclient
+package tablecache
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

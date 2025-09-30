@@ -1,4 +1,4 @@
-package tableclient
+package tablecache
 
 import (
 	"testing"

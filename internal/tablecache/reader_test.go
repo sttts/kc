@@ -1,4 +1,4 @@
-package tableclient
+package tablecache
 
 import (
 	"context"
@@ -61,6 +61,12 @@ func TestReaderListTables(t *testing.T) {
 
 	if len(row.Columns) != len(table.ColumnDefinitions) {
 		t.Fatalf("expected %d columns, got %d", len(table.ColumnDefinitions), len(row.Columns))
+	}
+	if row.Columns[0].Name != "Name" {
+		t.Fatalf("expected first column Name, got %s", row.Columns[0].Name)
+	}
+	if len(row.TableRow.Cells) == 0 || row.TableRow.Cells[0] != "pod-a" {
+		t.Fatalf("expected first cell pod-a, got %v", row.TableRow.Cells)
 	}
 
 	if list.TableTarget() != target {
@@ -240,6 +246,17 @@ func (f *fakeFetcher) WatchTable(_ context.Context, _ *meta.RESTMapping, namespa
 		return nil, fmt.Errorf("no watch configured")
 	}
 	return f.watch, nil
+}
+
+func (f *fakeFetcher) WatchObjects(ctx context.Context, mapping *meta.RESTMapping, namespace string, opts metav1.ListOptions) (watch.Interface, error) {
+	return f.WatchTable(ctx, mapping, namespace, opts)
+}
+
+func (f *fakeFetcher) GetTable(context.Context, *meta.RESTMapping, string, string) (*metav1.Table, error) {
+	if f.table == nil {
+		return nil, fmt.Errorf("no table configured")
+	}
+	return f.table.DeepCopy(), nil
 }
 
 type fakeDelegate struct {
