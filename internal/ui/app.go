@@ -69,6 +69,15 @@ type App struct {
     prevResOrder        string
     resOptsChanged      bool
     resOptsConfirmed    bool
+    // Busy spinner state (lightweight, non-intrusive)
+    busyActive bool
+    busyLabel  string
+    busyFrame  int
+    busyToken  int
+    // Toast notification state (auto-dismiss)
+    toastActive bool
+    toastText   string
+    toastUntil  time.Time
 }
 
 // Invariant: a.cfg is always non-nil. NewApp initializes it with defaults and
@@ -232,8 +241,40 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 	}
 
-	switch msg := msg.(type) {
-	case EscTimeoutMsg:
+    switch msg := msg.(type) {
+    case BusyShowMsg:
+        if msg.token == a.busyToken {
+            a.busyActive = true
+            a.busyFrame = 0
+            return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return BusyTickMsg{} })
+        }
+        return a, nil
+    case BusyTickMsg:
+        if a.busyActive {
+            a.busyFrame = (a.busyFrame + 1) % 10
+            return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return BusyTickMsg{} })
+        }
+        return a, nil
+    case BusyHideMsg:
+        if msg.token == a.busyToken { a.busyActive = false }
+        return a, nil
+    case busyDoneMsg:
+        if msg.token == a.busyToken { a.busyActive = false }
+        // Re-dispatch the original message for normal handling
+        return a, func() tea.Msg { return msg.msg }
+    case showToastMsg:
+        a.toastActive = true
+        a.toastText = msg.text
+        a.toastUntil = time.Now().Add(msg.ttl)
+        return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
+    case toastTickMsg:
+        if a.toastActive {
+            if time.Now().After(a.toastUntil) { a.toastActive = false } else {
+                return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
+            }
+        }
+        return a, nil
+    case EscTimeoutMsg:
 		// Escape sequence timed out
 		a.escPressed = false
 		return a, nil
@@ -592,9 +633,11 @@ func (a *App) View() (string, *tea.Cursor) {
 
 // renderMainView renders the main two-panel view
 func (a *App) renderMainView() (string, *tea.Cursor) {
-	// Calculate dimensions
-	// Reserve space for: terminal (2) + function keys (1) = 3 lines
-	panelHeight := a.height - 3
+    // Calculate dimensions
+    // Reserve space for: terminal (2) + function keys (1) + optional toast (1)
+    reserved := 3
+    if a.toastActive { reserved++ }
+    panelHeight := a.height - reserved
 	panelWidth := a.width / 2 // No separator needed
 
 	// Set dimensions for panel content (accounting for borders)
@@ -641,15 +684,47 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Add terminal (2 lines)
 	terminalView, terminalCursor := a.renderTerminalArea()
 
-	// Add function key bar
-	functionKeys := a.renderFunctionKeys()
+    // Add function key bar
+    functionKeys := a.renderFunctionKeys()
+    // Optional toast line above function keys
+    toastLine := ""
+    if a.toastActive {
+        st := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.White).Bold(true)
+        // Ensure message fits the width; truncate with … if needed
+        msg := a.toastText
+        maxw := a.width
+        if lipgloss.Width(msg) > maxw {
+            if maxw > 1 { msg = sliceANSIColsRaw(msg, 0, maxw-1) + "…" } else { msg = sliceANSIColsRaw(msg, 0, maxw) }
+        }
+        toastLine = st.Width(a.width).Render(msg)
+    }
+    // spinner is added inside renderFunctionKeys at the far left; nothing to do here
 
-	combinedView := lipgloss.JoinVertical(
-		lipgloss.Left,
-		panels,
-		terminalView,
-		functionKeys,
-	)
+    if a.toastActive {
+        combinedView := lipgloss.JoinVertical(
+            lipgloss.Left,
+            panels,
+            terminalView,
+            toastLine,
+            functionKeys,
+        )
+        // Adjust cursor position
+        if terminalCursor != nil {
+            offsetY := panelHeight
+            adjustedCursor := tea.NewCursor(terminalCursor.X, terminalCursor.Y+offsetY)
+            adjustedCursor.Blink = terminalCursor.Blink
+            adjustedCursor.Color = terminalCursor.Color
+            adjustedCursor.Shape = terminalCursor.Shape
+            return combinedView, adjustedCursor
+        }
+        return combinedView, nil
+    }
+    combinedView := lipgloss.JoinVertical(
+        lipgloss.Left,
+        panels,
+        terminalView,
+        functionKeys,
+    )
 
 	// Adjust cursor position for the combined view
 	// The cursor needs to be offset by the height of panels
@@ -789,14 +864,16 @@ func (a *App) renderFunctionKeys() string {
 		}
 	}
 
-	// Add spaces between keys
-	renderedKeys := make([]string, 0, len(keys)*2-1)
-	for _, key := range keys {
-		renderedKeys = append(renderedKeys, key)
-	}
+    // Join keys
+    joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
 
-	// Join all elements (keys + spaces)
-	joined := lipgloss.JoinHorizontal(lipgloss.Left, renderedKeys...)
+    // Optional spinner at far left
+    if a.busyActive {
+        frames := []rune{'⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'}
+        ch := frames[a.busyFrame%len(frames)]
+        spinner := FunctionKeyDescriptionStyle.Render(string(ch)+" "+a.busyLabel) + " "
+        joined = spinner + joined
+    }
 
 	// Always add "Kubernetes Commander" right-aligned
 	title := " Kubernetes Commander "
@@ -814,7 +891,7 @@ func (a *App) renderFunctionKeys() string {
 	// Calculate the exact spacing needed to push title to the right edge
 	titleRendered := titleStyle.Render(title)
 
-	return fullWidthStyle.Render(joined + " " + titleRendered)
+    return fullWidthStyle.Render(joined + " " + titleRendered)
 }
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
