@@ -114,8 +114,8 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     case tea.KeyMsg:
         switch msg.String() {
         case "esc":
-            // Close immediately on ESC when allowed
-            if m.closeOnSingleEsc {
+            // Double-ESC always closes, regardless of closeOnSingleEsc.
+            if m.escPressed {
                 m.escPressed = false
                 m.Hide()
                 if m.onClose != nil {
@@ -124,14 +124,23 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 }
                 return m, tea.Batch(cmds...)
             }
-            // Otherwise start ESC-sequence timer
+            // Single ESC: close immediately only when enabled
+            if m.closeOnSingleEsc {
+                m.Hide()
+                if m.onClose != nil {
+                    cmd = m.onClose()
+                    cmds = append(cmds, cmd)
+                }
+                return m, tea.Batch(cmds...)
+            }
+            // Otherwise arm ESC sequence to allow ESC ESC close
             m.escPressed = true
-            return m, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
+            return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
 		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
 			if m.escPressed {
 				switch msg.String() {
-				case "9":
-					// ESC+9 → Theme (if supported by content)
+				case "2":
+					// ESC+2 → Theme (if supported by content)
 					if themable, ok := m.content.(interface{ RequestTheme() tea.Cmd }); ok {
 						m.escPressed = false
 						return m, themable.RequestTheme()
@@ -153,16 +162,10 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
     case EscTimeoutMsg:
         if m.escPressed {
-            // Standalone ESC: close only if enabled
+            // Timeout expired without second ESC; cancel sequence.
             m.escPressed = false
-            if m.closeOnSingleEsc {
-                m.Hide()
-                if m.onClose != nil {
-                    cmd = m.onClose()
-                    cmds = append(cmds, cmd)
-                }
-                return m, tea.Batch(cmds...)
-            }
+            // For closeOnSingleEsc=false, do nothing (wait for explicit action)
+            // For true, single ESC already closed immediately above.
             return m, nil
         }
 	}

@@ -28,7 +28,7 @@ type TextViewer struct {
     mime     string // e.g., "application/yaml"
     filename string // e.g., "file.yaml"
 	onEdit   func() tea.Cmd // invoked on F4
-	onTheme  func() tea.Cmd // invoked on F9 to open theme selector
+    onTheme  func() tea.Cmd // invoked on F2 to open theme selector
 	onClose  func() tea.Cmd // invoked on F10 to close modal
 	rawLines []string       // raw, uncolored lines for measuring widths
 }
@@ -103,10 +103,10 @@ func (v *TextViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if v.onEdit != nil {
 				return v, v.onEdit()
 			}
-		case "f9":
-			if v.onTheme != nil {
-				return v, v.onTheme()
-			}
+        case "f2":
+            if v.onTheme != nil {
+                return v, v.onTheme()
+            }
 		case "f10":
 			if v.onClose != nil {
 				return v, v.onClose()
@@ -136,7 +136,7 @@ func (v *TextViewer) View() string {
 
 // FooterHints implements ModalFooterHints to show extra footer actions.
 func (v *TextViewer) FooterHints() [][2]string {
-	return [][2]string{{"F9", "Theme"}, {"F10", "Close"}}
+    return [][2]string{{"F2", "Theme"}, {"F10", "Close"}}
 }
 
 // SetTheme updates the theme and re-highlights content.
