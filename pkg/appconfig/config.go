@@ -44,11 +44,32 @@ type KubernetesConfig struct {
     Clusters ClustersConfig `json:"clusters"`
 }
 
+// ResourcesViewOrder is the ordering mode for resource groups.
+// Valid values: "alpha", "group", "favorites".
+type ResourcesViewOrder string
+
+const (
+    OrderAlpha     ResourcesViewOrder = "alpha"
+    OrderGroup     ResourcesViewOrder = "group"
+    OrderFavorites ResourcesViewOrder = "favorites"
+)
+
+// ResourcesViewConfig controls how resource groups are displayed.
+type ResourcesViewConfig struct {
+    // ShowNonEmptyOnly toggles filtering of resource groups to those with >0 objects.
+    ShowNonEmptyOnly bool `json:"showNonEmptyOnly"`
+    // Order controls ordering: alphabetic by resource, grouped by API group, or favorites-first.
+    Order ResourcesViewOrder `json:"order"`
+    // Favorites lists resource plural names to prioritize when Order=="favorites".
+    Favorites []string `json:"favorites"`
+}
+
 type Config struct {
     Viewer ViewerConfig `json:"viewer"`
     Panel  PanelConfig  `json:"panel"`
     Input  InputConfig  `json:"input"`
     Kubernetes KubernetesConfig `json:"kubernetes"`
+    Resources ResourcesViewConfig `json:"resources"`
 }
 
 func Default() *Config {
@@ -57,6 +78,16 @@ func Default() *Config {
         Panel:  PanelConfig{Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}}},
         Input:  InputConfig{Mouse: MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}}},
         Kubernetes: KubernetesConfig{Clusters: ClustersConfig{TTL: metav1.Duration{Duration: 2 * time.Minute}}},
+        Resources: ResourcesViewConfig{
+            ShowNonEmptyOnly: true,
+            Order:            OrderAlpha,
+            // Seed favorites with a sensible default set similar to `kubectl get all`.
+            Favorites: []string{
+                "pods", "services", "deployments", "replicasets", "statefulsets",
+                "daemonsets", "jobs", "cronjobs", "configmaps", "secrets",
+                "ingresses", "networkpolicies", "persistentvolumeclaims",
+            },
+        },
     }
 }
 
@@ -92,6 +123,15 @@ func Load() (*Config, error) {
         }
         if cfg.Kubernetes.Clusters.TTL.Duration == 0 { cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute} }
         if cfg.Input.Mouse.DoubleClickTimeout.Duration == 0 { cfg.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: 300 * time.Millisecond} }
+        // Normalize resources settings
+        switch cfg.Resources.Order {
+        case OrderAlpha, OrderGroup, OrderFavorites:
+        default:
+            cfg.Resources.Order = OrderFavorites
+        }
+        if cfg.Resources.Favorites == nil {
+            cfg.Resources.Favorites = Default().Resources.Favorites
+        }
         return cfg, nil
     }
 	// Fallback: tolerate legacy/mixed-case keys by normalizing
@@ -156,6 +196,15 @@ func Load() (*Config, error) {
     if cfg.Panel.Scrolling.Horizontal.Step <= 0 { cfg.Panel.Scrolling.Horizontal.Step = 4 }
     if cfg.Kubernetes.Clusters.TTL.Duration == 0 { cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute} }
     if cfg.Input.Mouse.DoubleClickTimeout.Duration == 0 { cfg.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: 300 * time.Millisecond} }
+    // Normalize resources settings
+    switch cfg.Resources.Order {
+    case OrderAlpha, OrderGroup, OrderFavorites:
+    default:
+        cfg.Resources.Order = OrderFavorites
+    }
+    if cfg.Resources.Favorites == nil {
+        cfg.Resources.Favorites = Default().Resources.Favorites
+    }
     return cfg, nil
 }
 
@@ -171,6 +220,12 @@ func Save(cfg *Config) error {
 	// Enforce lower-case style names for consistency
     out := *cfg
     out.Viewer.Theme = strings.ToLower(out.Viewer.Theme)
+    // Normalize order value
+    switch out.Resources.Order {
+    case OrderAlpha, OrderGroup, OrderFavorites:
+    default:
+        out.Resources.Order = OrderFavorites
+    }
     data, err := yaml.Marshal(&out)
 	if err != nil {
 		return err

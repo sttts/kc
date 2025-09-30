@@ -21,7 +21,20 @@ type Deps struct {
     // Typically returns a ContextRootFolder bound to the new context's cluster.
     // basePath is the absolute path segments to the target (e.g., ["contexts", name]).
     EnterContext func(name string, basePath []string) (Folder, error)
+
+    // ViewOptions returns live resource view options (sorting/filtering) that
+    // affect how folders populate their rows (e.g., group listing order).
+    ViewOptions func() ViewOptions
 }
 
 // newEmptyList returns an empty table.List ready to be populated.
 func newEmptyList() *table.SliceList { return table.NewSliceList(nil) }
+
+// ViewOptions influences folder population for resources listings.
+type ViewOptions struct {
+    ShowNonEmptyOnly bool
+    // Order: "alpha", "group", or "favorites"
+    Order string
+    // Favorites: set of resource plural names to prioritize when Order=="favorites"
+    Favorites map[string]bool
+}

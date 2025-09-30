@@ -1,0 +1,24 @@
+viewer:
+  theme: dracula
+
+panel:
+  scrolling:
+    horizontal:
+      step: 4
+
+input:
+  mouse:
+    doubleClickTimeout: 300ms
+
+kubernetes:
+  clusters:
+    ttl: 2m
+
+resources:
+  # Default behavior: hide resources with zero objects
+  showNonEmptyOnly: true
+  # Default ordering: alphabetic by resource plural
+  order: alpha
+  # Favorites are used when order=favorites
+  favorites: [pods, services, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, configmaps, secrets, ingresses, networkpolicies, persistentvolumeclaims]
+

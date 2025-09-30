@@ -56,6 +56,10 @@ func (b *BaseFolder) ensure() {
 
 func (b *BaseFolder) markDirty() { b.mu.Lock(); b.dirty = true; b.mu.Unlock() }
 
+// Refresh marks the folder content dirty so the next access will repopulate
+// based on current dependencies (e.g., updated ViewOptions).
+func (b *BaseFolder) Refresh() { b.markDirty() }
+
 // watchGVR sets up an informer for the given GVR (resolved to a Kind internally)
 // and marks the folder dirty on add/update/delete. This avoids leaking Kinds into
 // the folder API: callers only pass GVRs.
@@ -207,22 +211,47 @@ func (f *RootFolder) populate() {
     rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "v1", fmt.Sprintf("%d", nsCount)}, nsBase, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvrNS, nsBase), nil }))
     // Cluster-scoped resources
     if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
-        // Filter and sort by resource name (plural)
-        filtered := make([]kccluster.ResourceInfo, 0, len(infos))
+        type row struct{ info kccluster.ResourceInfo; gvr schema.GroupVersionResource; count int }
+        tmp := make([]row, 0, len(infos))
         for _, info := range infos {
             if info.Namespaced || info.Resource == "namespaces" { continue }
             if !verbsInclude(info.Verbs, "list") { continue }
-            filtered = append(filtered, info)
-        }
-        sort.Slice(filtered, func(i, j int) bool { return filtered[i].Resource < filtered[j].Resource })
-        for _, info := range filtered {
             gvr := schema.GroupVersionResource{Group: info.GVK.Group, Version: info.GVK.Version, Resource: info.Resource}
             n := 0
             if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, ""); err == nil { n = len(lst.Items) }
-            // Use a unique GVR-based ID (group/version/resource) to avoid collisions (e.g., events).
-            id := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
-            base := append(append([]string(nil), f.path...), info.Resource)
-            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, base, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvr, base), nil }))
+            tmp = append(tmp, row{info: info, gvr: gvr, count: n})
+        }
+        // Optional filter: only non-empty
+        opts := ViewOptions{}
+        if f.deps.ViewOptions != nil { opts = f.deps.ViewOptions() }
+        out := make([]row, 0, len(tmp))
+        for _, r := range tmp {
+            if opts.ShowNonEmptyOnly && r.count == 0 { continue }
+            out = append(out, r)
+        }
+        // Sort according to order
+        switch opts.Order {
+        case "group":
+            sort.Slice(out, func(i, j int) bool {
+                gi, gj := out[i].info.GVK.Group, out[j].info.GVK.Group
+                if gi == gj { return out[i].info.Resource < out[j].info.Resource }
+                return gi < gj
+            })
+        case "favorites":
+            fav := opts.Favorites
+            isFav := func(res string) bool { return fav != nil && fav[strings.ToLower(res)] }
+            sort.Slice(out, func(i, j int) bool {
+                fi, fj := isFav(out[i].info.Resource), isFav(out[j].info.Resource)
+                if fi != fj { return fi } // favorites first
+                return out[i].info.Resource < out[j].info.Resource
+            })
+        default: // "alpha"
+            sort.Slice(out, func(i, j int) bool { return out[i].info.Resource < out[j].info.Resource })
+        }
+        for _, r := range out {
+            id := r.gvr.Group + "/" + r.gvr.Version + "/" + r.gvr.Resource
+            base := append(append([]string(nil), f.path...), r.info.Resource)
+            rows = append(rows, NewEnterableItemStyled(id, []string{"/"+r.info.Resource, groupVersionString(r.info.GVK), fmt.Sprintf("%d", r.count)}, base, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, r.gvr, base), nil }))
         }
     }
     f.list = table.NewSliceList(rows)
@@ -307,17 +336,46 @@ func (f *NamespacedGroupsFolder) populate() {
     rows := make([]table.Row, 0, 64)
     nameSty := WhiteStyle()
     infos, err := f.deps.Cl.GetResourceInfos(); if err != nil { f.list = newEmptyList(); return }
-    filtered := make([]kccluster.ResourceInfo, 0, len(infos))
-    for _, info := range infos { if info.Namespaced && verbsInclude(info.Verbs, "list") { filtered = append(filtered, info) } }
-    sort.Slice(filtered, func(i, j int) bool { return filtered[i].Resource < filtered[j].Resource })
-    for _, info := range filtered {
+    type row struct{ info kccluster.ResourceInfo; gvr schema.GroupVersionResource; count int }
+    tmp := make([]row, 0, len(infos))
+    for _, info := range infos {
+        if !info.Namespaced || !verbsInclude(info.Verbs, "list") { continue }
         gvr := schema.GroupVersionResource{Group: info.GVK.Group, Version: info.GVK.Version, Resource: info.Resource}
         n := 0
         if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, f.ns); err == nil { n = len(lst.Items) }
-        // Use GVR-based unique ID; do not dim Group column in namespaced groups.
-        id := gvr.Group + "/" + gvr.Version + "/" + gvr.Resource
-        base := append(append([]string(nil), f.path...), info.Resource)
-        rows = append(rows, NewEnterableItemStyled(id, []string{"/"+info.Resource, groupVersionString(info.GVK), fmt.Sprintf("%d", n)}, base, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewNamespacedObjectsFolder(f.deps, gvr, f.ns, base), nil }))
+        tmp = append(tmp, row{info: info, gvr: gvr, count: n})
+    }
+    // Optional filter: only non-empty
+    opts := ViewOptions{}
+    if f.deps.ViewOptions != nil { opts = f.deps.ViewOptions() }
+    out := make([]row, 0, len(tmp))
+    for _, r := range tmp {
+        if opts.ShowNonEmptyOnly && r.count == 0 { continue }
+        out = append(out, r)
+    }
+    // Sort according to order
+    switch opts.Order {
+    case "group":
+        sort.Slice(out, func(i, j int) bool {
+            gi, gj := out[i].info.GVK.Group, out[j].info.GVK.Group
+            if gi == gj { return out[i].info.Resource < out[j].info.Resource }
+            return gi < gj
+        })
+    case "favorites":
+        fav := opts.Favorites
+        isFav := func(res string) bool { return fav != nil && fav[strings.ToLower(res)] }
+        sort.Slice(out, func(i, j int) bool {
+            fi, fj := isFav(out[i].info.Resource), isFav(out[j].info.Resource)
+            if fi != fj { return fi }
+            return out[i].info.Resource < out[j].info.Resource
+        })
+    default:
+        sort.Slice(out, func(i, j int) bool { return out[i].info.Resource < out[j].info.Resource })
+    }
+    for _, r := range out {
+        id := r.gvr.Group + "/" + r.gvr.Version + "/" + r.gvr.Resource
+        base := append(append([]string(nil), f.path...), r.info.Resource)
+        rows = append(rows, NewEnterableItemStyled(id, []string{"/"+r.info.Resource, groupVersionString(r.info.GVK), fmt.Sprintf("%d", r.count)}, base, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewNamespacedObjectsFolder(f.deps, r.gvr, f.ns, base), nil }))
     }
     f.list = table.NewSliceList(rows)
 }

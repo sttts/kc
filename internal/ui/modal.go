@@ -111,22 +111,22 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle modal-specific keys
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc":
-			// Support ESC+number sequences and double-ESC close.
-			if m.escPressed {
-				// Double ESC: always close, regardless of closeOnSingleEsc
-				m.escPressed = false
-				m.Hide()
-				if m.onClose != nil {
-					cmd = m.onClose()
-					cmds = append(cmds, cmd)
-				}
-				return m, tea.Batch(cmds...)
-			}
-			m.escPressed = true
-			return m, tea.Tick(time.Second, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
+    case tea.KeyMsg:
+        switch msg.String() {
+        case "esc":
+            // Close immediately on ESC when allowed
+            if m.closeOnSingleEsc {
+                m.escPressed = false
+                m.Hide()
+                if m.onClose != nil {
+                    cmd = m.onClose()
+                    cmds = append(cmds, cmd)
+                }
+                return m, tea.Batch(cmds...)
+            }
+            // Otherwise start ESC-sequence timer
+            m.escPressed = true
+            return m, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
 		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
 			if m.escPressed {
 				switch msg.String() {
@@ -151,20 +151,20 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-	case EscTimeoutMsg:
-		if m.escPressed {
-			// Standalone ESC: close only if enabled
-			m.escPressed = false
-			if m.closeOnSingleEsc {
-				m.Hide()
-				if m.onClose != nil {
-					cmd = m.onClose()
-					cmds = append(cmds, cmd)
-				}
-				return m, tea.Batch(cmds...)
-			}
-			return m, nil
-		}
+    case EscTimeoutMsg:
+        if m.escPressed {
+            // Standalone ESC: close only if enabled
+            m.escPressed = false
+            if m.closeOnSingleEsc {
+                m.Hide()
+                if m.onClose != nil {
+                    cmd = m.onClose()
+                    cmds = append(cmds, cmd)
+                }
+                return m, tea.Batch(cmds...)
+            }
+            return m, nil
+        }
 	}
 
 	// Update the content
@@ -223,22 +223,22 @@ func (m *Modal) View() string {
 			}
 		}
 
-		// Build window frame with requested dialog styling:
-		// - Background: dark cyan (ANSI 46)
-		// - Foreground: white
-		// - Border: double, white
-		boxStyle := lipgloss.NewStyle().
-			Border(lipgloss.DoubleBorder()).
-			BorderForeground(lipgloss.Black).
-			BorderBackground(lipgloss.White).
-			Background(lipgloss.White).
-			Width(winW).
-			Height(winH)
+        // Build window frame with requested dialog styling for settings dialogs:
+        // - Background: light grey
+        // - Foreground: black
+        // - Border: double, black
+        boxStyle := lipgloss.NewStyle().
+            Border(lipgloss.DoubleBorder()).
+            BorderForeground(lipgloss.Black).
+            BorderBackground(lipgloss.Color("250")).
+            Background(lipgloss.Color("250")).
+            Width(winW).
+            Height(winH)
 
-		labelStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Black).
-			Background(lipgloss.White).
-			Padding(0, 1)
+        labelStyle := lipgloss.NewStyle().
+            Foreground(lipgloss.Black).
+            Background(lipgloss.Color("250")).
+            Padding(0, 1)
 		label := labelStyle.Render(m.title)
 		border := boxStyle.GetBorderStyle()
 		topBorderStyler := lipgloss.NewStyle().
@@ -260,12 +260,12 @@ func (m *Modal) View() string {
 			top = topLeft + topBorderStyler(strings.Repeat(border.Top, left)) + label + topBorderStyler(strings.Repeat(border.Top, right)) + topRight
 		}
 		// Render inner content with dialog colors (white on dark cyan)
-		inner = lipgloss.NewStyle().
-			Background(lipgloss.White).
-			Foreground(lipgloss.Black).
-			Width(innerW).
-			Height(innerH).
-			Render(inner)
+        inner = lipgloss.NewStyle().
+            Background(lipgloss.Color("250")).
+            Foreground(lipgloss.Black).
+            Width(innerW).
+            Height(innerH).
+            Render(inner)
 
 		winBottom := boxStyle.Copy().
 			BorderTop(false).
@@ -274,13 +274,13 @@ func (m *Modal) View() string {
 			Render(inner)
 		winFrame := top + "\n" + winBottom
 
-		// Compose window over background (centered)
-		composed := overlay.Composite(
-			winFrame,
-			base,
-			overlay.Center, overlay.Center,
-			0, -1, // lift by 1 to keep footer free
-		)
+        // Compose window over background (centered)
+        composed := overlay.Composite(
+            winFrame,
+            base,
+            overlay.Center, overlay.Center,
+            0, -1, // lift by 1 to keep footer free
+        )
 		bgLines := strings.Split(composed, "\n")
 		// Footer line
 		footer := ""
@@ -301,12 +301,12 @@ func (m *Modal) View() string {
 			bgLines[m.height-1] = FunctionKeyBarStyle.Width(m.width).Render(footer)
 		}
 		composed = strings.Join(bgLines, "\n")
-		// Ensure full-width/height with blue background to avoid artifacts.
-		return lipgloss.NewStyle().
-			Background(lipgloss.White).
-			Width(m.width).
-			Height(m.height).
-			Render(composed)
+        // Return composed screen without forcing a global background color so
+        // the 2-line terminal retains its original styling.
+        return lipgloss.NewStyle().
+            Width(m.width).
+            Height(m.height).
+            Render(composed)
 	}
 	var inner string
 	if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
