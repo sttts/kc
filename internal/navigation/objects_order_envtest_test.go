@@ -48,7 +48,14 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len() >= 3 })
     rows := f1.Lines(0, 3)
     got := []string{}
-    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 { got = append(got, cells[0]) } }
+    for _, r := range rows {
+        _, cells, _, _ := r.Columns()
+        if len(cells) > 0 {
+            v := cells[0]
+            if len(v) > 0 && v[0] == '/' { v = v[1:] }
+            got = append(got, v)
+        }
+    }
     if !(got[0] == "a" && got[1] == "b") { t.Fatalf("name asc order unexpected: %+v", got) }
     // Verify Age column exists
     cols := f1.Columns()
@@ -59,7 +66,14 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
     rows = f2.Lines(0, 3)
     got = got[:0]
-    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 { got = append(got, cells[0]) } }
+    for _, r := range rows {
+        _, cells, _, _ := r.Columns()
+        if len(cells) > 0 {
+            v := cells[0]
+            if len(v) > 0 && v[0] == '/' { v = v[1:] }
+            got = append(got, v)
+        }
+    }
     if !(got[0] == "c" && got[1] == "b") { t.Fatalf("name desc order unexpected: %+v", got) }
 
     // Order by creation
@@ -67,7 +81,14 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len() >= 3 })
     rows = f3.Lines(0, 3)
     got = got[:0]
-    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 { got = append(got, cells[0]) } }
+    for _, r := range rows {
+        _, cells, _, _ := r.Columns()
+        if len(cells) > 0 {
+            v := cells[0]
+            if len(v) > 0 && v[0] == '/' { v = v[1:] }
+            got = append(got, v)
+        }
+    }
     if !(got[0] == "a" && got[2] == "c") { t.Fatalf("creation asc order unexpected: %+v", got) }
 
     // Order by -creation
@@ -75,6 +96,13 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len() >= 3 })
     rows = f4.Lines(0, 3)
     got = got[:0]
-    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) > 0 { got = append(got, cells[0]) } }
+    for _, r := range rows {
+        _, cells, _, _ := r.Columns()
+        if len(cells) > 0 {
+            v := cells[0]
+            if len(v) > 0 && v[0] == '/' { v = v[1:] }
+            got = append(got, v)
+        }
+    }
     if !(got[0] == "c" && got[2] == "a") { t.Fatalf("creation desc order unexpected: %+v", got) }
 }
