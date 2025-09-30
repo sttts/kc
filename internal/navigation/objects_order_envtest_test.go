@@ -13,6 +13,8 @@ import (
     "k8s.io/apimachinery/pkg/runtime/schema"
     crclient "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/envtest"
+    table "github.com/sttts/kc/internal/table"
+    "strings"
 )
 
 func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
@@ -47,62 +49,46 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     f1 := NewClusterObjectsFolder(makeDeps("name"), gvrNS, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len() >= 3 })
     rows := f1.Lines(0, 3)
-    got := []string{}
-    for _, r := range rows {
-        _, cells, _, _ := r.Columns()
-        if len(cells) > 0 {
-            v := cells[0]
-            if len(v) > 0 && v[0] == '/' { v = v[1:] }
-            got = append(got, v)
-        }
-    }
+    got := normFirstCells(rows)
     if !(got[0] == "a" && got[1] == "b") { t.Fatalf("name asc order unexpected: %+v", got) }
     // Verify Age column exists
     cols := f1.Columns()
     if len(cols) == 0 || cols[len(cols)-1].Title != "Age" { t.Fatalf("missing Age column: %+v", cols) }
+    // Age cells non-empty
+    ageIdx := len(cols) - 1
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) <= ageIdx || strings.TrimSpace(cells[ageIdx]) == "" { t.Fatalf("empty Age cell: %+v", cells) } }
 
     // Order by -name
     f2 := NewClusterObjectsFolder(makeDeps("-name"), gvrNS, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
     rows = f2.Lines(0, 3)
-    got = got[:0]
-    for _, r := range rows {
-        _, cells, _, _ := r.Columns()
-        if len(cells) > 0 {
-            v := cells[0]
-            if len(v) > 0 && v[0] == '/' { v = v[1:] }
-            got = append(got, v)
-        }
-    }
+    got = normFirstCells(rows)
     if !(got[0] == "c" && got[1] == "b") { t.Fatalf("name desc order unexpected: %+v", got) }
 
     // Order by creation
     f3 := NewClusterObjectsFolder(makeDeps("creation"), gvrNS, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len() >= 3 })
     rows = f3.Lines(0, 3)
-    got = got[:0]
-    for _, r := range rows {
-        _, cells, _, _ := r.Columns()
-        if len(cells) > 0 {
-            v := cells[0]
-            if len(v) > 0 && v[0] == '/' { v = v[1:] }
-            got = append(got, v)
-        }
-    }
+    got = normFirstCells(rows)
     if !(got[0] == "a" && got[2] == "c") { t.Fatalf("creation asc order unexpected: %+v", got) }
 
     // Order by -creation
     f4 := NewClusterObjectsFolder(makeDeps("-creation"), gvrNS, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len() >= 3 })
     rows = f4.Lines(0, 3)
-    got = got[:0]
+    got = normFirstCells(rows)
+    if !(got[0] == "c" && got[2] == "a") { t.Fatalf("creation desc order unexpected: %+v", got) }
+}
+
+func normFirstCells(rows []table.Row) []string {
+    out := make([]string, 0, len(rows))
     for _, r := range rows {
         _, cells, _, _ := r.Columns()
         if len(cells) > 0 {
             v := cells[0]
-            if len(v) > 0 && v[0] == '/' { v = v[1:] }
-            got = append(got, v)
+            if strings.HasPrefix(v, "/") { v = v[1:] }
+            out = append(out, v)
         }
     }
-    if !(got[0] == "c" && got[2] == "a") { t.Fatalf("creation desc order unexpected: %+v", got) }
+    return out
 }

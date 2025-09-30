@@ -13,6 +13,8 @@ import (
     "k8s.io/apimachinery/pkg/runtime/schema"
     crclient "sigs.k8s.io/controller-runtime/pkg/client"
     "sigs.k8s.io/controller-runtime/pkg/envtest"
+    table "github.com/sttts/kc/internal/table"
+    "strings"
 )
 
 func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
@@ -58,52 +60,44 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
         }
     }
     if !(got[0] == "cm-a" && got[1] == "cm-b") { t.Fatalf("name asc unexpected: %+v", got) }
-    // Age column present
+    // Age column present and non-empty
     cols := f1.Columns()
     if len(cols) == 0 || cols[len(cols)-1].Title != "Age" { t.Fatalf("missing Age col: %+v", cols) }
+    ageIdx := len(cols) - 1
+    for _, r := range rows { _, cells, _, _ := r.Columns(); if len(cells) <= ageIdx || strings.TrimSpace(cells[ageIdx]) == "" { t.Fatalf("empty Age cell: %+v", cells) } }
 
     // Desc by name
     f2 := NewNamespacedObjectsFolder(makeDeps("-name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
     rows = f2.Lines(0, 3)
-    got = got[:0]
-    for _, r := range rows {
-        _, cells, _, _ := r.Columns()
-        if len(cells) > 0 {
-            v := cells[0]
-            if len(v) > 0 && v[0] == '/' { v = v[1:] }
-            got = append(got, v)
-        }
-    }
+    got = normFirstCellsNS(rows)
     if !(got[0] == "cm-c" && got[2] == "cm-a") { t.Fatalf("name desc unexpected: %+v", got) }
 
     // Asc by creation
     f3 := NewNamespacedObjectsFolder(makeDeps("creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len() >= 3 })
     rows = f3.Lines(0, 3)
-    got = got[:0]
-    for _, r := range rows {
-        _, cells, _, _ := r.Columns()
-        if len(cells) > 0 {
-            v := cells[0]
-            if len(v) > 0 && v[0] == '/' { v = v[1:] }
-            got = append(got, v)
-        }
-    }
+    got = normFirstCellsNS(rows)
     if !(got[0] == "cm-a" && got[2] == "cm-c") { t.Fatalf("creation asc unexpected: %+v", got) }
 
     // Desc by creation
     f4 := NewNamespacedObjectsFolder(makeDeps("-creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len() >= 3 })
     rows = f4.Lines(0, 3)
-    got = got[:0]
+    got = normFirstCellsNS(rows)
+    if !(got[0] == "cm-c" && got[2] == "cm-a") { t.Fatalf("creation desc unexpected: %+v", got) }
+
+}
+
+func normFirstCellsNS(rows []table.Row) []string {
+    out := make([]string, 0, len(rows))
     for _, r := range rows {
         _, cells, _, _ := r.Columns()
         if len(cells) > 0 {
             v := cells[0]
-            if len(v) > 0 && v[0] == '/' { v = v[1:] }
-            got = append(got, v)
+            if strings.HasPrefix(v, "/") { v = v[1:] }
+            out = append(out, v)
         }
     }
-    if !(got[0] == "cm-c" && got[2] == "cm-a") { t.Fatalf("creation desc unexpected: %+v", got) }
+    return out
 }
