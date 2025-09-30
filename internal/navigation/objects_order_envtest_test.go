@@ -50,7 +50,11 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len() >= 3 })
     rows := f1.Lines(0, 3)
     got := normFirstCells(rows)
-    if !(got[0] == "a" && got[1] == "b") { t.Fatalf("name asc order unexpected: %+v", got) }
+    // Assert relative order of our namespaces regardless of other system entries
+    idxA, idxB, idxC := indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
+    if idxA < 0 || idxB < 0 || idxC < 0 || !(idxA < idxB && idxB < idxC) {
+        t.Fatalf("name asc order unexpected (a<b<c): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
+    }
     // Verify Age column exists
     cols := f1.Columns()
     if len(cols) == 0 || cols[len(cols)-1].Title != "Age" { t.Fatalf("missing Age column: %+v", cols) }
@@ -63,21 +67,30 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
     rows = f2.Lines(0, 3)
     got = normFirstCells(rows)
-    if !(got[0] == "c" && got[1] == "b") { t.Fatalf("name desc order unexpected: %+v", got) }
+    idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
+    if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {
+        t.Fatalf("name desc order unexpected (c>b>a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
+    }
 
     // Order by creation
     f3 := NewClusterObjectsFolder(makeDeps("creation"), gvrNS, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len() >= 3 })
     rows = f3.Lines(0, 3)
     got = normFirstCells(rows)
-    if !(got[0] == "a" && got[2] == "c") { t.Fatalf("creation asc order unexpected: %+v", got) }
+    idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
+    if idxA < 0 || idxB < 0 || idxC < 0 || !(idxA < idxB && idxB < idxC) {
+        t.Fatalf("creation asc order unexpected (a<b<c): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
+    }
 
     // Order by -creation
     f4 := NewClusterObjectsFolder(makeDeps("-creation"), gvrNS, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len() >= 3 })
     rows = f4.Lines(0, 3)
     got = normFirstCells(rows)
-    if !(got[0] == "c" && got[2] == "a") { t.Fatalf("creation desc order unexpected: %+v", got) }
+    idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
+    if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {
+        t.Fatalf("creation desc order unexpected (c>b>a): %+v (idx a=%d b=%d c=%d)", got, idxA, idxB, idxC)
+    }
 }
 
 func normFirstCells(rows []table.Row) []string {
@@ -91,4 +104,11 @@ func normFirstCells(rows []table.Row) []string {
         }
     }
     return out
+}
+
+func indexOf(list []string, want string) int {
+    for i, v := range list {
+        if v == want { return i }
+    }
+    return -1
 }
