@@ -6,6 +6,7 @@ import (
     "context"
     "k8s.io/client-go/rest"
     "sigs.k8s.io/controller-runtime/pkg/envtest"
+    kctesting "github.com/sttts/kc/internal/testing"
 )
 
 var (
@@ -15,6 +16,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
+    kctesting.SetupLogging()
     testEnv = &envtest.Environment{}
     cfg, err := testEnv.Start()
     if err == nil && cfg != nil {
