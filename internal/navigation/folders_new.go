@@ -3,6 +3,7 @@ package navigation
 import (
     lipgloss "github.com/charmbracelet/lipgloss/v2"
     table "github.com/sttts/kc/internal/table"
+    tablecache "github.com/sttts/kc/internal/tablecache"
     kccluster "github.com/sttts/kc/internal/cluster"
     corev1 "k8s.io/api/core/v1"
     "k8s.io/apimachinery/pkg/runtime"
