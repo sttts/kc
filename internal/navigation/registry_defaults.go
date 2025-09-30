@@ -13,4 +13,8 @@ func init() {
     RegisterChild(schema.GroupVersionResource{Group:"", Version:"v1", Resource:"secrets"}, func(deps Deps, ns, name string, basePath []string) Folder {
         return NewSecretKeysFolder(deps, ns, name, basePath)
     })
+    // Selecting a Namespace object enters its namespaced resource groups
+    RegisterChild(schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, func(deps Deps, ns, name string, basePath []string) Folder {
+        return NewNamespacedGroupsFolder(deps, name, basePath)
+    })
 }

@@ -218,6 +218,15 @@ func (p *Panel) syncFromFolder() {
                 it.TypedGVR = schema.GroupVersionResource{Group: parts[0], Version: parts[1], Resource: parts[2]}
             }
         }
+        // For object-list folders, set TypedGVR from folder meta for each object row
+        if it.TypedGVR.Resource == "" {
+            type metaProv interface{ ObjectListMeta() (schema.GroupVersionResource, string, bool) }
+            if mp, ok := p.folder.(metaProv); ok {
+                if gvr, _, ok2 := mp.ObjectListMeta(); ok2 {
+                    it.TypedGVR = gvr
+                }
+            }
+        }
         items = append(items, it)
         tableRows = append(tableRows, rcells)
     }

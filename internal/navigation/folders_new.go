@@ -192,15 +192,19 @@ func verbsInclude(vs []string, want string) bool { for _, v := range vs { if str
 func (f *RootFolder) populate() {
     rows := make([]table.Row, 0, 64)
     nameSty := WhiteStyle()
-    // Contexts entry (if provided)
+    // Contexts entry (if provided) with count
     if f.deps.ListContexts != nil {
         base := append(append([]string(nil), f.path...), "contexts")
-        // Contexts entry should be green (enterable)
-        rows = append(rows, NewEnterableItemStyled("contexts", []string{"/contexts", "", ""}, base, []*lipgloss.Style{GreenStyle(), nil, nil}, func() (Folder, error) { return NewContextsFolder(f.deps, base), nil }))
+        cnt := 0
+        if f.deps.ListContexts != nil { cnt = len(f.deps.ListContexts()) }
+        rows = append(rows, NewEnterableItemStyled("contexts", []string{"/contexts", "", fmt.Sprintf("%d", cnt)}, base, []*lipgloss.Style{GreenStyle(), nil, nil}, func() (Folder, error) { return NewContextsFolder(f.deps, base), nil }))
     }
-    // Namespaces entry (core group appears as just version: v1)
+    // Namespaces entry (core group appears as just version: v1) with count
     nsBase := append(append([]string(nil), f.path...), "namespaces")
-    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "v1", ""}, nsBase, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps, nsBase), nil }))
+    nsCount := 0
+    gvrNS := schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}
+    if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvrNS, ""); err == nil { nsCount = len(lst.Items) }
+    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "v1", fmt.Sprintf("%d", nsCount)}, nsBase, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvrNS, nsBase), nil }))
     // Cluster-scoped resources
     if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
         // Filter and sort by resource name (plural)
@@ -239,9 +243,12 @@ func (f *ContextRootFolder) Key() string   { return depsKey(f.deps, "contexts/"+
 func (f *ContextRootFolder) populate() {
     rows := make([]table.Row, 0, 64)
     nameSty := WhiteStyle()
-    // Namespaces entry within the context
+    // Namespaces entry within the context (with count)
     nsBase := append(append([]string(nil), f.path...), "namespaces")
-    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "v1", ""}, nsBase, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewNamespacesFolder(f.deps, nsBase), nil }))
+    nsCount := 0
+    gvrNS := schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}
+    if lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvrNS, ""); err == nil { nsCount = len(lst.Items) }
+    rows = append(rows, NewEnterableItemStyled("namespaces", []string{"/namespaces", "v1", fmt.Sprintf("%d", nsCount)}, nsBase, []*lipgloss.Style{nameSty, nil, nil}, func() (Folder, error) { return NewClusterObjectsFolder(f.deps, gvrNS, nsBase), nil }))
     // Cluster-scoped resources for this context
     if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
         filtered := make([]kccluster.ResourceInfo, 0, len(infos))
