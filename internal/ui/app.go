@@ -293,16 +293,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Escape sequence timed out
 		a.escPressed = false
 		return a, nil
-	case FolderTickMsg:
-		// Periodic refresh to reflect informer-driven folder updates.
-		if a.leftPanel != nil {
-			a.leftPanel.RefreshFolder()
-		}
-		if a.rightPanel != nil {
-			a.rightPanel.RefreshFolder()
-		}
-		// Schedule next tick
-		return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
+    case FolderTickMsg:
+        // Refresh only when current folders report dirty to avoid unnecessary redraws.
+        if a.leftNav != nil && a.leftPanel != nil {
+            if d, ok := a.leftNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
+                a.leftPanel.RefreshFolder()
+            }
+        }
+        if a.rightNav != nil && a.rightPanel != nil {
+            if d, ok := a.rightNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
+                a.rightPanel.RefreshFolder()
+            }
+        }
+        // Schedule next tick (lightweight check)
+        return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
 
 	case tea.KeyMsg:
 		// Handle global shortcuts first

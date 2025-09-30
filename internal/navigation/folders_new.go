@@ -60,6 +60,10 @@ func (b *BaseFolder) markDirty() { b.mu.Lock(); b.dirty = true; b.mu.Unlock() }
 // based on current dependencies (e.g., updated ViewOptions).
 func (b *BaseFolder) Refresh() { b.markDirty() }
 
+// IsDirty reports whether the folder has been marked for refresh due to data
+// changes. It is safe for concurrent use.
+func (b *BaseFolder) IsDirty() bool { b.mu.Lock(); defer b.mu.Unlock(); return b.dirty }
+
 // watchGVR sets up an informer for the given GVR (resolved to a Kind internally)
 // and marks the folder dirty on add/update/delete. This avoids leaking Kinds into
 // the folder API: callers only pass GVRs.
@@ -382,34 +386,69 @@ func (f *NamespacedGroupsFolder) populate() {
 
 func (f *NamespacedObjectsFolder) populate() {
     nameSty := WhiteStyle()
+    // Try server-side Table first for richer columns
+    if tbl, err := f.deps.Cl.ListTableByGVR(f.deps.Ctx, f.gvr, f.namespace); err == nil && tbl != nil && len(tbl.Rows) > 0 {
+        // Build columns from Table definitions
+        cols := make([]table.Column, len(tbl.ColumnDefinitions))
+        for i, c := range tbl.ColumnDefinitions { cols[i] = table.Column{Title: c.Name, Width: 0} }
+        f.cols = cols
+        rows := make([]table.Row, 0, len(tbl.Rows))
+        // Resolve child ctor and kind for details
+        ctor, hasChild := childFor(f.gvr)
+        kind := ""; if k, e := f.deps.Cl.RESTMapper().KindFor(f.gvr); e == nil { kind = k.Kind }
+        gvStr := f.gvr.GroupVersion().String()
+        for i := range tbl.Rows {
+            tr := &tbl.Rows[i]
+            // Extract name from embedded object
+            nm := ""
+            if len(tr.Object.Raw) > 0 {
+                var u unstructured.Unstructured
+                _ = u.UnmarshalJSON(tr.Object.Raw)
+                nm = u.GetName()
+            }
+            if nm == "" && len(tr.Cells) > 0 {
+                if s, ok := tr.Cells[0].(string); ok { nm = s }
+            }
+            if nm == "" { nm = fmt.Sprintf("row-%d", i) }
+            // Convert cells to strings
+            cells := make([]string, len(tr.Cells))
+            for j := range tr.Cells { cells[j] = fmt.Sprint(tr.Cells[j]) }
+            base := append(append([]string(nil), f.path...), nm)
+            if hasChild {
+                ns := f.namespace; name := nm
+                it := NewEnterableItem(nm, cells, base, func() (Folder, error) { return ctor(f.deps, ns, name, base), nil }, nameSty)
+                if kind != "" { nn := types.NamespacedName{Namespace: f.namespace, Name: nm}.String(); it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nn, kind, gvStr)) }
+                rows = append(rows, it)
+            } else {
+                it := NewSimpleItem(nm, cells, base, nameSty)
+                if kind != "" { nn := types.NamespacedName{Namespace: f.namespace, Name: nm}.String(); it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nn, kind, gvStr)) }
+                rows = append(rows, it)
+            }
+        }
+        f.list = table.NewSliceList(rows)
+        f.watchGVR(f.gvr)
+        return
+    }
+    // Fallback: metadata via cached client
     lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, f.gvr, f.namespace); if err != nil { f.list = newEmptyList(); return }
     f.watchGVR(f.gvr)
-    // Sort names
     names := make([]string, 0, len(lst.Items))
     for i := range lst.Items { names = append(names, lst.Items[i].GetName()) }
     sort.Strings(names)
     rows := make([]table.Row, 0, len(names))
-    // Resolve Kind once for details
-    kind := ""
-    if k, err := f.deps.Cl.RESTMapper().KindFor(f.gvr); err == nil { kind = k.Kind }
+    kind := ""; if k, err := f.deps.Cl.RESTMapper().KindFor(f.gvr); err == nil { kind = k.Kind }
     gvStr := f.gvr.GroupVersion().String()
     for _, nm := range names {
         if ctor, ok := childFor(f.gvr); ok {
             ns := f.namespace; name := nm
             base := append(append([]string(nil), f.path...), nm)
             it := NewEnterableItem(nm, []string{nm}, base, func() (Folder, error) { return ctor(f.deps, ns, name, base), nil }, nameSty)
-            if kind != "" {
-                nn := types.NamespacedName{Namespace: f.namespace, Name: nm}.String()
-                it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nn, kind, gvStr))
-            }
+            if kind != "" { nn := types.NamespacedName{Namespace: f.namespace, Name: nm}.String(); it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nn, kind, gvStr)) }
             rows = append(rows, it)
         } else {
             base := append(append([]string(nil), f.path...), nm)
             it := NewSimpleItem(nm, []string{nm}, base, nameSty)
-            if kind != "" {
-                nn := types.NamespacedName{Namespace: f.namespace, Name: nm}.String()
-                it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nn, kind, gvStr))
-            }
+            if kind != "" { nn := types.NamespacedName{Namespace: f.namespace, Name: nm}.String(); it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nn, kind, gvStr)) }
             rows = append(rows, it)
         }
     }
@@ -418,16 +457,51 @@ func (f *NamespacedObjectsFolder) populate() {
 
 func (f *ClusterObjectsFolder) populate() {
     nameSty := WhiteStyle()
+    // Try server-side Table first for richer columns
+    if tbl, err := f.deps.Cl.ListTableByGVR(f.deps.Ctx, f.gvr, ""); err == nil && tbl != nil && len(tbl.Rows) > 0 {
+        cols := make([]table.Column, len(tbl.ColumnDefinitions))
+        for i, c := range tbl.ColumnDefinitions { cols[i] = table.Column{Title: c.Name, Width: 0} }
+        f.cols = cols
+        rows := make([]table.Row, 0, len(tbl.Rows))
+        ctor, hasChild := childFor(f.gvr)
+        kind := ""; if k, e := f.deps.Cl.RESTMapper().KindFor(f.gvr); e == nil { kind = k.Kind }
+        gvStr := f.gvr.GroupVersion().String()
+        for i := range tbl.Rows {
+            tr := &tbl.Rows[i]
+            nm := ""
+            if len(tr.Object.Raw) > 0 {
+                var u unstructured.Unstructured
+                _ = u.UnmarshalJSON(tr.Object.Raw)
+                nm = u.GetName()
+            }
+            if nm == "" && len(tr.Cells) > 0 { if s, ok := tr.Cells[0].(string); ok { nm = s } }
+            if nm == "" { nm = fmt.Sprintf("row-%d", i) }
+            cells := make([]string, len(tr.Cells))
+            for j := range tr.Cells { cells[j] = fmt.Sprint(tr.Cells[j]) }
+            base := append(append([]string(nil), f.path...), nm)
+            if hasChild {
+                name := nm
+                it := NewEnterableItem(nm, cells, base, func() (Folder, error) { return ctor(f.deps, "", name, base), nil }, nameSty)
+                if kind != "" { it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nm, kind, gvStr)) }
+                rows = append(rows, it)
+            } else {
+                it := NewSimpleItem(nm, cells, base, nameSty)
+                if kind != "" { it = it.WithDetails(fmt.Sprintf("%s (%s %s)", nm, kind, gvStr)) }
+                rows = append(rows, it)
+            }
+        }
+        f.list = table.NewSliceList(rows)
+        f.watchGVR(f.gvr)
+        return
+    }
+    // Fallback to cached client list
     lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, f.gvr, ""); if err != nil { f.list = newEmptyList(); return }
     f.watchGVR(f.gvr)
-    // Sort names
     names := make([]string, 0, len(lst.Items))
     for i := range lst.Items { names = append(names, lst.Items[i].GetName()) }
     sort.Strings(names)
     rows := make([]table.Row, 0, len(names))
-    // Resolve Kind once for details
-    kind := ""
-    if k, err := f.deps.Cl.RESTMapper().KindFor(f.gvr); err == nil { kind = k.Kind }
+    kind := ""; if k, err := f.deps.Cl.RESTMapper().KindFor(f.gvr); err == nil { kind = k.Kind }
     gvStr := f.gvr.GroupVersion().String()
     for _, nm := range names {
         if ctor, ok := childFor(f.gvr); ok {
