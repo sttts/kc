@@ -1,4 +1,4 @@
-//go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0 object:paths=.
+//go:generate go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0 object paths=.
 
 package tableclient
 
@@ -7,8 +7,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // Row represents a single Kubernetes API object rendered in table form.
+//
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type Row struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -19,8 +20,9 @@ type Row struct {
 	metav1.TableRow `json:",inline"`
 }
 
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // RowList represents a list of table-rendered Kubernetes objects.
+//
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type RowList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
