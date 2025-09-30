@@ -96,15 +96,6 @@ func NewRootFolder(deps Deps) *RootFolder {
 func (f *RootFolder) Title() string { return "/" }
 func (f *RootFolder) Key() string   { return "root" }
 
-// NamespacesFolder lists namespaces.
-type NamespacesFolder struct{ BaseFolder }
-func NewNamespacesFolder(deps Deps, basePath []string) *NamespacesFolder {
-    f := &NamespacesFolder{BaseFolder{deps: deps, cols: []table.Column{{Title: " Name"}}, gvr: schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, hasMeta: true, path: append([]string(nil), basePath...)}}
-    f.init = func(){ f.populate() }
-    return f
-}
-func (f *NamespacesFolder) Title() string { return "namespaces" }
-func (f *NamespacesFolder) Key() string   { return depsKey(f.deps, "namespaces") }
 
 // NamespacedGroupsFolder lists namespaced resource groups for a namespace.
 type NamespacedGroupsFolder struct{ BaseFolder; ns string }
@@ -300,19 +291,7 @@ func (f *ContextsFolder) populate() {
 }
 
 // Namespaces: list namespaces, each enterable
-func (f *NamespacesFolder) populate() {
-    nameSty := WhiteStyle()
-    gvr := schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}
-    lst, err := f.deps.Cl.ListByGVR(f.deps.Ctx, gvr, ""); if err != nil { f.list = newEmptyList(); return }
-    // Ensure we watch namespace changes (debounced refresh in UI) using GVR
-    f.watchGVR(gvr)
-    rows := make([]table.Row, 0, len(lst.Items))
-    for i := range lst.Items { ns := lst.Items[i].GetName();
-        base := append(append([]string(nil), f.path...), ns)
-        rows = append(rows, NewEnterableItem(ns, []string{"/"+ns}, base, func() (Folder, error) { return NewNamespacedGroupsFolder(f.deps, ns, base), nil }, nameSty))
-    }
-    f.list = table.NewSliceList(rows)
-}
+// (NamespacesFolder removed; namespaces are listed via ClusterObjectsFolder for v1/namespaces.)
 
 // Namespaced groups: configmaps/secrets/etc with counts
 func (f *NamespacedGroupsFolder) populate() {

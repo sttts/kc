@@ -175,7 +175,6 @@ Notes:
   - `NewRootFolder(deps)`
   - `NewContextsFolder(deps, basePath []string)`
   - `NewContextRootFolder(deps, basePath []string)`
-  - `NewNamespacesFolder(deps, basePath []string)`
   - `NewNamespacedGroupsFolder(deps, ns, basePath []string)`
   - `NewNamespacedObjectsFolder(deps, gvr, ns, basePath []string)`
   - `NewClusterObjectsFolder(deps, gvr, basePath []string)`
@@ -190,7 +189,7 @@ Notes:
 ## Programmatic Navigation
 
 - Paths are UX‑level, not a data source. Programmatic navigation composes Enter calls and sets selection IDs on the navigator:
-  - Example: `/namespaces/<ns>` → `nav.SetSelectionID("namespaces"); nav.Push(NewNamespacesFolder(deps, ["namespaces"]))`; then `nav.SetSelectionID(ns); nav.Push(NewNamespacedGroupsFolder(deps, ns, ["namespaces",ns]))`.
+  - Example: `/namespaces/<ns>` → `nav.SetSelectionID("namespaces"); nav.Push(NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"",Version:"v1",Resource:"namespaces"}, ["namespaces"]))`; then `nav.SetSelectionID(ns); nav.Push(NewNamespacedGroupsFolder(deps, ns, ["namespaces",ns]))`.
   - Validation (missing ns/resource/object) falls back to the nearest valid parent.
 - The App owns a `Navigator`; `GoToNamespace(ns)` builds a clean stack using Enterable rows and updates the panels with `WithBack(Current(), HasBack())`.
 
