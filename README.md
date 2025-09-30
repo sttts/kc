@@ -5,21 +5,21 @@ A TUI (Terminal User Interface) for Kubernetes inspired by Midnight Commander, b
 ## Features
 
 ### ✅ Completed
-- **Modular Resource Handler System**: Generic base operations (Delete, Edit, Describe, View) with resource-specific extensions
-- **Kubeconfig Management**: Automatic discovery of kubeconfigs, contexts, and clusters
-- **Controller-Runtime Integration**: Uses `client.Object` directly without unnecessary wrapping
-- **BubbleTea TUI Framework**: Two-panel layout with terminal integration
-- **Comprehensive Testing**: All components are thoroughly tested
+- **Two‑Panel TUI**: BubbleTea/Lipgloss interface with function‑key bar and integrated 2‑line terminal
+- **Kubeconfig Management**: Discover kubeconfigs and contexts; quick context switching
+- **Cluster Client + Cache**: Controller‑runtime clients with shared cache; dedicated Table cache for server‑side Tables
+- **Hierarchical Navigation**: Contexts → namespaces → resource groups → object lists → object details (containers, keys)
+- **Server‑Side Tables**: Object lists render API Table columns, support Normal/Wide columns, Age column, and object ordering
+- **F2 Options**: Context‑aware dialog for Objects vs Resources; per‑panel and persisted settings
+- **F3 View**: View object YAML; view ConfigMap/Secret key values with secret auto‑decoding when textual
+- **Config System**: `~/.kc/config.yaml` with sensible defaults; theme, table mode, object columns/order, mouse, TTL, etc.
+- **Tests**: Unit tests + envtests (where supported) for nav, UI rendering, viewers, and object ordering/age
 
 ### 🚧 In Progress
-- Resource informers for live updates
-- Hierarchical navigation (contexts → namespaces → resources)
-- F2 resource selection with presets
-- F3/F4 view/edit functionality
-- F7/F8 create/delete operations
+- Resource informers for live updates across all folders
+- F4 Edit, F7 Create, F8 Delete workflows
 - F9 context menus
-- Terminal integration with kubectl
-- Configuration system
+- Terminal integration with kubectl commands
 
 ## Architecture
 
@@ -81,7 +81,7 @@ Notes:
 
 ### Configuration
 - Path: `~/.kc/config.yaml`
-- YAML keys are expected in lower-case. The loader tolerates legacy/mixed-case keys but normalizes defaults to lower-case.
+- Keys are lower‑case; loader tolerates legacy/mixed‑case and normalizes.
 
 All settings (with defaults):
 
@@ -92,6 +92,9 @@ viewer:
   theme: dracula
 
 panel:
+  table:
+    # Table mode for object lists: scroll or fit
+    mode: scroll
   scrolling:
     horizontal:
       # Number of characters moved per left/right pan in horizontal-scrolling modes.
@@ -111,27 +114,17 @@ kubernetes:
     ttl: 2m
 
 resources:
-  # Whether to show only resource groups with non-zero object counts (true),
-  # or show all resources (false). Applies to cluster and namespace scope.
-  # Default: true
+  # Show only resource groups with non-zero counts (true) or all (false).
   showNonEmptyOnly: true
-  # Ordering of resource groups:
-  # - alpha: alphabetic by resource plural
-  # - group: grouped by API group (group, then resource)
-  # - favorites: alphabetic, but with favorites listed first
-  # Default: alpha
+  # Ordering of resource groups: alpha | group | favorites
   order: alpha
-  # Favorites used when order=favorites. Plural resource names, lower-case.
+  # Favorites for order=favorites. Plural names, lower-case.
   favorites: [pods, services, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, configmaps, secrets, ingresses, networkpolicies, persistentvolumeclaims]
  
 objects:
   # Object list ordering:
   # - name | -name | creation | -creation
   order: name
-  # Columns mode for server-side Tables:
-  # - normal: show priority 0 columns (kubectl default)
-  # - wide: show all server-provided columns (like `kubectl get -o wide`)
-  columns: normal
   # Columns mode for server-side Tables:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
@@ -151,13 +144,17 @@ Themes (lower-case)
 - borland
 - native
 
-Change theme at runtime: open a YAML (F3), press F9 to open the theme dialog. Moving the cursor previews the theme live; Enter applies and saves it; Esc Esc or F10 cancels and restores the previous theme.
+Change theme at runtime: open a viewer (F3), then press F2 to open the theme dialog (or use Esc+2). Moving the cursor previews live; Enter applies and saves; Esc Esc or F10 cancels and restores the previous theme.
 
 
 ### Key Bindings
 - `F1`: Help
-- `F2`: Resources (view options)
-- `F3`: View resource
+- `F2`: Options
+  - In lists: opens context‑aware dialog (Objects View Options or Resources View Options)
+  - In viewer: opens the Theme selector
+- `F3`: View
+  - On objects: YAML viewer
+  - On ConfigMap/Secret keys: value viewer (secrets auto‑decode when textual)
 - `F4`: Edit resource
 - `F5`: Copy
 - `F6`: Rename/Move
@@ -201,6 +198,9 @@ go test ./pkg/kubeconfig/... -v
 go test ./internal/ui/... -v
 ```
 
+Notes:
+- Some tests use Kubernetes envtest to spin up a local control plane for integration coverage (navigation, viewers, ordering/Age). These require a non‑sandboxed environment with permission to bind local ports. In restricted sandboxes, run the unit‑only subset as shown above.
+
 ## Project Structure
 
 ```
@@ -212,6 +212,8 @@ kc/
 ├── examples/               # Usage examples
 │   ├── handler/           # Handler system examples
 │   └── kubeconfig/        # Kubeconfig examples
+├── internal/navigation/   # Navigator + folders (contexts, namespaces, objects, containers, keys)
+├── internal/table/        # Grid/table rendering (BigTable, rows, lists)
 └── README.md              # This file
 ```
 

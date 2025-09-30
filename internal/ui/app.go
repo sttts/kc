@@ -904,11 +904,12 @@ func (a *App) renderFunctionKeys() string {
 			parts := strings.Split(path, "/")
 			if len(parts) == 3 { // /namespaces/<ns>
 				// resource folders only; F3/F4/F8 disabled
-			} else if len(parts) == 4 { // /namespaces/<ns>/<resource>
-				// viewing/editing/deleting objects is possible when an object row is selected (not ".." and not a folder)
-				if cur != nil && cur.Name != ".." && !cur.Enterable {
-					canView, canEdit, canDelete = true, true, true
-				}
+            } else if len(parts) == 4 { // /namespaces/<ns>/<resource>
+                // viewing/editing/deleting objects is possible when an object row is selected (not "..")
+                // Allow F3 even for enterable items (e.g., ConfigMaps/Secrets) to view YAML; Enter goes into keys.
+                if cur != nil && cur.Name != ".." {
+                    canView, canEdit, canDelete = true, true, true
+                }
 			} else if len(parts) >= 5 { // object or deeper
 				if cur != nil && cur.Name != ".." {
 					canView = true
@@ -991,7 +992,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
         } else if strings.HasPrefix(path, "/namespaces/") {
             parts := strings.Split(path, "/")
             if len(parts) == 4 { /* list */ } else if len(parts) == 5 {
-                if cur != nil && cur.Name != ".." && !cur.Enterable { canView, canEdit, canDelete = true, true, true }
+                if cur != nil && cur.Name != ".." { canView, canEdit, canDelete = true, true, true }
             } else if len(parts) >= 5 { if cur != nil && cur.Name != ".." { canView, canEdit, canDelete = true, true, true } }
         }
         makeLbl := func(key, label string, enabled bool) string {
