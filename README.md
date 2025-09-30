@@ -1,6 +1,10 @@
-# WIP: Kubernetes Commander (kc)
+# Experimental: Kubernetes Commander (kc)
+
+![Kubernetes Commander TUI](docs/screenshot.png)
 
 A TUI (Terminal User Interface) for Kubernetes inspired by Midnight Commander, built with Go and BubbleTea.
+
+> **Disclaimer:** this repo is heavily vibe coded.
 
 ## Features
 
