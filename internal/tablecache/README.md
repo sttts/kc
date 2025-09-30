@@ -91,3 +91,9 @@ Envtests under `tablecache` exercise two layers:
   return `Row` objects through the cache API.
 
 Running the package tests (`go test ./internal/tablecache`) spins up envtest automatically and verifies both paths.
+
+## Integration notes
+
+- Drop-in replacement for controller-runtime managers: set `manager.Options.NewCache = tablecache.NewCacheFunc()` and register `tablecache`'s types in the shared scheme.
+- Standalone usage: instantiate with `tablecache.New(cfg, tablecache.Options{})` and pair it with a standard client for writes.
+- Row-aware reader: `tablecache.NewReader` remains available when you need table semantics without the cache layer.

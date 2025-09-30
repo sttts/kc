@@ -49,6 +49,7 @@ type Panel struct {
     columnWidths       []int
     tableViewEnabled   bool
     viewConfig         *ViewConfig
+    tableMode          table.GridMode
 	// Optional providers
 	contextCountProvider func() int // returns number of contexts, or negative if unknown
 	// Optional: folder-backed rendering (preview path using internal/navigation)
@@ -122,6 +123,7 @@ func NewPanel(title string) *Panel {
         positionMemory:   make(map[string]PositionInfo),
         tableViewEnabled: true,
         resOrder:         "favorites",
+        tableMode:        table.ModeScroll,
     }
 }
 
@@ -165,9 +167,12 @@ func (p *Panel) SetFolder(f nav.Folder, hasBack bool) {
     p.folderHasBack = hasBack
     // Initialize or refresh BigTable from folder columns and data when enabled
     if p.useFolder && p.folder != nil {
+        // Force population so Columns() reflects server-provided headers
+        _ = p.folder.Len()
         cols := p.folder.Columns()
         p.lastColTitles = nav.ColumnsToTitles(cols)
         bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
+        bt.SetMode(p.tableMode)
         // Apply panel-aligned styles
         st := table.DefaultStyles()
         st.Header = PanelTableHeaderStyle
@@ -254,6 +259,27 @@ func (p *Panel) syncFromFolder() {
     p.items = items
 }
 
+// SetTableMode updates the panel's table rendering mode ("scroll" or "fit").
+// It applies immediately to an existing BigTable instance.
+func (p *Panel) SetTableMode(mode string) {
+    m := strings.ToLower(mode)
+    switch m {
+    case "fit":
+        p.tableMode = table.ModeFit
+    default:
+        p.tableMode = table.ModeScroll
+    }
+    if p.bt != nil {
+        p.bt.SetMode(p.tableMode)
+    }
+}
+
+// TableMode returns the current mode label ("scroll" or "fit").
+func (p *Panel) TableMode() string {
+    if p.tableMode == table.ModeFit { return "fit" }
+    return "scroll"
+}
+
 // SelectByRowID moves the selection to the row with the given ID if present.
 // It matches against the folder's row IDs and adjusts for the synthetic back row.
 func (p *Panel) SelectByRowID(id string) {
@@ -288,6 +314,8 @@ func (p *Panel) RefreshFolder() {
     if p.useFolder && p.folder != nil && p.bt != nil {
         // If folder's visible columns changed (e.g., server-side Table columns),
         // rebuild the BigTable with the new headers.
+        // Ensure folder data/columns are current before comparing
+        _ = p.folder.Len()
         newCols := p.folder.Columns()
         // Compare titles only (width hints are advisory)
         titles := nav.ColumnsToTitles(newCols)
@@ -297,6 +325,7 @@ func (p *Panel) RefreshFolder() {
         }
         if !same {
             bt := table.NewBigTable(newCols, p.folder, max(1, p.width), max(1, p.height))
+            bt.SetMode(p.tableMode)
             p.lastColTitles = titles
             st := table.DefaultStyles()
             st.Header = PanelTableHeaderStyle
@@ -608,6 +637,7 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
             cols := p.folder.Columns()
             p.lastColTitles = nav.ColumnsToTitles(cols)
             bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
+            bt.SetMode(p.tableMode)
             st := table.DefaultStyles()
             st.Header = PanelTableHeaderStyle
             st.Cell = PanelItemStyle

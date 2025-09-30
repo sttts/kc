@@ -545,12 +545,17 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
     if n == 0 || vw <= 0 { return nil, nil, nil }
     // Compute dynamic base widths from current header titles and visible rows.
     base := m.computeScrollBaseWidths()
-    // Precompute total width including 1-char separators to clamp xOff.
+    // Precompute total width including separators to clamp xOff.
+    // Always budget 1 column between visible columns: either a space (when
+    // not using lipgloss borders) or the border glyph width (when enabled).
+    // The lipgloss table will render border columns when BorderColumn(true),
+    // so we must include their width in our horizontal plan.
+    sep := 1
     total := 0
     for i := 0; i < n; i++ {
         w := base[i]
         total += w
-        if i > 0 { total += 1 }
+        if i > 0 { total += sep }
     }
     if total <= vw { xOff = 0 }
     if xOff < 0 { xOff = 0 }
@@ -565,15 +570,15 @@ func (m *BigTable) slicePlanForScroll(xOff, vw int) ([]int, []int, []int) {
     pos := 0 // running position across full line including separators
 
     for i := 0; i < n && remaining > 0; i++ {
-        // Account for a 1-char separator between columns at the content level.
-        if i > 0 {
+        // Account for the separator only when we render space-separated columns.
+        if i > 0 && sep > 0 {
             if pos < xOff {
                 // If xOff lands on the separator, advance past it.
-                if pos+1 <= xOff { pos += 1 }
+                if pos+sep <= xOff { pos += sep }
             } else if len(widths) > 0 {
-                // Consume one column of viewport for the separator (space or border).
+                // Consume viewport for the separator (spaces)
                 if remaining == 0 { break }
-                remaining -= 1
+                remaining -= sep
                 if remaining <= 0 { break }
             }
         }
