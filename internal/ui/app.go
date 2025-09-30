@@ -53,26 +53,35 @@ type App struct {
 	viewConfig *ViewConfig
 	cfg        *appconfig.Config
 	// Theme dialog state
-	prevTheme           string
-	suppressThemeRevert bool
-	// New navigation (folder-backed) using a Navigator
+    prevTheme           string
+    suppressThemeRevert bool
+    // New navigation (folder-backed) using a Navigator
     leftNav  *navui.Navigator
     rightNav *navui.Navigator
+    // Mouse double-click detection
+    lastClickTime time.Time
+    lastClickPanel int
+    lastClickRowID string
 }
+
+// Invariant: a.cfg is always non-nil. NewApp initializes it with defaults and
+// Init() loads and overwrites with persisted config, never leaving it nil.
 
 // NewApp creates a new application instance
 func NewApp() *App {
-	app := &App{
-		leftPanel:    NewPanel(""),
-		rightPanel:   NewPanel(""),
-		terminal:     NewTerminal(),
-		modalManager: NewModalManager(),
-		activePanel:  0,
-		showTerminal: false,
-		allResources: make([]schema.GroupVersionKind, 0),
-		escPressed:   false,
-		viewConfig:   NewViewConfig(),
-	}
+    app := &App{
+        leftPanel:    NewPanel(""),
+        rightPanel:   NewPanel(""),
+        terminal:     NewTerminal(),
+        modalManager: NewModalManager(),
+        activePanel:  0,
+        showTerminal: false,
+        allResources: make([]schema.GroupVersionKind, 0),
+        escPressed:   false,
+        viewConfig:   NewViewConfig(),
+        // Invariant: cfg is always non-nil; initialize with defaults
+        cfg:          appconfig.Default(),
+    }
 
 	// Register modals
 	app.setupModals()
@@ -289,6 +298,75 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	default:
+		// Mouse and other messages
+        if mm, ok := msg.(tea.MouseMsg); ok {
+            // In fullscreen terminal mode, let terminal handle mouse
+            if a.showTerminal {
+                model, cmd := a.terminal.Update(mm)
+                a.terminal = model.(*Terminal)
+                cmds = append(cmds, cmd)
+                return a, tea.Batch(cmds...)
+            }
+            // Panel mode: only act on specific mouse messages
+            switch e := mm.(type) {
+            case tea.MouseWheelMsg:
+                if a.activePanel == 0 { a.leftPanel.moveUp() } else { a.rightPanel.moveDown() }
+                return a, tea.Batch(cmds...)
+            case tea.MouseClickMsg:
+                m := e.Mouse()
+                x, y := m.X, m.Y
+                panelHeight := a.height - 3
+                panelWidth := a.width / 2
+                if y < panelHeight {
+                    // Click inside panels area
+                    if x >= panelWidth { a.activePanel = 1 } else { a.activePanel = 0 }
+                    contentY := y - 2 // 1 for frame top, 1 for header
+                    if contentY < 0 { contentY = 0 }
+                    target := a.leftPanel
+                    if a.activePanel == 1 { target = a.rightPanel }
+                    // Select row under cursor
+                    var clickedID string
+                    if target.useFolder && target.folder != nil && target.bt != nil {
+                        if id, ok := target.bt.VisibleRowID(contentY); ok {
+                            clickedID = id
+                            target.SelectByRowID(id)
+                        }
+                    } else {
+                        idx := target.scrollTop + contentY
+                        if idx < 0 { idx = 0 }
+                        if idx >= len(target.items) { idx = len(target.items) - 1 }
+                        if idx >= 0 && len(target.items) > 0 {
+                            target.selected = idx
+                            target.adjustScroll()
+                        }
+                    }
+                    // Double-click detection
+                    if clickedID != "" {
+                        now := time.Now()
+                        timeout := a.cfg.Input.Mouse.DoubleClickTimeout.Duration
+                        if a.lastClickRowID == clickedID && a.lastClickPanel == a.activePanel && now.Sub(a.lastClickTime) <= timeout {
+                            a.lastClickTime = time.Time{}
+                            a.lastClickRowID = ""
+                            if cmd := target.enterItem(); cmd != nil { return a, cmd }
+                        } else {
+                            a.lastClickTime = now
+                            a.lastClickPanel = a.activePanel
+                            a.lastClickRowID = clickedID
+                        }
+                    } else {
+                        a.lastClickTime = time.Now()
+                        a.lastClickPanel = a.activePanel
+                        a.lastClickRowID = ""
+                    }
+                    return a, tea.Batch(cmds...)
+                }
+                // Function key bar
+                if y == a.height-1 {
+                    if cmd := a.handleFunctionKeyClick(x); cmd != nil { return a, cmd }
+                    return a, tea.Batch(cmds...)
+                }
+            }
+        }
 		// Pass other messages to terminal (e.g., process exit)
 		model, cmd := a.terminal.Update(msg)
 		a.terminal = model.(*Terminal)
@@ -592,6 +670,62 @@ func (a *App) renderFunctionKeys() string {
 	titleRendered := titleStyle.Render(title)
 
 	return fullWidthStyle.Render(joined + " " + titleRendered)
+}
+
+// handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
+func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
+    // Recompute the keys exactly like renderFunctionKeys does and record spans.
+    // Build the list but capture text lengths to map x.
+    var keys []struct{ label string; enabled bool; action func() tea.Cmd }
+    if a.showTerminal {
+        keys = []struct{ label string; enabled bool; action func() tea.Cmd }{
+            {label: FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels"), enabled: true, action: func() tea.Cmd { a.showTerminal = false; return nil }},
+        }
+    } else {
+        p := a.leftPanel
+        if a.activePanel == 1 { p = a.rightPanel }
+        path := p.GetCurrentPath()
+        cur := p.GetCurrentItem()
+        canView, canEdit, canCreateNS, canDelete := false, false, false, false
+        if path == "/namespaces" {
+            canCreateNS = true
+            if cur != nil && cur.Type == ItemTypeNamespace { canView, canEdit, canDelete = true, true, true }
+        } else if strings.HasPrefix(path, "/namespaces/") {
+            parts := strings.Split(path, "/")
+            if len(parts) == 4 { /* list */ } else if len(parts) == 5 {
+                if cur != nil && cur.Name != ".." && !cur.Enterable { canView, canEdit, canDelete = true, true, true }
+            } else if len(parts) >= 5 { if cur != nil && cur.Name != ".." { canView, canEdit, canDelete = true, true, true } }
+        }
+        makeLbl := func(key, label string, enabled bool) string {
+            desc := FunctionKeyDescriptionStyle
+            if !enabled { desc = FunctionKeyDisabledStyle }
+            return FunctionKeyStyle.Render(key) + desc.Render(label)
+        }
+        keys = []struct{ label string; enabled bool; action func() tea.Cmd }{
+            {makeLbl("F1", "Help", true), true, a.showHelp},
+            {makeLbl("F2", "Resources", true), true, a.showResourceSelector},
+            {makeLbl("F3", "View", canView), canView, a.openYAMLForSelection},
+            {makeLbl("F4", "Edit", canEdit), canEdit, a.editSelection},
+            {makeLbl("F5", "Copy", false), false, a.copyItem},
+            {makeLbl("F6", "Rename/Move", false), false, a.renameMoveItem},
+            {makeLbl("F7", "Namespace", canCreateNS), canCreateNS, a.createNamespace},
+            {makeLbl("F8", "Delete", canDelete), canDelete, a.deleteResource},
+            {FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"), true, a.showContextMenu},
+            {FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
+            {FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd { a.showTerminal = true; a.terminal.Focus(); return nil }},
+        }
+    }
+    // Map x to index by accumulating rendered widths
+    acc := 0
+    for _, k := range keys {
+        w := lipgloss.Width(k.label)
+        if x >= acc && x < acc+w {
+            if k.enabled && k.action != nil { return k.action() }
+            return nil
+        }
+        acc += w
+    }
+    return nil
 }
 
 // renderToggleMessage renders the toggle message for fullscreen mode

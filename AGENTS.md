@@ -66,6 +66,9 @@
 - Docs-only commits do not require build/test.
 - Before committing, run `git status` to ensure there are no unintended or forgotten changes; stage only what belongs in the focused commit.
 
+### Environment Variables (Go builds)
+- Never set `GOPATH` or `GOCACHE` in commands or CI. Use the default environment so Go’s module and toolchain behavior works as intended.
+
 See `TODO.md` for the active development plan and current tasks.
 
 ### Git Hygiene

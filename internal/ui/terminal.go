@@ -29,7 +29,9 @@ type Terminal struct {
 	// Input tracking
 	hasTyped bool // Whether user has typed since last command
 	// Exit handling
-	shellExited bool
+    shellExited bool
+    // Whether the PTY app has enabled mouse tracking (ESC[?1000h/1002h/1003h/1006h/1015h)
+    ptyWantsMouse bool
 }
 
 // NewTerminal creates a new terminal instance
@@ -89,8 +91,8 @@ func (t *Terminal) Init() tea.Cmd {
 
 // Update handles messages and updates the terminal state
 func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle window resize events
-	switch msg := msg.(type) {
+    // Handle window resize events
+    switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		msg.Width = max(1, msg.Width)
 		msg.Height = max(1, msg.Height)
@@ -103,12 +105,25 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t, cmd
 		}
 		return t, nil
-	}
+    }
 
-	// Always update bubbleterm first to check process status
-	if t.terminal != nil {
-		model, cmd := t.terminal.Update(msg)
-		t.terminal = model.(*bubbleterm.Model)
+    // Always update bubbleterm first to check process status
+    if t.terminal != nil {
+        // Swallow mouse events while panels are visible to avoid sending
+        // mouse escape sequences into the PTY (which shows up as garbage
+        // in the 2-line terminal view). In fullscreen terminal mode, let
+        // mouse events pass through to bubbleterm only if the app requested it.
+        if mm, ok := msg.(tea.MouseMsg); ok {
+            if t.showPanels {
+                // Panels visible → ignore mouse for PTY; panels handle mouse themselves
+                _ = mm
+                return t, nil
+            }
+            // Fullscreen terminal: forward Bubble Tea mouse events to bubbleterm;
+            // bubbleterm and the underlying app decide whether to act on them.
+        }
+        model, cmd := t.terminal.Update(msg)
+        t.terminal = model.(*bubbleterm.Model)
 
 		// Track if user has typed (for key routing logic)
 		if t.showPanels {
@@ -129,6 +144,11 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	return t, nil
 }
+
+// SetPTYWantsMouse allows wiring a detector that toggles whether the PTY app
+// requested mouse events (e.g., by parsing ESC[?1000h/l sequences from the
+// app's stdout). TODO: hook into bubbleterm emulator output to call this.
+func (t *Terminal) SetPTYWantsMouse(on bool) { t.ptyWantsMouse = on }
 
 // View renders the terminal
 func (t *Terminal) View() (string, *tea.Cursor) {

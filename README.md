@@ -81,12 +81,34 @@ Notes:
 
 ### Configuration
 - Path: `~/.kc/config.yaml`
-- Keys use lower-case only.
+- YAML keys are expected in lower-case. The loader tolerates legacy/mixed-case keys but normalizes defaults to lower-case.
 
-Example:
+All settings (with defaults):
+
 ```yaml
 viewer:
+  # Chroma theme used by the YAML/text viewer (lower-case).
+  # You can change it at runtime from within the viewer (F9), which will persist this value.
   theme: dracula
+
+panel:
+  scrolling:
+    horizontal:
+      # Number of characters moved per left/right pan in horizontal-scrolling modes.
+      # Used by internal table components; keep >= 1. Default: 4.
+      step: 4
+
+input:
+  mouse:
+    # Double-click timeout; two clicks within this duration on the same row
+    # trigger Enter (same as pressing Enter). Default: 300ms.
+    doubleClickTimeout: 300ms
+
+kubernetes:
+  clusters:
+    # TTL for controller-runtime clusters in the shared pool; idle clusters are
+    # evicted after this time. Duration format (e.g., 2m, 30s). Default: 2m.
+    ttl: 2m
 ```
 
 Themes (lower-case)
