@@ -14,13 +14,16 @@ import (
 type ResourcesOptionsModel struct {
     width, height int
     // state
-    focus int // 0: include empty toggle, 1: order
+    focus int // 0: include empty toggle, 1: order, 2: table mode
     includeEmpty bool
     orderIdx int // 0=alpha, 1=group, 2=favorites
+    modeIdx int  // 0=scroll, 1=fit
 }
 
 var orderLabels = []string{"Alphabetic", "Group", "Favorites"}
 var orderKeys   = []string{"alpha", "group", "favorites"}
+var modeLabels  = []string{"Scroll", "Fit"}
+var modeKeys    = []string{"scroll", "fit"}
 
 func NewResourcesOptionsModel(showNonEmpty bool, order string) *ResourcesOptionsModel {
     idx := 0
@@ -29,7 +32,7 @@ func NewResourcesOptionsModel(showNonEmpty bool, order string) *ResourcesOptions
     case "favorites": idx = 2
     default: idx = 0
     }
-    return &ResourcesOptionsModel{includeEmpty: !showNonEmpty, orderIdx: idx}
+    return &ResourcesOptionsModel{includeEmpty: !showNonEmpty, orderIdx: idx, modeIdx: 0}
 }
 
 func (m *ResourcesOptionsModel) Init() tea.Cmd { return nil }
@@ -39,6 +42,7 @@ func (m *ResourcesOptionsModel) SetDimensions(w, h int) { m.width, m.height = w,
 type ResourcesOptionsChangedMsg struct {
     ShowNonEmptyOnly bool
     Order string
+    TableMode string // "scroll" or "fit"
     Accept bool // true when user confirmed (Enter)
     Close bool  // request to close the dialog
     SaveDefault bool // persist current values as defaults in config
@@ -51,32 +55,36 @@ func (m *ResourcesOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         case "up", "k":
             if m.focus > 0 { m.focus-- }
         case "down", "j":
-            if m.focus < 1 { m.focus++ }
+            if m.focus < 2 { m.focus++ }
         case "left", "right", " ", "space":
             if m.focus == 0 {
                 m.includeEmpty = !m.includeEmpty
-            } else {
+            } else if m.focus == 1 {
                 if t.String() == "left" {
                     if m.orderIdx > 0 { m.orderIdx-- } else { m.orderIdx = len(orderKeys)-1 }
                 } else {
                     if m.orderIdx < len(orderKeys)-1 { m.orderIdx++ } else { m.orderIdx = 0 }
+                }
+            } else { // table mode
+                if t.String() == "left" || t.String() == "right" || t.String() == " " || t.String() == "space" {
+                    if m.modeIdx == 0 { m.modeIdx = 1 } else { m.modeIdx = 0 }
                 }
             }
             // No immediate apply; wait for Enter
             return m, nil
         case "ctrl+s":
             // Save as defaults (persist to config) but do not close
-            return m, func() tea.Msg { return ResourcesOptionsChangedMsg{ShowNonEmptyOnly: !m.includeEmpty, Order: orderKeys[m.orderIdx], SaveDefault: true} }
+            return m, func() tea.Msg { return ResourcesOptionsChangedMsg{ShowNonEmptyOnly: !m.includeEmpty, Order: orderKeys[m.orderIdx], TableMode: modeKeys[m.modeIdx], SaveDefault: true} }
         case "enter":
-            return m, func() tea.Msg { return ResourcesOptionsChangedMsg{ShowNonEmptyOnly: !m.includeEmpty, Order: orderKeys[m.orderIdx], Accept: true, Close: true} }
+            return m, func() tea.Msg { return ResourcesOptionsChangedMsg{ShowNonEmptyOnly: !m.includeEmpty, Order: orderKeys[m.orderIdx], TableMode: modeKeys[m.modeIdx], Accept: true, Close: true} }
         }
     }
     return m, nil
 }
 
 func (m *ResourcesOptionsModel) View() string {
-    labels := []string{"Include empty", "Order"}
-    values := []string{func() string { if m.includeEmpty { return "Yes" } ; return "No" }(), orderLabels[m.orderIdx]}
+    labels := []string{"Include empty", "Order", "Table mode"}
+    values := []string{func() string { if m.includeEmpty { return "Yes" } ; return "No" }(), orderLabels[m.orderIdx], modeLabels[m.modeIdx]}
     // Compute label width for alignment
     maxLabel := 0
     for _, l := range labels { if w := lipgloss.Width(l); w > maxLabel { maxLabel = w } }

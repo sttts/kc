@@ -17,8 +17,12 @@ import (
     "k8s.io/client-go/rest"
     "k8s.io/client-go/restmapper"
     crclient "sigs.k8s.io/controller-runtime/pkg/client"
+    crcache "sigs.k8s.io/controller-runtime/pkg/cache"
     crcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    
+    // Table-rendering cache integration
+    tablecache "github.com/sttts/kc/internal/tablecache"
 )
 
 // Cluster is a thin extension around controller-runtime's Cluster that exposes
@@ -30,6 +34,9 @@ type Cluster struct {
     baseMapper metamapper.ResettableRESTMapper
     mapper     metamapper.RESTMapper
     dyn        dynamic.Interface
+
+    // tableCache serves Row/RowList objects backed by server-side Table responses.
+    tableCache crcache.Cache
 
     cancel  context.CancelFunc
     refresh time.Duration
@@ -54,7 +61,7 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
     o := &options{scheme: scheme.Scheme, refresh: 30 * time.Second}
     for _, fn := range opts { fn(o) }
 
-    // controller-runtime cluster using our (to-be) mapper
+    // controller-runtime cluster using the default cache; we keep it unchanged.
     // We initialize discovery/mapper lazily in ensureDiscovery() before first use.
     cl, err := crcluster.New(cfg, func(co *crcluster.Options) {
         co.Scheme = o.scheme
@@ -65,6 +72,14 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
     c := &Cluster{Cluster: cl, cancel: cancel, refresh: o.refresh}
     // Pre-initialize discovery/mapper/dynamic client lazily so methods can be used early.
     _ = c.ensureDiscovery()
+
+    // Build a dedicated table-aware cache for Row/RowList alongside the default cache.
+    // Register Row/RowList types in the scheme so the cache can marshal them.
+    _ = tablecache.AddToScheme(o.scheme)
+    tcache, err := tablecache.NewFromOptions(cfg, crcache.Options{Scheme: o.scheme})
+    if err != nil { return nil, err }
+    c.tableCache = tcache
+
     // Kick off background refresh loop with a detached context; start/stop is managed by callers.
     go c.refreshLoop(ctx)
     return c, nil
@@ -104,7 +119,12 @@ func (c *Cluster) refreshLoop(ctx context.Context) {
 
 // Start delegates to controller-runtime Cluster.Start; it blocks until context is cancelled.
 func (c *Cluster) Start(ctx context.Context) error {
-    return c.Cluster.Start(ctx)
+    // Start the table cache in parallel to the embedded cluster.
+    errCh := make(chan error, 2)
+    go func() { errCh <- c.tableCache.Start(ctx) }()
+    go func() { errCh <- c.Cluster.Start(ctx) }()
+    // Return the first error; the other goroutine will exit on ctx cancel or due to the same failure.
+    return <-errCh
 }
 
 // Stop cancels internal loops; users should cancel the Start() context as well.
@@ -140,6 +160,45 @@ func (c *Cluster) restClientForGV(gv schema.GroupVersion) (*rest.RESTClient, err
     if gv.Group == "" { cfg.APIPath = "/api" } else { cfg.APIPath = "/apis" }
     cfg.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
     return rest.RESTClientFor(cfg)
+}
+
+// -----------------------------------------------------------------------------
+// Table-aware helpers using the tablecache-backed cache
+
+// ListRowsByGVR lists resources as server-side table rows using the cache.
+// It returns a RowList whose Columns describe the headers and whose Items carry
+// the raw cell values. Callers can render cells or fall back when the server
+// does not support Tables.
+func (c *Cluster) ListRowsByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*tablecache.RowList, error) {
+    // Resolve Kind for the Row target GVK
+    _ = c.ensureDiscovery()
+    gvk, err := c.RESTMapper().KindFor(gvr)
+    if err != nil {
+        return nil, err
+    }
+    rows := tablecache.NewRowList(gvk)
+    if namespace != "" {
+        if err := c.tableCache.List(ctx, rows, crclient.InNamespace(namespace)); err != nil {
+            return nil, err
+        }
+    } else {
+        if err := c.tableCache.List(ctx, rows); err != nil {
+            return nil, err
+        }
+    }
+    return rows, nil
+}
+
+// GetRowByGVR fetches a single object rendered as a server-side table row.
+// It extracts the row via the cache using the Row target GVK.
+func (c *Cluster) GetRowByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*tablecache.Row, error) {
+    _ = c.ensureDiscovery()
+    gvk, err := c.RESTMapper().KindFor(gvr)
+    if err != nil { return nil, err }
+    row := tablecache.NewRow(gvk)
+    key := crclient.ObjectKey{Namespace: namespace, Name: name}
+    if err := c.tableCache.Get(ctx, key, row); err != nil { return nil, err }
+    return row, nil
 }
 
 // Helpers ---------------------------------------------------------------------

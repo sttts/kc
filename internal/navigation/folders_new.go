@@ -386,33 +386,23 @@ func (f *NamespacedGroupsFolder) populate() {
 
 func (f *NamespacedObjectsFolder) populate() {
     nameSty := WhiteStyle()
-    // Try server-side Table first for richer columns
-    if tbl, err := f.deps.Cl.ListTableByGVR(f.deps.Ctx, f.gvr, f.namespace); err == nil && tbl != nil && len(tbl.Rows) > 0 {
-        // Build columns from Table definitions
-        cols := make([]table.Column, len(tbl.ColumnDefinitions))
-        for i, c := range tbl.ColumnDefinitions { cols[i] = table.Column{Title: c.Name, Width: 0} }
+    // Try server-side Rows via tablecache first for richer columns
+    if rl, err := f.deps.Cl.ListRowsByGVR(f.deps.Ctx, f.gvr, f.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
+        cols := make([]table.Column, len(rl.Columns))
+        for i, c := range rl.Columns { cols[i] = table.Column{Title: c.Name, Width: 0} }
         f.cols = cols
-        rows := make([]table.Row, 0, len(tbl.Rows))
+        rows := make([]table.Row, 0, len(rl.Items))
         // Resolve child ctor and kind for details
         ctor, hasChild := childFor(f.gvr)
         kind := ""; if k, e := f.deps.Cl.RESTMapper().KindFor(f.gvr); e == nil { kind = k.Kind }
         gvStr := f.gvr.GroupVersion().String()
-        for i := range tbl.Rows {
-            tr := &tbl.Rows[i]
-            // Extract name from embedded object
-            nm := ""
-            if len(tr.Object.Raw) > 0 {
-                var u unstructured.Unstructured
-                _ = u.UnmarshalJSON(tr.Object.Raw)
-                nm = u.GetName()
-            }
-            if nm == "" && len(tr.Cells) > 0 {
-                if s, ok := tr.Cells[0].(string); ok { nm = s }
-            }
+        for i := range rl.Items {
+            rr := &rl.Items[i]
+            nm := rr.Name
+            if nm == "" && len(rr.Cells) > 0 { if s, ok := rr.Cells[0].(string); ok { nm = s } }
             if nm == "" { nm = fmt.Sprintf("row-%d", i) }
-            // Convert cells to strings
-            cells := make([]string, len(tr.Cells))
-            for j := range tr.Cells { cells[j] = fmt.Sprint(tr.Cells[j]) }
+            cells := make([]string, len(rr.Cells))
+            for j := range rr.Cells { cells[j] = fmt.Sprint(rr.Cells[j]) }
             base := append(append([]string(nil), f.path...), nm)
             if hasChild {
                 ns := f.namespace; name := nm
@@ -457,27 +447,22 @@ func (f *NamespacedObjectsFolder) populate() {
 
 func (f *ClusterObjectsFolder) populate() {
     nameSty := WhiteStyle()
-    // Try server-side Table first for richer columns
-    if tbl, err := f.deps.Cl.ListTableByGVR(f.deps.Ctx, f.gvr, ""); err == nil && tbl != nil && len(tbl.Rows) > 0 {
-        cols := make([]table.Column, len(tbl.ColumnDefinitions))
-        for i, c := range tbl.ColumnDefinitions { cols[i] = table.Column{Title: c.Name, Width: 0} }
+    // Try server-side Rows via tablecache first for richer columns
+    if rl, err := f.deps.Cl.ListRowsByGVR(f.deps.Ctx, f.gvr, ""); err == nil && rl != nil && len(rl.Items) > 0 {
+        cols := make([]table.Column, len(rl.Columns))
+        for i, c := range rl.Columns { cols[i] = table.Column{Title: c.Name, Width: 0} }
         f.cols = cols
-        rows := make([]table.Row, 0, len(tbl.Rows))
+        rows := make([]table.Row, 0, len(rl.Items))
         ctor, hasChild := childFor(f.gvr)
         kind := ""; if k, e := f.deps.Cl.RESTMapper().KindFor(f.gvr); e == nil { kind = k.Kind }
         gvStr := f.gvr.GroupVersion().String()
-        for i := range tbl.Rows {
-            tr := &tbl.Rows[i]
-            nm := ""
-            if len(tr.Object.Raw) > 0 {
-                var u unstructured.Unstructured
-                _ = u.UnmarshalJSON(tr.Object.Raw)
-                nm = u.GetName()
-            }
-            if nm == "" && len(tr.Cells) > 0 { if s, ok := tr.Cells[0].(string); ok { nm = s } }
+        for i := range rl.Items {
+            rr := &rl.Items[i]
+            nm := rr.Name
+            if nm == "" && len(rr.Cells) > 0 { if s, ok := rr.Cells[0].(string); ok { nm = s } }
             if nm == "" { nm = fmt.Sprintf("row-%d", i) }
-            cells := make([]string, len(tr.Cells))
-            for j := range tr.Cells { cells[j] = fmt.Sprint(tr.Cells[j]) }
+            cells := make([]string, len(rr.Cells))
+            for j := range rr.Cells { cells[j] = fmt.Sprint(rr.Cells[j]) }
             base := append(append([]string(nil), f.path...), nm)
             if hasChild {
                 name := nm

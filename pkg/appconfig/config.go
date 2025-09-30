@@ -26,6 +26,7 @@ type ScrollingConfig struct {
 
 type PanelConfig struct {
     Scrolling ScrollingConfig `json:"scrolling"`
+    Table     TableConfig     `json:"table"`
 }
 
 type MouseConfig struct {
@@ -72,10 +73,24 @@ type Config struct {
     Resources ResourcesViewConfig `json:"resources"`
 }
 
+// TableMode selects how tables render horizontally.
+// "scroll": horizontal panning across all columns.
+// "fit": fit all columns within the viewport width.
+type TableMode string
+
+const (
+    TableModeScroll TableMode = "scroll"
+    TableModeFit    TableMode = "fit"
+)
+
+type TableConfig struct {
+    Mode TableMode `json:"mode"`
+}
+
 func Default() *Config {
     return &Config{
         Viewer: ViewerConfig{Theme: "dracula"},
-        Panel:  PanelConfig{Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}}},
+        Panel:  PanelConfig{Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}}, Table: TableConfig{Mode: TableModeScroll}},
         Input:  InputConfig{Mouse: MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}}},
         Kubernetes: KubernetesConfig{Clusters: ClustersConfig{TTL: metav1.Duration{Duration: 2 * time.Minute}}},
         Resources: ResourcesViewConfig{
@@ -120,6 +135,9 @@ func Load() (*Config, error) {
         }
         if cfg.Panel.Scrolling.Horizontal.Step <= 0 {
             cfg.Panel.Scrolling.Horizontal.Step = 4
+        }
+        if cfg.Panel.Table.Mode != TableModeFit && cfg.Panel.Table.Mode != TableModeScroll {
+            cfg.Panel.Table.Mode = TableModeScroll
         }
         if cfg.Kubernetes.Clusters.TTL.Duration == 0 { cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute} }
         if cfg.Input.Mouse.DoubleClickTimeout.Duration == 0 { cfg.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: 300 * time.Millisecond} }
@@ -194,6 +212,7 @@ func Load() (*Config, error) {
         }
     }
     if cfg.Panel.Scrolling.Horizontal.Step <= 0 { cfg.Panel.Scrolling.Horizontal.Step = 4 }
+    if cfg.Panel.Table.Mode != TableModeFit && cfg.Panel.Table.Mode != TableModeScroll { cfg.Panel.Table.Mode = TableModeScroll }
     if cfg.Kubernetes.Clusters.TTL.Duration == 0 { cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute} }
     if cfg.Input.Mouse.DoubleClickTimeout.Duration == 0 { cfg.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: 300 * time.Millisecond} }
     // Normalize resources settings

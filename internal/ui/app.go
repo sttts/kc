@@ -211,14 +211,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
                 if a.cfg == nil { a.cfg = appconfig.Default() }
                 a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
                 a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
+                // Persist table mode default
+                switch strings.ToLower(m.TableMode) {
+                case "fit":
+                    a.cfg.Panel.Table.Mode = appconfig.TableModeFit
+                default:
+                    a.cfg.Panel.Table.Mode = appconfig.TableModeScroll
+                }
                 _ = appconfig.Save(a.cfg)
             }
             if m.Accept {
                 // Apply to active panel only; do not persist
                 if a.activePanel == 0 {
                     a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+                    a.leftPanel.SetTableMode(m.TableMode)
                 } else {
                     a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+                    a.rightPanel.SetTableMode(m.TableMode)
                 }
                 // Refresh only the active panel's folder
                 if a.activePanel == 0 && a.leftNav != nil {
@@ -1035,8 +1044,10 @@ func (a *App) setupModals() {
 func (a *App) showResourceSelector() tea.Cmd {
     // Build content from ACTIVE PANEL values
     showNonEmpty, order := a.leftPanel.ResourceViewOptions()
-    if a.activePanel == 1 { showNonEmpty, order = a.rightPanel.ResourceViewOptions() }
+    mode := a.leftPanel.TableMode()
+    if a.activePanel == 1 { showNonEmpty, order = a.rightPanel.ResourceViewOptions(); mode = a.rightPanel.TableMode() }
     content := NewResourcesOptionsModel(showNonEmpty, order)
+    if strings.EqualFold(mode, "fit") { content.modeIdx = 1 } else { content.modeIdx = 0 }
     // Configure as centered window overlay so main UI remains visible beneath
     modal := a.modalManager.modals["resources_options"]
     if modal == nil {
@@ -1711,6 +1722,9 @@ func (a *App) initData() error {
     if a.cfg != nil {
         a.leftPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
         a.rightPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
+        // Initialize table mode from config defaults
+        a.leftPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
+        a.rightPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
     }
     // Preview: Use folder-backed rendering starting at root (not contexts listing)
 	{
