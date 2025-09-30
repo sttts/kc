@@ -65,7 +65,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     // Order by -name
     f2 := NewClusterObjectsFolder(makeDeps("-name"), gvrNS, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
-    rows = f2.Lines(0, 3)
+    rows = f2.Lines(0, f2.Len())
     got = normFirstCells(rows)
     idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
     if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {
@@ -75,7 +75,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     // Order by creation
     f3 := NewClusterObjectsFolder(makeDeps("creation"), gvrNS, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len() >= 3 })
-    rows = f3.Lines(0, 3)
+    rows = f3.Lines(0, f3.Len())
     got = normFirstCells(rows)
     idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
     if idxA < 0 || idxB < 0 || idxC < 0 || !(idxA < idxB && idxB < idxC) {
@@ -85,7 +85,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
     // Order by -creation
     f4 := NewClusterObjectsFolder(makeDeps("-creation"), gvrNS, []string{"namespaces"})
     kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len() >= 3 })
-    rows = f4.Lines(0, 3)
+    rows = f4.Lines(0, f4.Len())
     got = normFirstCells(rows)
     idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
     if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {

@@ -403,15 +403,29 @@ func (f *NamespacedObjectsFolder) populate() {
         // Determine order
         idxs := make([]int, len(rl.Items))
         for i := range idxs { idxs[i] = i }
+        // Determine display name for sorting (prefer metadata.Name; fallback to first cell text)
+        nameOf := func(rr *tablecache.Row) string {
+            if rr == nil { return "" }
+            n := rr.Name
+            if n == "" {
+                if len(rr.Cells) > 0 {
+                    if s, ok := rr.Cells[0].(string); ok {
+                        if strings.HasPrefix(s, "/") { s = s[1:] }
+                        n = s
+                    }
+                }
+            }
+            return strings.ToLower(n)
+        }
         switch strings.ToLower(opts.ObjectsOrder) {
         case "-name":
-            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].Name > rl.Items[idxs[j]].Name })
+            sort.Slice(idxs, func(i, j int) bool { return nameOf(&rl.Items[idxs[i]]) > nameOf(&rl.Items[idxs[j]]) })
         case "creation":
             sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].ObjectMeta.CreationTimestamp.Time.Before(rl.Items[idxs[j]].ObjectMeta.CreationTimestamp.Time) })
         case "-creation":
             sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].ObjectMeta.CreationTimestamp.Time.After(rl.Items[idxs[j]].ObjectMeta.CreationTimestamp.Time) })
         default:
-            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].Name < rl.Items[idxs[j]].Name })
+            sort.Slice(idxs, func(i, j int) bool { return nameOf(&rl.Items[idxs[i]]) < nameOf(&rl.Items[idxs[j]]) })
         }
         rows := make([]table.Row, 0, len(rl.Items))
         // Resolve child ctor and kind for details
@@ -484,15 +498,28 @@ func (f *ClusterObjectsFolder) populate() {
         f.cols = cols
         idxs := make([]int, len(rl.Items))
         for i := range idxs { idxs[i] = i }
+        nameOf := func(rr *tablecache.Row) string {
+            if rr == nil { return "" }
+            n := rr.Name
+            if n == "" {
+                if len(rr.Cells) > 0 {
+                    if s, ok := rr.Cells[0].(string); ok {
+                        if strings.HasPrefix(s, "/") { s = s[1:] }
+                        n = s
+                    }
+                }
+            }
+            return strings.ToLower(n)
+        }
         switch strings.ToLower(opts.ObjectsOrder) {
         case "-name":
-            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].Name > rl.Items[idxs[j]].Name })
+            sort.Slice(idxs, func(i, j int) bool { return nameOf(&rl.Items[idxs[i]]) > nameOf(&rl.Items[idxs[j]]) })
         case "creation":
             sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].ObjectMeta.CreationTimestamp.Time.Before(rl.Items[idxs[j]].ObjectMeta.CreationTimestamp.Time) })
         case "-creation":
             sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].ObjectMeta.CreationTimestamp.Time.After(rl.Items[idxs[j]].ObjectMeta.CreationTimestamp.Time) })
         default:
-            sort.Slice(idxs, func(i, j int) bool { return rl.Items[idxs[i]].Name < rl.Items[idxs[j]].Name })
+            sort.Slice(idxs, func(i, j int) bool { return nameOf(&rl.Items[idxs[i]]) < nameOf(&rl.Items[idxs[j]]) })
         }
         rows := make([]table.Row, 0, len(rl.Items))
         ctor, hasChild := childFor(f.gvr)
