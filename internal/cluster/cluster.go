@@ -63,7 +63,7 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 		fn(o)
 	}
 
-	// Increase client-side QPS/Burst so the shared cache can issue frequent LIST calls without throttling.
+	// Increase client-side QPS/Burst so the cache-backed client can issue frequent LIST calls without throttling.
 	if cfg.QPS == 0 {
 		cfg.QPS = 50
 	}
