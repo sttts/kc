@@ -2,7 +2,7 @@ package ui
 
 import (
 	"context"
-	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,20 +10,18 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
-    kccluster "github.com/sttts/kc/internal/cluster"
-    navui "github.com/sttts/kc/internal/navigation"
-    "github.com/sttts/kc/internal/overlay"
-    _ "github.com/sttts/kc/internal/ui/view"
-    "github.com/sttts/kc/pkg/appconfig"
+	kccluster "github.com/sttts/kc/internal/cluster"
+	navui "github.com/sttts/kc/internal/navigation"
+	"github.com/sttts/kc/internal/overlay"
+	_ "github.com/sttts/kc/internal/ui/view"
+	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	yaml "sigs.k8s.io/yaml"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
@@ -55,34 +53,34 @@ type App struct {
 	viewConfig *ViewConfig
 	cfg        *appconfig.Config
 	// Theme dialog state
-    prevTheme           string
-    suppressThemeRevert bool
-    // New navigation (folder-backed) using a Navigator
-    leftNav  *navui.Navigator
-    rightNav *navui.Navigator
-    // Mouse double-click detection
-    lastClickTime time.Time
-    lastClickPanel int
-    lastClickRowID string
-    // Suppress forwarding of mouse to terminal immediately after toggling fullscreen
-    suppressMouseUntil time.Time
-    // Resources options dialog state
-    prevResShowNonEmpty bool
-    prevResOrder        string
-    resOptsChanged      bool
-    resOptsConfirmed    bool
-    // Busy spinner state (lightweight, non-intrusive)
-    busyActive bool
-    busyLabel  string
-    busyFrame  int
-    busyToken  int
-    // Toast notification state (auto-dismiss)
-    toastActive bool
-    toastText   string
-    toastUntil  time.Time
-    // Logger that emits toasts on errors with rate limiting
-    toastLogger *ToastLogger
-    pendingCmds []tea.Cmd
+	prevTheme           string
+	suppressThemeRevert bool
+	// New navigation (folder-backed) using a Navigator
+	leftNav  *navui.Navigator
+	rightNav *navui.Navigator
+	// Mouse double-click detection
+	lastClickTime  time.Time
+	lastClickPanel int
+	lastClickRowID string
+	// Suppress forwarding of mouse to terminal immediately after toggling fullscreen
+	suppressMouseUntil time.Time
+	// Resources options dialog state
+	prevResShowNonEmpty bool
+	prevResOrder        string
+	resOptsChanged      bool
+	resOptsConfirmed    bool
+	// Busy spinner state (lightweight, non-intrusive)
+	busyActive bool
+	busyLabel  string
+	busyFrame  int
+	busyToken  int
+	// Toast notification state (auto-dismiss)
+	toastActive bool
+	toastText   string
+	toastUntil  time.Time
+	// Logger that emits toasts on errors with rate limiting
+	toastLogger *ToastLogger
+	pendingCmds []tea.Cmd
 }
 
 // Invariant: a.cfg is always non-nil. NewApp initializes it with defaults and
@@ -90,20 +88,20 @@ type App struct {
 
 // NewApp creates a new application instance
 func NewApp() *App {
-    app := &App{
-        leftPanel:    NewPanel(""),
-        rightPanel:   NewPanel(""),
-        terminal:     NewTerminal(),
-        modalManager: NewModalManager(),
-        activePanel:  0,
-        showTerminal: false,
-        allResources: make([]schema.GroupVersionKind, 0),
-        escPressed:   false,
-        viewConfig:   NewViewConfig(),
-        // Invariant: cfg is always non-nil; initialize with defaults
-        cfg:          appconfig.Default(),
-    }
-    app.toastLogger = NewToastLogger(app, 2*time.Second)
+	app := &App{
+		leftPanel:    NewPanel(""),
+		rightPanel:   NewPanel(""),
+		terminal:     NewTerminal(),
+		modalManager: NewModalManager(),
+		activePanel:  0,
+		showTerminal: false,
+		allResources: make([]schema.GroupVersionKind, 0),
+		escPressed:   false,
+		viewConfig:   NewViewConfig(),
+		// Invariant: cfg is always non-nil; initialize with defaults
+		cfg: appconfig.Default(),
+	}
+	app.toastLogger = NewToastLogger(app, 2*time.Second)
 
 	// Register modals
 	app.setupModals()
@@ -119,49 +117,55 @@ func (a *App) Init() tea.Cmd {
 		cfg = appconfig.Default()
 	}
 	a.cfg = cfg
-    return tea.Batch(
-        a.leftPanel.Init(),
-        a.rightPanel.Init(),
-        a.terminal.Init(),
-        func() tea.Msg {
-            // Focus the terminal initially since it's the main input area
-            a.terminal.Focus()
-            return nil
-        },
-        tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} }),
-    )
+	return tea.Batch(
+		a.leftPanel.Init(),
+		a.rightPanel.Init(),
+		a.terminal.Init(),
+		func() tea.Msg {
+			// Focus the terminal initially since it's the main input area
+			a.terminal.Focus()
+			return nil
+		},
+		tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} }),
+	)
 }
 
 // enqueueCmd appends a command to be executed on the next Update cycle.
 func (a *App) enqueueCmd(cmd tea.Cmd) {
-    if cmd == nil { return }
-    a.pendingCmds = append(a.pendingCmds, cmd)
+	if cmd == nil {
+		return
+	}
+	a.pendingCmds = append(a.pendingCmds, cmd)
 }
 
 // viewOptions returns a snapshot of current resource view options for folders.
 func (a *App) favSet() map[string]bool {
-    fav := map[string]bool{}
-    if a.cfg != nil {
-        for _, r := range a.cfg.Resources.Favorites { if r != "" { fav[strings.ToLower(r)] = true } }
-    }
-    return fav
+	fav := map[string]bool{}
+	if a.cfg != nil {
+		for _, r := range a.cfg.Resources.Favorites {
+			if r != "" {
+				fav[strings.ToLower(r)] = true
+			}
+		}
+	}
+	return fav
 }
 func (a *App) leftViewOptions() navui.ViewOptions {
-    show, order := a.leftPanel.ResourceViewOptions()
-    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.leftPanel.ColumnsMode(), ObjectsOrder: a.leftPanel.ObjectOrder()}
+	show, order := a.leftPanel.ResourceViewOptions()
+	return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.leftPanel.ColumnsMode(), ObjectsOrder: a.leftPanel.ObjectOrder()}
 }
 func (a *App) rightViewOptions() navui.ViewOptions {
-    show, order := a.rightPanel.ResourceViewOptions()
-    return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.rightPanel.ColumnsMode(), ObjectsOrder: a.rightPanel.ObjectOrder()}
+	show, order := a.rightPanel.ResourceViewOptions()
+	return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.rightPanel.ColumnsMode(), ObjectsOrder: a.rightPanel.ObjectOrder()}
 }
 
 // Update handles messages and updates the application state
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-    var cmds []tea.Cmd
-    if len(a.pendingCmds) > 0 {
-        cmds = append(cmds, a.pendingCmds...)
-        a.pendingCmds = nil
-    }
+	var cmds []tea.Cmd
+	if len(a.pendingCmds) > 0 {
+		cmds = append(cmds, a.pendingCmds...)
+		a.pendingCmds = nil
+	}
 
 	// Always adapt size
 	switch msg := msg.(type) {
@@ -181,8 +185,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Window size: clamp to 60% of width, minimum 40, height fixed to content+frame.
 				// This avoids sprawling on very large terminals but scales on smaller ones.
 				winW := a.width * 6 / 10
-				if winW < 40 { winW = 40 }
-				if winW > a.width-2 { winW = a.width - 2 }
+				if winW < 40 {
+					winW = 40
+				}
+				if winW > a.width-2 {
+					winW = a.width - 2
+				}
 				winH := 6
 				bg, _ := a.renderMainView()
 				m.SetWindowed(winW, winH, bg)
@@ -202,138 +210,176 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-    // Handle modals first
-    if a.modalManager.IsModalVisible() {
-        // Intercept resource options changes even while modal is visible
-        switch m := msg.(type) {
-        case ResourcesOptionsChangedMsg:
-            if m.SaveDefault {
-                // Persist current dialog values to config defaults
-                if a.cfg == nil { a.cfg = appconfig.Default() }
-                a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
-                a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
-                _ = appconfig.Save(a.cfg)
-            }
-            if m.Accept {
-                // Apply to active panel only; do not persist
-                if a.activePanel == 0 {
-                    a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
-                } else {
-                    a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
-                }
-                // Refresh only the active panel's folder
-                if a.activePanel == 0 && a.leftNav != nil {
-                    if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }
-                    a.leftPanel.SetFolder(a.leftNav.Current(), a.leftNav.HasBack())
-                    a.leftPanel.SetCurrentPath(a.leftNav.Path())
-                    a.leftPanel.RefreshFolder()
-                }
-                if a.activePanel == 1 && a.rightNav != nil {
-                    if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }
-                    a.rightPanel.SetFolder(a.rightNav.Current(), a.rightNav.HasBack())
-                    a.rightPanel.SetCurrentPath(a.rightNav.Path())
-                    a.rightPanel.RefreshFolder()
-                }
-            }
-            if m.Close { a.modalManager.Hide() }
-            return a, nil
-        case ObjectOptionsChangedMsg:
-            if m.SaveDefault {
-                if a.cfg == nil { a.cfg = appconfig.Default() }
-                // Save table mode
-                switch strings.ToLower(m.TableMode) { case "fit": a.cfg.Panel.Table.Mode = appconfig.TableModeFit; default: a.cfg.Panel.Table.Mode = appconfig.TableModeScroll }
-                // Save columns mode to objects.columns
-                if strings.EqualFold(m.Columns, "wide") { a.cfg.Objects.Columns = "wide" } else { a.cfg.Objects.Columns = "normal" }
-                // Save objects order
-                a.cfg.Objects.Order = m.ObjectsOrder
-                _ = appconfig.Save(a.cfg)
-            }
-            if a.activePanel == 0 {
-                a.leftPanel.SetTableMode(m.TableMode)
-                a.leftPanel.SetColumnsMode(m.Columns)
-                a.leftPanel.SetObjectOrder(m.ObjectsOrder)
-                if a.leftNav != nil { if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }; a.leftPanel.RefreshFolder() }
-            } else {
-                a.rightPanel.SetTableMode(m.TableMode)
-                a.rightPanel.SetColumnsMode(m.Columns)
-                a.rightPanel.SetObjectOrder(m.ObjectsOrder)
-                if a.rightNav != nil { if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }; a.rightPanel.RefreshFolder() }
-            }
-            if m.Close { a.modalManager.Hide() }
-            return a, nil
-        }
-        model, cmd := a.modalManager.Update(msg)
-        a.modalManager = model.(*ModalManager)
-        cmds = append(cmds, cmd)
-        // While a modal is open, still forward non-key messages to the
-        // terminal (process output, window size). Background is snapshotted,
-        // so this stays light and keeps the 2-line terminal fresh.
-        if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
-            tmodel, tcmd := a.terminal.Update(msg)
-            a.terminal = tmodel.(*Terminal)
-            cmds = append(cmds, tcmd)
-        }
-        return a, tea.Batch(cmds...)
-    }
+	// Handle modals first
+	if a.modalManager.IsModalVisible() {
+		// Intercept resource options changes even while modal is visible
+		switch m := msg.(type) {
+		case ResourcesOptionsChangedMsg:
+			if m.SaveDefault {
+				// Persist current dialog values to config defaults
+				if a.cfg == nil {
+					a.cfg = appconfig.Default()
+				}
+				a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
+				a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
+				_ = appconfig.Save(a.cfg)
+			}
+			if m.Accept {
+				// Apply to active panel only; do not persist
+				if a.activePanel == 0 {
+					a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+				} else {
+					a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+				}
+				// Refresh only the active panel's folder
+				if a.activePanel == 0 && a.leftNav != nil {
+					if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
+						rf.Refresh()
+					}
+					a.leftPanel.SetFolder(a.leftNav.Current(), a.leftNav.HasBack())
+					a.leftPanel.SetCurrentPath(a.leftNav.Path())
+					a.leftPanel.RefreshFolder()
+				}
+				if a.activePanel == 1 && a.rightNav != nil {
+					if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
+						rf.Refresh()
+					}
+					a.rightPanel.SetFolder(a.rightNav.Current(), a.rightNav.HasBack())
+					a.rightPanel.SetCurrentPath(a.rightNav.Path())
+					a.rightPanel.RefreshFolder()
+				}
+			}
+			if m.Close {
+				a.modalManager.Hide()
+			}
+			return a, nil
+		case ObjectOptionsChangedMsg:
+			if m.SaveDefault {
+				if a.cfg == nil {
+					a.cfg = appconfig.Default()
+				}
+				// Save table mode
+				switch strings.ToLower(m.TableMode) {
+				case "fit":
+					a.cfg.Panel.Table.Mode = appconfig.TableModeFit
+				default:
+					a.cfg.Panel.Table.Mode = appconfig.TableModeScroll
+				}
+				// Save columns mode to objects.columns
+				if strings.EqualFold(m.Columns, "wide") {
+					a.cfg.Objects.Columns = "wide"
+				} else {
+					a.cfg.Objects.Columns = "normal"
+				}
+				// Save objects order
+				a.cfg.Objects.Order = m.ObjectsOrder
+				_ = appconfig.Save(a.cfg)
+			}
+			if a.activePanel == 0 {
+				a.leftPanel.SetTableMode(m.TableMode)
+				a.leftPanel.SetColumnsMode(m.Columns)
+				a.leftPanel.SetObjectOrder(m.ObjectsOrder)
+				if a.leftNav != nil {
+					if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
+						rf.Refresh()
+					}
+					a.leftPanel.RefreshFolder()
+				}
+			} else {
+				a.rightPanel.SetTableMode(m.TableMode)
+				a.rightPanel.SetColumnsMode(m.Columns)
+				a.rightPanel.SetObjectOrder(m.ObjectsOrder)
+				if a.rightNav != nil {
+					if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
+						rf.Refresh()
+					}
+					a.rightPanel.RefreshFolder()
+				}
+			}
+			if m.Close {
+				a.modalManager.Hide()
+			}
+			return a, nil
+		}
+		model, cmd := a.modalManager.Update(msg)
+		a.modalManager = model.(*ModalManager)
+		cmds = append(cmds, cmd)
+		// While a modal is open, still forward non-key messages to the
+		// terminal (process output, window size). Background is snapshotted,
+		// so this stays light and keeps the 2-line terminal fresh.
+		if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
+			tmodel, tcmd := a.terminal.Update(msg)
+			a.terminal = tmodel.(*Terminal)
+			cmds = append(cmds, tcmd)
+		}
+		return a, tea.Batch(cmds...)
+	}
 
 	// Check if terminal process has exited (check on every message)
 	if a.terminal.IsProcessExited() {
 		return a, tea.Quit
 	}
 
-    switch msg := msg.(type) {
-    case BusyShowMsg:
-        if msg.token == a.busyToken {
-            a.busyActive = true
-            a.busyFrame = 0
-            return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return BusyTickMsg{} })
-        }
-        return a, nil
-    case BusyTickMsg:
-        if a.busyActive {
-            a.busyFrame = (a.busyFrame + 1) % 10
-            return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return BusyTickMsg{} })
-        }
-        return a, nil
-    case BusyHideMsg:
-        if msg.token == a.busyToken { a.busyActive = false }
-        return a, nil
-    case busyDoneMsg:
-        if msg.token == a.busyToken { a.busyActive = false; a.busyToken++ }
-        // Re-dispatch the original message for normal handling
-        return a, func() tea.Msg { return msg.msg }
-    case showToastMsg:
-        a.toastActive = true
-        a.toastText = msg.text
-        a.toastUntil = time.Now().Add(msg.ttl)
-        return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
-    case toastTickMsg:
-        if a.toastActive {
-            if time.Now().After(a.toastUntil) { a.toastActive = false } else {
-                return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
-            }
-        }
-        return a, nil
-    case EscTimeoutMsg:
+	switch msg := msg.(type) {
+	case BusyShowMsg:
+		if msg.token == a.busyToken {
+			a.busyActive = true
+			a.busyFrame = 0
+			return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return BusyTickMsg{} })
+		}
+		return a, nil
+	case BusyTickMsg:
+		if a.busyActive {
+			a.busyFrame = (a.busyFrame + 1) % 10
+			return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return BusyTickMsg{} })
+		}
+		return a, nil
+	case BusyHideMsg:
+		if msg.token == a.busyToken {
+			a.busyActive = false
+		}
+		return a, nil
+	case busyDoneMsg:
+		if msg.token == a.busyToken {
+			a.busyActive = false
+			a.busyToken++
+		}
+		// Re-dispatch the original message for normal handling
+		return a, func() tea.Msg { return msg.msg }
+	case showToastMsg:
+		a.toastActive = true
+		a.toastText = msg.text
+		a.toastUntil = time.Now().Add(msg.ttl)
+		return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
+	case toastTickMsg:
+		if a.toastActive {
+			if time.Now().After(a.toastUntil) {
+				a.toastActive = false
+			} else {
+				return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
+			}
+		}
+		return a, nil
+	case EscTimeoutMsg:
 		// Escape sequence timed out
 		a.escPressed = false
 		return a, nil
-    case FolderTickMsg:
-        // Refresh only when current folders report dirty to avoid unnecessary redraws.
-        if a.leftNav != nil && a.leftPanel != nil {
-            if d, ok := a.leftNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
-                a.leftPanel.RefreshFolder()
-            }
-        }
-        if a.rightNav != nil && a.rightPanel != nil {
-            if d, ok := a.rightNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
-                a.rightPanel.RefreshFolder()
-            }
-        }
-        // Schedule next tick (lightweight check)
-        return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
+	case FolderTickMsg:
+		// Refresh only when current folders report dirty to avoid unnecessary redraws.
+		if a.leftNav != nil && a.leftPanel != nil {
+			if d, ok := a.leftNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
+				a.leftPanel.RefreshFolder()
+			}
+		}
+		if a.rightNav != nil && a.rightPanel != nil {
+			if d, ok := a.rightNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
+				a.rightPanel.RefreshFolder()
+			}
+		}
+		// Schedule next tick (lightweight check)
+		return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
 
-        case tea.KeyMsg:
+	case tea.KeyMsg:
 		// Handle global shortcuts first
 		switch msg.String() {
 		case "ctrl+o":
@@ -381,9 +427,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "1":
 				a.escPressed = false
 				return a, a.showHelp() // Esc 1 = F1
-            case "2":
-                a.escPressed = false
-                return a, a.showViewOptionsModal() // Esc 2 = F2
+			case "2":
+				a.escPressed = false
+				return a, a.showViewOptionsModal() // Esc 2 = F2
 			case "3":
 				a.escPressed = false
 				return a, a.viewItem() // Esc 3 = F3
@@ -433,27 +479,45 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.terminal.ClearTyped() // reset typed; next keys route to panels
 				return a, cmd
 			}
-            // Intercept F2/F3/F4 for app-level dialogs/viewers/editors
-            if msg.String() == "f2" {
-                return a, a.showViewOptionsModal()
-            }
-            if msg.String() == "ctrl+w" {
-                // Toggle columns mode (Normal/Wide) on active panel
-                if a.activePanel == 0 {
-                    if a.leftPanel.ColumnsMode() == "wide" { a.leftPanel.SetColumnsMode("normal") } else { a.leftPanel.SetColumnsMode("wide") }
-                    if a.leftNav != nil { if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }; a.leftPanel.RefreshFolder() }
-                } else {
-                    if a.rightPanel.ColumnsMode() == "wide" { a.rightPanel.SetColumnsMode("normal") } else { a.rightPanel.SetColumnsMode("wide") }
-                    if a.rightNav != nil { if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok { rf.Refresh() }; a.rightPanel.RefreshFolder() }
-                }
-                return a, nil
-            }
-            if msg.String() == "f3" {
-                return a, a.openYAMLForSelection()
-            }
-            if msg.String() == "f4" {
-                return a, a.editSelection()
-            }
+			// Intercept F2/F3/F4 for app-level dialogs/viewers/editors
+			if msg.String() == "f2" {
+				return a, a.showViewOptionsModal()
+			}
+			if msg.String() == "ctrl+w" {
+				// Toggle columns mode (Normal/Wide) on active panel
+				if a.activePanel == 0 {
+					if a.leftPanel.ColumnsMode() == "wide" {
+						a.leftPanel.SetColumnsMode("normal")
+					} else {
+						a.leftPanel.SetColumnsMode("wide")
+					}
+					if a.leftNav != nil {
+						if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
+							rf.Refresh()
+						}
+						a.leftPanel.RefreshFolder()
+					}
+				} else {
+					if a.rightPanel.ColumnsMode() == "wide" {
+						a.rightPanel.SetColumnsMode("normal")
+					} else {
+						a.rightPanel.SetColumnsMode("wide")
+					}
+					if a.rightNav != nil {
+						if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
+							rf.Refresh()
+						}
+						a.rightPanel.RefreshFolder()
+					}
+				}
+				return a, nil
+			}
+			if msg.String() == "f3" {
+				return a, a.openViewerForSelection()
+			}
+			if msg.String() == "f4" {
+				return a, a.editSelection()
+			}
 			if a.shouldRouteToPanel(msg.String()) {
 				// Handle panel-specific keys
 				if a.activePanel == 0 {
@@ -474,112 +538,132 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	default:
 		// Mouse and other messages
-        if mm, ok := msg.(tea.MouseMsg); ok {
-            // In fullscreen terminal mode, intercept clicks on the toggle message
-            if a.showTerminal {
-                // Never forward mouse events that occur on the bottom toggle line
-                m := mm.Mouse()
-                if m.Y == a.height-1 {
-                    if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
-                        // Toggle back to panels on release
-                        a.showTerminal = false
-                        a.terminal.SetShowPanels(true)
-                    }
-                    // Swallow all mouse events on the toggle line
-                    return a, nil
-                }
-                // Forward all other mouse events to the terminal in fullscreen
-                model, cmd := a.terminal.Update(mm)
-                a.terminal = model.(*Terminal)
-                cmds = append(cmds, cmd)
-                return a, tea.Batch(cmds...)
-            }
-            // Panel mode: only act on specific mouse messages; do NOT forward
-            // any mouse events to the terminal while panels are visible to
-            // avoid escape sequences leaking into the 2‑line terminal view.
-            switch e := mm.(type) {
-            case tea.MouseWheelMsg:
-                m := e.Mouse()
-                target := a.leftPanel
-                if a.activePanel == 1 { target = a.rightPanel }
-                switch m.Button {
-                case tea.MouseWheelUp:
-                    target.moveUp()
-                case tea.MouseWheelDown:
-                    target.moveDown()
-                }
-                return a, tea.Batch(cmds...)
-            case tea.MouseClickMsg:
-                m := e.Mouse()
-                x, y := m.X, m.Y
-                panelHeight := a.height - 3
-                panelWidth := a.width / 2
-                if y < panelHeight {
-                    // Click inside panels area
-                    if x >= panelWidth { a.activePanel = 1 } else { a.activePanel = 0 }
-                    contentY := y - 2 // 1 for frame top, 1 for header
-                    if contentY < 0 { contentY = 0 }
-                    target := a.leftPanel
-                    if a.activePanel == 1 { target = a.rightPanel }
-                    // Right-click: open context menu (future wiring)
-                    if m.Button == tea.MouseRight {
-                        return a, a.showContextMenu()
-                    }
-                    // Left-click: select row under cursor
-                    var clickedID string
-                    if target.useFolder && target.folder != nil && target.bt != nil {
-                        if id, ok := target.bt.VisibleRowID(contentY); ok {
-                            clickedID = id
-                            target.SelectByRowID(id)
-                        }
-                    } else {
-                        idx := target.scrollTop + contentY
-                        if idx < 0 { idx = 0 }
-                        if idx >= len(target.items) { idx = len(target.items) - 1 }
-                        if idx >= 0 && len(target.items) > 0 {
-                            target.selected = idx
-                            target.adjustScroll()
-                        }
-                    }
-                    // Double-click detection
-                    if clickedID != "" {
-                        now := time.Now()
-                        timeout := a.cfg.Input.Mouse.DoubleClickTimeout.Duration
-                        if a.lastClickRowID == clickedID && a.lastClickPanel == a.activePanel && now.Sub(a.lastClickTime) <= timeout {
-                            a.lastClickTime = time.Time{}
-                            a.lastClickRowID = ""
-                            if cmd := target.enterItem(); cmd != nil { return a, cmd }
-                        } else {
-                            a.lastClickTime = now
-                            a.lastClickPanel = a.activePanel
-                            a.lastClickRowID = clickedID
-                        }
-                    } else {
-                        a.lastClickTime = time.Now()
-                        a.lastClickPanel = a.activePanel
-                        a.lastClickRowID = ""
-                    }
-                    return a, tea.Batch(cmds...)
-                }
-                // Ignore click on function key bar; act on release instead (below)
-                if y == a.height-1 { return a, tea.Batch(cmds...) }
-                return a, tea.Batch(cmds...)
-            case tea.MouseReleaseMsg:
-                m := e.Mouse()
-                x, y := m.X, m.Y
-                // Function key bar (act on release only)
-                if y == a.height-1 {
-                    if cmd := a.handleFunctionKeyClick(x); cmd != nil { return a, cmd }
-                    return a, tea.Batch(cmds...)
-                }
-                // Swallow click messages not on bars/panels
-                return a, tea.Batch(cmds...)
-            default:
-                // Mouse motion/release and any other mouse-related events are
-                // swallowed in panel mode.
-                return a, tea.Batch(cmds...)
-            }
-        }
+		if mm, ok := msg.(tea.MouseMsg); ok {
+			// In fullscreen terminal mode, intercept clicks on the toggle message
+			if a.showTerminal {
+				// Never forward mouse events that occur on the bottom toggle line
+				m := mm.Mouse()
+				if m.Y == a.height-1 {
+					if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
+						// Toggle back to panels on release
+						a.showTerminal = false
+						a.terminal.SetShowPanels(true)
+					}
+					// Swallow all mouse events on the toggle line
+					return a, nil
+				}
+				// Forward all other mouse events to the terminal in fullscreen
+				model, cmd := a.terminal.Update(mm)
+				a.terminal = model.(*Terminal)
+				cmds = append(cmds, cmd)
+				return a, tea.Batch(cmds...)
+			}
+			// Panel mode: only act on specific mouse messages; do NOT forward
+			// any mouse events to the terminal while panels are visible to
+			// avoid escape sequences leaking into the 2‑line terminal view.
+			switch e := mm.(type) {
+			case tea.MouseWheelMsg:
+				m := e.Mouse()
+				target := a.leftPanel
+				if a.activePanel == 1 {
+					target = a.rightPanel
+				}
+				switch m.Button {
+				case tea.MouseWheelUp:
+					target.moveUp()
+				case tea.MouseWheelDown:
+					target.moveDown()
+				}
+				return a, tea.Batch(cmds...)
+			case tea.MouseClickMsg:
+				m := e.Mouse()
+				x, y := m.X, m.Y
+				panelHeight := a.height - 3
+				panelWidth := a.width / 2
+				if y < panelHeight {
+					// Click inside panels area
+					if x >= panelWidth {
+						a.activePanel = 1
+					} else {
+						a.activePanel = 0
+					}
+					contentY := y - 2 // 1 for frame top, 1 for header
+					if contentY < 0 {
+						contentY = 0
+					}
+					target := a.leftPanel
+					if a.activePanel == 1 {
+						target = a.rightPanel
+					}
+					// Right-click: open context menu (future wiring)
+					if m.Button == tea.MouseRight {
+						return a, a.showContextMenu()
+					}
+					// Left-click: select row under cursor
+					var clickedID string
+					if target.useFolder && target.folder != nil && target.bt != nil {
+						if id, ok := target.bt.VisibleRowID(contentY); ok {
+							clickedID = id
+							target.SelectByRowID(id)
+						}
+					} else {
+						idx := target.scrollTop + contentY
+						if idx < 0 {
+							idx = 0
+						}
+						if idx >= len(target.items) {
+							idx = len(target.items) - 1
+						}
+						if idx >= 0 && len(target.items) > 0 {
+							target.selected = idx
+							target.adjustScroll()
+						}
+					}
+					// Double-click detection
+					if clickedID != "" {
+						now := time.Now()
+						timeout := a.cfg.Input.Mouse.DoubleClickTimeout.Duration
+						if a.lastClickRowID == clickedID && a.lastClickPanel == a.activePanel && now.Sub(a.lastClickTime) <= timeout {
+							a.lastClickTime = time.Time{}
+							a.lastClickRowID = ""
+							if cmd := target.enterItem(); cmd != nil {
+								return a, cmd
+							}
+						} else {
+							a.lastClickTime = now
+							a.lastClickPanel = a.activePanel
+							a.lastClickRowID = clickedID
+						}
+					} else {
+						a.lastClickTime = time.Now()
+						a.lastClickPanel = a.activePanel
+						a.lastClickRowID = ""
+					}
+					return a, tea.Batch(cmds...)
+				}
+				// Ignore click on function key bar; act on release instead (below)
+				if y == a.height-1 {
+					return a, tea.Batch(cmds...)
+				}
+				return a, tea.Batch(cmds...)
+			case tea.MouseReleaseMsg:
+				m := e.Mouse()
+				x, y := m.X, m.Y
+				// Function key bar (act on release only)
+				if y == a.height-1 {
+					if cmd := a.handleFunctionKeyClick(x); cmd != nil {
+						return a, cmd
+					}
+					return a, tea.Batch(cmds...)
+				}
+				// Swallow click messages not on bars/panels
+				return a, tea.Batch(cmds...)
+			default:
+				// Mouse motion/release and any other mouse-related events are
+				// swallowed in panel mode.
+				return a, tea.Batch(cmds...)
+			}
+		}
 		// Pass other messages to terminal (e.g., process exit)
 		model, cmd := a.terminal.Update(msg)
 		a.terminal = model.(*Terminal)
@@ -688,11 +772,13 @@ func (a *App) View() (string, *tea.Cursor) {
 
 // renderMainView renders the main two-panel view
 func (a *App) renderMainView() (string, *tea.Cursor) {
-    // Calculate dimensions
-    // Reserve space for: terminal (2) + function keys (1) + optional toast (1)
-    reserved := 3
-    if a.toastActive { reserved++ }
-    panelHeight := a.height - reserved
+	// Calculate dimensions
+	// Reserve space for: terminal (2) + function keys (1) + optional toast (1)
+	reserved := 3
+	if a.toastActive {
+		reserved++
+	}
+	panelHeight := a.height - reserved
 	panelWidth := a.width / 2 // No separator needed
 
 	// Set dimensions for panel content (accounting for borders)
@@ -739,55 +825,59 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Add terminal (2 lines)
 	terminalView, terminalCursor := a.renderTerminalArea()
 
-    // Add function key bar
-    functionKeys := a.renderFunctionKeys()
-    // Optional toast line above function keys
-    toastLine := ""
-    if a.toastActive {
-        st := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.White).Bold(true)
-        // Ensure message fits the width; truncate with … if needed
-        msg := a.toastText
-        maxw := a.width
-        if lipgloss.Width(msg) > maxw {
-            if maxw > 1 { msg = sliceANSIColsRaw(msg, 0, maxw-1) + "…" } else { msg = sliceANSIColsRaw(msg, 0, maxw) }
-        }
-        toastLine = st.Width(a.width).Render(msg)
-    }
-    // spinner is added inside renderFunctionKeys at the far left; nothing to do here
+	// Add function key bar
+	functionKeys := a.renderFunctionKeys()
+	// Optional toast line above function keys
+	toastLine := ""
+	if a.toastActive {
+		st := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.White).Bold(true)
+		// Ensure message fits the width; truncate with … if needed
+		msg := a.toastText
+		maxw := a.width
+		if lipgloss.Width(msg) > maxw {
+			if maxw > 1 {
+				msg = sliceANSIColsRaw(msg, 0, maxw-1) + "…"
+			} else {
+				msg = sliceANSIColsRaw(msg, 0, maxw)
+			}
+		}
+		toastLine = st.Width(a.width).Render(msg)
+	}
+	// spinner is added inside renderFunctionKeys at the far left; nothing to do here
 
-    if a.toastActive {
-        combinedView := lipgloss.JoinVertical(
-            lipgloss.Left,
-            panels,
-            terminalView,
-            toastLine,
-            functionKeys,
-        )
-        // Adjust cursor position
-        if terminalCursor != nil {
-            offsetY := panelHeight
-            adjustedCursor := tea.NewCursor(terminalCursor.X, terminalCursor.Y+offsetY)
-            adjustedCursor.Blink = terminalCursor.Blink
-            adjustedCursor.Color = terminalCursor.Color
-            adjustedCursor.Shape = terminalCursor.Shape
-            return combinedView, adjustedCursor
-        }
-        return combinedView, nil
-    }
-    combinedView := lipgloss.JoinVertical(
-        lipgloss.Left,
-        panels,
-        terminalView,
-        functionKeys,
-    )
+	if a.toastActive {
+		combinedView := lipgloss.JoinVertical(
+			lipgloss.Left,
+			panels,
+			terminalView,
+			toastLine,
+			functionKeys,
+		)
+		// Adjust cursor position
+		if terminalCursor != nil {
+			offsetY := panelHeight
+			adjustedCursor := tea.NewCursor(terminalCursor.X, terminalCursor.Y+offsetY)
+			adjustedCursor.Blink = terminalCursor.Blink
+			adjustedCursor.Color = terminalCursor.Color
+			adjustedCursor.Shape = terminalCursor.Shape
+			return combinedView, adjustedCursor
+		}
+		return combinedView, nil
+	}
+	combinedView := lipgloss.JoinVertical(
+		lipgloss.Left,
+		panels,
+		terminalView,
+		functionKeys,
+	)
 
-    // Busy overlay: show a small 2x2 ASCII animation centered over the main view
-    if a.busyActive {
-        ov := a.renderBusyOverlay()
-        if ov != "" {
-            combinedView = overlay.Composite(ov, combinedView, overlay.Center, overlay.Center, 0, 0)
-        }
-    }
+	// Busy overlay: show a small 2x2 ASCII animation centered over the main view
+	if a.busyActive {
+		ov := a.renderBusyOverlay()
+		if ov != "" {
+			combinedView = overlay.Composite(ov, combinedView, overlay.Center, overlay.Center, 0, 0)
+		}
+	}
 
 	// Adjust cursor position for the combined view
 	// The cursor needs to be offset by the height of panels
@@ -806,17 +896,17 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 
 // renderBusyOverlay returns a small 2x2 ASCII animation based on busyFrame.
 func (a *App) renderBusyOverlay() string {
-    // 2x2 ASCII frames: cross and bar alternation
-    frames := []string{
-        "\\/\n/\\", // star
-        "||\n||",
-        "/\\\n\\/",
-        "--\n--",
-    }
-    f := frames[a.busyFrame%len(frames)]
-    // Add a faint box/spacing around for visibility (optional)
-    st := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White).Background(lipgloss.Color("238")).Padding(0, 1)
-    return st.Render(f)
+	// 2x2 ASCII frames: cross and bar alternation
+	frames := []string{
+		"\\/\n/\\", // star
+		"||\n||",
+		"/\\\n\\/",
+		"--\n--",
+	}
+	f := frames[a.busyFrame%len(frames)]
+	// Add a faint box/spacing around for visibility (optional)
+	st := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.White).Background(lipgloss.Color("238")).Padding(0, 1)
+	return st.Render(f)
 }
 
 // renderTerminalArea renders the 2-line terminal area in main view
@@ -827,54 +917,60 @@ func (a *App) renderTerminalArea() (string, *tea.Cursor) {
 
 // renderTerminalView renders the full-screen terminal view
 func (a *App) renderTerminalView() (string, *tea.Cursor) {
-    // Get terminal view
-    terminalView, terminalCursor := a.terminal.View()
+	// Get terminal view
+	terminalView, terminalCursor := a.terminal.View()
 
-    // Compose with a one-line toggle message at the bottom. To ensure it's visible,
-    // clamp the terminal content to a.height-1 lines.
-    toggleMsg := a.renderToggleMessage()
-    lines := strings.Split(terminalView, "\n")
-    maxTerm := a.height - 1
-    if maxTerm < 1 { maxTerm = 1 }
-    if len(lines) > maxTerm {
-        lines = lines[:maxTerm]
-    } else if len(lines) < maxTerm {
-        // pad with empty lines to keep layout stable
-        pad := make([]string, maxTerm-len(lines))
-        lines = append(lines, pad...)
-    }
-    clamped := strings.Join(lines, "\n")
-    combinedView := lipgloss.JoinVertical(lipgloss.Left, clamped, toggleMsg)
+	// Compose with a one-line toggle message at the bottom. To ensure it's visible,
+	// clamp the terminal content to a.height-1 lines.
+	toggleMsg := a.renderToggleMessage()
+	lines := strings.Split(terminalView, "\n")
+	maxTerm := a.height - 1
+	if maxTerm < 1 {
+		maxTerm = 1
+	}
+	if len(lines) > maxTerm {
+		lines = lines[:maxTerm]
+	} else if len(lines) < maxTerm {
+		// pad with empty lines to keep layout stable
+		pad := make([]string, maxTerm-len(lines))
+		lines = append(lines, pad...)
+	}
+	clamped := strings.Join(lines, "\n")
+	combinedView := lipgloss.JoinVertical(lipgloss.Left, clamped, toggleMsg)
 
-    // Adjust cursor position so it never overlaps the toggle message
-    if terminalCursor != nil {
-        cy := terminalCursor.Y
-        if cy >= maxTerm { cy = maxTerm - 1 }
-        if cy < 0 { cy = 0 }
-        adjusted := tea.NewCursor(terminalCursor.X, cy)
-        adjusted.Blink = terminalCursor.Blink
-        adjusted.Color = terminalCursor.Color
-        adjusted.Shape = terminalCursor.Shape
-        return combinedView, adjusted
-    }
-    return combinedView, nil
+	// Adjust cursor position so it never overlaps the toggle message
+	if terminalCursor != nil {
+		cy := terminalCursor.Y
+		if cy >= maxTerm {
+			cy = maxTerm - 1
+		}
+		if cy < 0 {
+			cy = 0
+		}
+		adjusted := tea.NewCursor(terminalCursor.X, cy)
+		adjusted.Blink = terminalCursor.Blink
+		adjusted.Color = terminalCursor.Color
+		adjusted.Shape = terminalCursor.Shape
+		return combinedView, adjusted
+	}
+	return combinedView, nil
 }
 
 // refreshFoldersAfterViewChange reapplies the current folders to panels so that
 // folder population re-reads the latest ViewOptions.
 func (a *App) refreshFoldersAfterViewChange() {
-    if a.leftNav != nil {
-        cur := a.leftNav.Current()
-        a.leftPanel.SetFolder(cur, a.leftNav.HasBack())
-        a.leftPanel.SetCurrentPath(a.leftNav.Path())
-        a.leftPanel.RefreshFolder()
-    }
-    if a.rightNav != nil {
-        cur := a.rightNav.Current()
-        a.rightPanel.SetFolder(cur, a.rightNav.HasBack())
-        a.rightPanel.SetCurrentPath(a.rightNav.Path())
-        a.rightPanel.RefreshFolder()
-    }
+	if a.leftNav != nil {
+		cur := a.leftNav.Current()
+		a.leftPanel.SetFolder(cur, a.leftNav.HasBack())
+		a.leftPanel.SetCurrentPath(a.leftNav.Path())
+		a.leftPanel.RefreshFolder()
+	}
+	if a.rightNav != nil {
+		cur := a.rightNav.Current()
+		a.rightPanel.SetFolder(cur, a.rightNav.HasBack())
+		a.rightPanel.SetCurrentPath(a.rightNav.Path())
+		a.rightPanel.RefreshFolder()
+	}
 }
 
 // renderFunctionKeys renders the function key bar
@@ -904,12 +1000,12 @@ func (a *App) renderFunctionKeys() string {
 			parts := strings.Split(path, "/")
 			if len(parts) == 3 { // /namespaces/<ns>
 				// resource folders only; F3/F4/F8 disabled
-            } else if len(parts) == 4 { // /namespaces/<ns>/<resource>
-                // viewing/editing/deleting objects is possible when an object row is selected (not "..")
-                // Allow F3 even for enterable items (e.g., ConfigMaps/Secrets) to view YAML; Enter goes into keys.
-                if cur != nil && cur.Name != ".." {
-                    canView, canEdit, canDelete = true, true, true
-                }
+			} else if len(parts) == 4 { // /namespaces/<ns>/<resource>
+				// viewing/editing/deleting objects is possible when an object row is selected (not "..")
+				// Allow F3 even for enterable items (e.g., ConfigMaps/Secrets) to view YAML; Enter goes into keys.
+				if cur != nil && cur.Name != ".." {
+					canView, canEdit, canDelete = true, true, true
+				}
 			} else if len(parts) >= 5 { // object or deeper
 				if cur != nil && cur.Name != ".." {
 					canView = true
@@ -930,9 +1026,9 @@ func (a *App) renderFunctionKeys() string {
 
 		keys = []string{
 			renderKey("F1", "Help", true),
-                // Always label F2 as Options; it opens the appropriate dialog
-                // (Object Options or Resources Options) based on context.
-                renderKey("F2", "Options", true),
+			// Always label F2 as Options; it opens the appropriate dialog
+			// (Object Options or Resources Options) based on context.
+			renderKey("F2", "Options", true),
 			renderKey("F3", "View", canView),
 			renderKey("F4", "Edit", canEdit),
 			renderKey("F5", "Copy", false),
@@ -945,8 +1041,8 @@ func (a *App) renderFunctionKeys() string {
 		}
 	}
 
-    // Join keys
-    joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
+	// Join keys
+	joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
 
 	// Always add "Kubernetes Commander" right-aligned
 	title := " Kubernetes Commander "
@@ -964,75 +1060,102 @@ func (a *App) renderFunctionKeys() string {
 	// Calculate the exact spacing needed to push title to the right edge
 	titleRendered := titleStyle.Render(title)
 
-    return fullWidthStyle.Render(joined + " " + titleRendered)
+	return fullWidthStyle.Render(joined + " " + titleRendered)
 }
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
 func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
-    // Recompute the keys exactly like renderFunctionKeys does and record spans.
-    // Build the list but capture text lengths to map x.
-    var keys []struct{ label string; enabled bool; action func() tea.Cmd }
-    if a.showTerminal {
-        keys = []struct{ label string; enabled bool; action func() tea.Cmd }{
-            {label: FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels"), enabled: true, action: func() tea.Cmd {
-                a.showTerminal = false
-                a.terminal.SetShowPanels(true)
-                return nil
-            }},
-        }
-    } else {
-        p := a.leftPanel
-        if a.activePanel == 1 { p = a.rightPanel }
-        path := p.GetCurrentPath()
-        cur := p.GetCurrentItem()
-        canView, canEdit, canCreateNS, canDelete := false, false, false, false
-        if path == "/namespaces" {
-            canCreateNS = true
-            if cur != nil && cur.Type == ItemTypeNamespace { canView, canEdit, canDelete = true, true, true }
-        } else if strings.HasPrefix(path, "/namespaces/") {
-            parts := strings.Split(path, "/")
-            if len(parts) == 4 { /* list */ } else if len(parts) == 5 {
-                if cur != nil && cur.Name != ".." { canView, canEdit, canDelete = true, true, true }
-            } else if len(parts) >= 5 { if cur != nil && cur.Name != ".." { canView, canEdit, canDelete = true, true, true } }
-        }
-        makeLbl := func(key, label string, enabled bool) string {
-            desc := FunctionKeyDescriptionStyle
-            if !enabled { desc = FunctionKeyDisabledStyle }
-            return FunctionKeyStyle.Render(key) + desc.Render(label)
-        }
-        keys = []struct{ label string; enabled bool; action func() tea.Cmd }{
-            {makeLbl("F1", "Help", true), true, a.showHelp},
-            {makeLbl("F2", "Options", true), true, a.showViewOptionsModal},
-            {makeLbl("F3", "View", canView), canView, a.openYAMLForSelection},
-            {makeLbl("F4", "Edit", canEdit), canEdit, a.editSelection},
-            {makeLbl("F5", "Copy", false), false, a.copyItem},
-            {makeLbl("F6", "Rename/Move", false), false, a.renameMoveItem},
-            {makeLbl("F7", "Namespace", canCreateNS), canCreateNS, a.createNamespace},
-            {makeLbl("F8", "Delete", canDelete), canDelete, a.deleteResource},
-            {FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"), true, a.showContextMenu},
-            {FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
-            {FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
-                a.showTerminal = true
-                a.terminal.SetShowPanels(false)
-                a.terminal.Focus()
-                // Suppress trailing mouse events from this click to avoid
-                // sending them to the PTY immediately after toggling.
-                a.suppressMouseUntil = time.Now().Add(150 * time.Millisecond)
-                return nil
-            }},
-        }
-    }
-    // Map x to index by accumulating rendered widths
-    acc := 0
-    for _, k := range keys {
-        w := lipgloss.Width(k.label)
-        if x >= acc && x < acc+w {
-            if k.enabled && k.action != nil { return k.action() }
-            return nil
-        }
-        acc += w
-    }
-    return nil
+	// Recompute the keys exactly like renderFunctionKeys does and record spans.
+	// Build the list but capture text lengths to map x.
+	var keys []struct {
+		label   string
+		enabled bool
+		action  func() tea.Cmd
+	}
+	if a.showTerminal {
+		keys = []struct {
+			label   string
+			enabled bool
+			action  func() tea.Cmd
+		}{
+			{label: FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels"), enabled: true, action: func() tea.Cmd {
+				a.showTerminal = false
+				a.terminal.SetShowPanels(true)
+				return nil
+			}},
+		}
+	} else {
+		p := a.leftPanel
+		if a.activePanel == 1 {
+			p = a.rightPanel
+		}
+		path := p.GetCurrentPath()
+		cur := p.GetCurrentItem()
+		canView, canEdit, canCreateNS, canDelete := false, false, false, false
+		if path == "/namespaces" {
+			canCreateNS = true
+			if cur != nil && cur.Type == ItemTypeNamespace {
+				canView, canEdit, canDelete = true, true, true
+			}
+		} else if strings.HasPrefix(path, "/namespaces/") {
+			parts := strings.Split(path, "/")
+			if len(parts) == 4 { /* list */
+			} else if len(parts) == 5 {
+				if cur != nil && cur.Name != ".." {
+					canView, canEdit, canDelete = true, true, true
+				}
+			} else if len(parts) >= 5 {
+				if cur != nil && cur.Name != ".." {
+					canView, canEdit, canDelete = true, true, true
+				}
+			}
+		}
+		makeLbl := func(key, label string, enabled bool) string {
+			desc := FunctionKeyDescriptionStyle
+			if !enabled {
+				desc = FunctionKeyDisabledStyle
+			}
+			return FunctionKeyStyle.Render(key) + desc.Render(label)
+		}
+		keys = []struct {
+			label   string
+			enabled bool
+			action  func() tea.Cmd
+		}{
+			{makeLbl("F1", "Help", true), true, a.showHelp},
+			{makeLbl("F2", "Options", true), true, a.showViewOptionsModal},
+			{makeLbl("F3", "View", canView), canView, a.openViewerForSelection},
+			{makeLbl("F4", "Edit", canEdit), canEdit, a.editSelection},
+			{makeLbl("F5", "Copy", false), false, a.copyItem},
+			{makeLbl("F6", "Rename/Move", false), false, a.renameMoveItem},
+			{makeLbl("F7", "Namespace", canCreateNS), canCreateNS, a.createNamespace},
+			{makeLbl("F8", "Delete", canDelete), canDelete, a.deleteResource},
+			{FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"), true, a.showContextMenu},
+			{FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
+			{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
+				a.showTerminal = true
+				a.terminal.SetShowPanels(false)
+				a.terminal.Focus()
+				// Suppress trailing mouse events from this click to avoid
+				// sending them to the PTY immediately after toggling.
+				a.suppressMouseUntil = time.Now().Add(150 * time.Millisecond)
+				return nil
+			}},
+		}
+	}
+	// Map x to index by accumulating rendered widths
+	acc := 0
+	for _, k := range keys {
+		w := lipgloss.Width(k.label)
+		if x >= acc && x < acc+w {
+			if k.enabled && k.action != nil {
+				return k.action()
+			}
+			return nil
+		}
+		acc += w
+	}
+	return nil
 }
 
 // renderToggleMessage renders the toggle message for fullscreen mode
@@ -1059,10 +1182,10 @@ func (a *App) renderToggleMessage() string {
 
 // setupModals sets up the modal dialogs
 func (a *App) setupModals() {
-    // Resources options modal (content set dynamically on open)
-    opts := NewResourcesOptionsModel(false, "favorites")
-    resModal := NewModal("Resources", opts)
-    a.modalManager.Register("resources_options", resModal)
+	// Resources options modal (content set dynamically on open)
+	opts := NewResourcesOptionsModel(false, "favorites")
+	resModal := NewModal("Resources", opts)
+	a.modalManager.Register("resources_options", resModal)
 
 	// Theme selector modal; content is set dynamically when opened
 	themeSelector := NewThemeSelector(nil)
@@ -1074,64 +1197,76 @@ func (a *App) setupModals() {
 // showViewOptionsModal opens the appropriate View Options dialog (Resources or Objects)
 // depending on the active view context.
 func (a *App) showViewOptionsModal() tea.Cmd {
-    // Depending on current view, open Resources or Objects view options.
-    curPanel := a.leftPanel
-    if a.activePanel == 1 { curPanel = a.rightPanel }
+	// Depending on current view, open Resources or Objects view options.
+	curPanel := a.leftPanel
+	if a.activePanel == 1 {
+		curPanel = a.rightPanel
+	}
 
-    // Prefer navigator folder (unwrapped) to detect object lists.
-    var curFolder navui.Folder
-    if a.activePanel == 0 && a.leftNav != nil { curFolder = a.leftNav.Current() }
-    if a.activePanel == 1 && a.rightNav != nil { curFolder = a.rightNav.Current() }
-    if curFolder == nil { curFolder = curPanel.folder }
+	// Prefer navigator folder (unwrapped) to detect object lists.
+	var curFolder navui.Folder
+	if a.activePanel == 0 && a.leftNav != nil {
+		curFolder = a.leftNav.Current()
+	}
+	if a.activePanel == 1 && a.rightNav != nil {
+		curFolder = a.rightNav.Current()
+	}
+	if curFolder == nil {
+		curFolder = curPanel.folder
+	}
 
-    // Detect object-list via ObjectListMeta capability.
-    isObjects := false
-    type metaProv interface{ ObjectListMeta() (schema.GroupVersionResource, string, bool) }
-    if mp, ok := curFolder.(metaProv); ok {
-        if _, _, ok2 := mp.ObjectListMeta(); ok2 { isObjects = true }
-    }
+	// Detect object-list via ObjectListMeta capability.
+	isObjects := false
+	type metaProv interface {
+		ObjectListMeta() (schema.GroupVersionResource, string, bool)
+	}
+	if mp, ok := curFolder.(metaProv); ok {
+		if _, _, ok2 := mp.ObjectListMeta(); ok2 {
+			isObjects = true
+		}
+	}
 
-    if isObjects {
-        mode := curPanel.TableMode()
-        cols := curPanel.ColumnsMode()
-        order := curPanel.ObjectOrder()
-        o := NewObjectOptionsModel(mode, cols, order)
-        // Prepare modal
-        modal := a.modalManager.modals["object_options"]
-        if modal == nil {
-            modal = NewModal("Objects View Options", o)
-            a.modalManager.Register("object_options", modal)
-        } else {
-            modal.SetContent(o)
-            modal.title = "Objects View Options"
-        }
-        winW, winH := 50, 6
-        bg, _ := a.renderMainView()
-        modal.SetWindowed(winW, winH, bg)
-        modal.SetOnClose(func() tea.Cmd { return nil })
-        modal.SetDimensions(a.width, a.height)
-        a.modalManager.Show("object_options")
-        return nil
-    }
+	if isObjects {
+		mode := curPanel.TableMode()
+		cols := curPanel.ColumnsMode()
+		order := curPanel.ObjectOrder()
+		o := NewObjectOptionsModel(mode, cols, order)
+		// Prepare modal
+		modal := a.modalManager.modals["object_options"]
+		if modal == nil {
+			modal = NewModal("Objects View Options", o)
+			a.modalManager.Register("object_options", modal)
+		} else {
+			modal.SetContent(o)
+			modal.title = "Objects View Options"
+		}
+		winW, winH := 50, 6
+		bg, _ := a.renderMainView()
+		modal.SetWindowed(winW, winH, bg)
+		modal.SetOnClose(func() tea.Cmd { return nil })
+		modal.SetDimensions(a.width, a.height)
+		a.modalManager.Show("object_options")
+		return nil
+	}
 
-    // Resources options
-    showNonEmpty, order := curPanel.ResourceViewOptions()
-    content := NewResourcesOptionsModel(showNonEmpty, order)
-    modal := a.modalManager.modals["resources_options"]
-    if modal == nil {
-        modal = NewModal("Resources View Options", content)
-        a.modalManager.Register("resources_options", modal)
-    } else {
-        modal.SetContent(content)
-        modal.title = "Resources View Options"
-    }
-    winW, winH := 50, 6
-    bg, _ := a.renderMainView()
-    modal.SetWindowed(winW, winH, bg)
-    modal.SetOnClose(func() tea.Cmd { return nil })
-    modal.SetDimensions(a.width, a.height)
-    a.modalManager.Show("resources_options")
-    return nil
+	// Resources options
+	showNonEmpty, order := curPanel.ResourceViewOptions()
+	content := NewResourcesOptionsModel(showNonEmpty, order)
+	modal := a.modalManager.modals["resources_options"]
+	if modal == nil {
+		modal = NewModal("Resources View Options", content)
+		a.modalManager.Register("resources_options", modal)
+	} else {
+		modal.SetContent(content)
+		modal.title = "Resources View Options"
+	}
+	winW, winH := 50, 6
+	bg, _ := a.renderMainView()
+	modal.SetWindowed(winW, winH, bg)
+	modal.SetOnClose(func() tea.Cmd { return nil })
+	modal.SetDimensions(a.width, a.height)
+	a.modalManager.Show("resources_options")
+	return nil
 }
 
 func (a *App) viewResource() tea.Cmd {
@@ -1166,311 +1301,73 @@ func (a *App) showHelp() tea.Cmd {
 }
 
 func (a *App) viewItem() tea.Cmd {
-	return a.openYAMLForSelection()
+	return a.openViewerForSelection()
 }
 
 func (a *App) editItem() tea.Cmd {
 	return a.editSelection()
 }
 
-// openYAMLForSelection fetches the selected object and opens a YAML viewer modal.
-func (a *App) openYAMLForSelection() tea.Cmd {
-	// Determine active panel and current selection
+// openViewerForSelection opens the focused item's viewer when available.
+func (a *App) openViewerForSelection() tea.Cmd {
 	p := a.leftPanel
 	if a.activePanel == 1 {
 		p = a.rightPanel
 	}
-    // Folder-backed path: object YAML or key value depending on folder type
-    if p.useFolder && p.folder != nil {
-        // Use the selected index directly; folder rows include the back row at index 0
-        if p.selected < 0 || p.selected >= p.folder.Len() { return nil }
-        rows := p.folder.Lines(0, p.folder.Len())
-        id, _, _, ok := rows[p.selected].Columns()
-        if ok && id == "__back__" { return nil }
-        if !ok {
-            return nil
-        }
-        // Key folders (configmaps/secrets data): show key value, not whole object
-        if kf, ok := p.folder.(navui.KeyFolder); ok {
-            gvr, ns, name := kf.Parent()
-            obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, name)
-            if err != nil || obj == nil { return nil }
-            // Extract data value
-            var body string
-            if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found {
-                if val, ok2 := data[id]; ok2 {
-                    switch v := val.(type) {
-                    case string:
-                        if gvr.Resource == "secrets" {
-                            if b, err := base64.StdEncoding.DecodeString(v); err == nil {
-                                if isProbablyText(b) { body = string(b) } else { body = v }
-                            } else { body = v }
-                        } else {
-                            body = v
-                        }
-                    default:
-                        yb, _ := yaml.Marshal(v)
-                        body = string(yb)
-                    }
-                }
-            }
-            if body == "" { body = "" }
-            theme := "dracula"
-            if a.cfg != nil && a.cfg.Viewer.Theme != "" { theme = a.cfg.Viewer.Theme }
-            // Title from item.Path() when available
-            title := ""
-            type pathAware interface{ Path() []string }
-            if pa, ok := rows[p.selected].(pathAware); ok {
-                segs := pa.Path(); if len(segs) > 0 { title = "/" + strings.Join(segs, "/") }
-            }
-            if title == "" {
-                // Fallback: /namespaces/<ns>/<res>/<name>/data/<key>
-                title = "/" + gvr.Resource
-                if ns != "" { title = "/namespaces/" + ns + "/" + gvr.Resource }
-                title = title + "/" + name + "/data/" + id
-            }
-            viewer := NewTextViewer(id, body, "text", "text/plain", id, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
-            viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-            modal := NewModal(title, viewer)
-            modal.SetDimensions(a.width, a.height)
-            modal.SetCloseOnSingleEsc(false)
-            a.modalManager.Register("yaml_viewer", modal)
-            a.modalManager.Show("yaml_viewer")
-            return nil
-        }
-        // Extract object-list metadata
-        type metaProv interface {
-            ObjectListMeta() (schema.GroupVersionResource, string, bool)
-        }
-        if mp, ok := p.folder.(metaProv); ok {
-			gvr, ns, mok := mp.ObjectListMeta()
-			if mok {
-				obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, id)
-				if err != nil || obj == nil {
-					return nil
-				}
-				unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-				yb, _ := yaml.Marshal(obj.Object)
-				theme := "dracula"
-				if a.cfg != nil && a.cfg.Viewer.Theme != "" {
-					theme = a.cfg.Viewer.Theme
-				}
-            viewer := NewTextViewer(id, string(yb), "yaml", "application/yaml", id, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
-            viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-            // Build full breadcrumbs from item.Path() when available, else fallback to meta
-            title := ""
-            type pathAware interface{ Path() []string }
-            if pa, ok := rows[p.selected].(pathAware); ok {
-                segs := pa.Path();
-                if len(segs) > 0 { title = "/" + strings.Join(segs, "/") }
-            }
-            if title == "" {
-                title = "/" + gvr.Resource
-                if ns != "" { title = "/namespaces/" + ns + "/" + gvr.Resource }
-                title = title + "/" + id
-            }
-            modal := NewModal(title, viewer)
-				modal.SetDimensions(a.width, a.height)
-				modal.SetCloseOnSingleEsc(false)
-				a.modalManager.Register("yaml_viewer", modal)
-				a.modalManager.Show("yaml_viewer")
-				return nil
-			}
-		}
+	if p == nil {
 		return nil
 	}
-	item := p.GetCurrentItem()
-	if item == nil || item.Name == ".." {
+	item, ok := p.SelectedNavItem()
+	if !ok || item == nil {
 		return nil
 	}
-	path := p.GetCurrentPath()
-	// Resolve namespace/resource/name
-	ns, res, name, ok := parseNamespacedObjectPath(path, item.Name)
-	var gvk schema.GroupVersionKind
+	if _, isBack := item.(navui.Back); isBack {
+		return nil
+	}
+	viewable, ok := item.(navui.Viewable)
 	if !ok {
-		// Special case: viewing a namespace YAML at /namespaces
-		if path == "/namespaces" && item.Type == ItemTypeNamespace {
-			gvk = schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
-			name = item.Name
+		type vc interface {
+			ViewContent() (string, string, string, string, string, error)
+		}
+		if alt, okAlt := item.(vc); okAlt {
+			viewable = alt
 		} else {
 			return nil
 		}
-	} else {
-		// Prefer typed GVK carried by item; otherwise resolve via RESTMapper for current cluster
-		if item.TypedGVK.Group != "" || item.TypedGVK.Kind != "" || item.TypedGVK.Version != "" {
-			gvk = item.TypedGVK
-		} else {
-			// Resolve via RESTMapper from resource plural
-			k, err := a.cl.RESTMapper().KindFor(schema.GroupVersionResource{Resource: res})
-			if err != nil {
-				return nil
-			}
-			gvk = k
-		}
 	}
-	// If item provides its own view, delegate to it
-	if item != nil && item.Viewer != nil {
-		titleName, body, err := item.Viewer.BuildView(a)
-		if err != nil {
-			return nil
-		}
-        theme := "dracula"
-        if a.cfg != nil && a.cfg.Viewer.Theme != "" {
-            theme = a.cfg.Viewer.Theme
-        }
-        // Let the viewer decide how it prefers to be displayed; fallback to autodetect.
-        lang, mime, filename := "", "", titleName
-        if hp, ok := item.Viewer.(interface{ DisplayHints() (string, string, string) }); ok {
-            lang, mime, filename = hp.DisplayHints()
-        }
-        viewer := NewTextViewer(titleName, body, lang, mime, filename, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd { a.modalManager.Hide(); return nil })
-        viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-        // Prefer breadcrumbs from parsed path when available
-        title := path
-        if ns != "" && res != "" {
-            title = "/namespaces/" + ns + "/" + res + "/" + titleName
-        } else if !strings.HasSuffix(path, "/"+titleName) {
-            title = path + "/" + titleName
-        }
-        modal := NewModal(title, viewer)
-		modal.SetDimensions(a.width, a.height)
-		modal.SetCloseOnSingleEsc(false)
-		a.modalManager.Register("yaml_viewer", modal)
-		a.modalManager.Show("yaml_viewer")
-		return nil
-	}
-	// Build GVR from current folder meta when available; fallback to typed GVK + resource plural
-	var gvr schema.GroupVersionResource
-	if path == "/namespaces" && item.Type == ItemTypeNamespace {
-		gvr = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-    } else {
-        // Prefer folder meta (authoritative) from the active panel's navigator
-        nav := a.leftNav
-        if a.activePanel == 1 { nav = a.rightNav }
-        if nav != nil {
-            if cur := nav.Current(); cur != nil {
-                type metaProv interface{ ObjectListMeta() (schema.GroupVersionResource, string, bool) }
-                if mp, ok := cur.(metaProv); ok {
-                    if mgvr, _, ok2 := mp.ObjectListMeta(); ok2 { gvr = mgvr }
-                }
-            }
-        }
-		// Fallback: derive from typed GVK + resource plural
-		if gvr.Resource == "" {
-			gvr = schema.GroupVersionResource{Group: gvk.Group, Version: gvk.Version, Resource: res}
-		}
-	}
-	obj, err := a.cl.GetByGVR(a.ctx, gvr, ns, name)
+	title, body, lang, mime, filename, err := viewable.ViewContent()
 	if err != nil {
+		if errors.Is(err, navui.ErrNoViewContent) {
+			return nil
+		}
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("View failed: %v", err))
+		}
 		return nil
 	}
-	// Strip managedFields
-	unstructured.RemoveNestedField(obj.Object, "metadata", "managedFields")
-	// Determine sub-view context (container specs and data keys)
-	parts := strings.Split(path, "/")
-	content := interface{}(obj.Object)
-	// pods: container spec when selecting a container folder
-	if len(parts) >= 4 && parts[3] == "pods" {
-		if len(parts) == 5 && item != nil && item.Type == ItemTypeDirectory { // container item under a pod
-			cname := item.Name
-			found := false
-			if arr, foundCont, _ := unstructured.NestedSlice(obj.Object, "spec", "containers"); foundCont {
-				for _, c := range arr {
-					if m, ok := c.(map[string]interface{}); ok {
-						if n, _ := m["name"].(string); n == cname {
-							content = m
-							found = true
-							break
-						}
-					}
-				}
-			}
-			if !found {
-				if arr, foundInit, _ := unstructured.NestedSlice(obj.Object, "spec", "initContainers"); foundInit {
-					for _, c := range arr {
-						if m, ok := c.(map[string]interface{}); ok {
-							if n, _ := m["name"].(string); n == cname {
-								content = m
-								break
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	// configmaps | secrets: data value when selecting a key
-	if len(parts) >= 4 && (parts[3] == "configmaps" || parts[3] == "secrets") && len(parts) == 5 && item != nil && item.Type == ItemTypeFile {
-		key := item.Name
-		if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found {
-			if val, ok := data[key]; ok {
-				content = map[string]interface{}{"key": key, "value": val}
-			}
-		}
-	}
-	// Marshal to YAML unless we computed a rawText value (key view below)
-	var body string
-	// configmaps | secrets: plain value or base64
-	if len(parts) >= 4 && (parts[3] == "configmaps" || parts[3] == "secrets") && len(parts) == 5 && item != nil && item.Type == ItemTypeFile {
-		key := item.Name
-		if data, found, _ := unstructured.NestedMap(obj.Object, "data"); found {
-			if val, ok := data[key]; ok {
-				switch v := val.(type) {
-				case string:
-					if parts[3] == "secrets" {
-						if b, err := base64.StdEncoding.DecodeString(v); err == nil {
-							if isProbablyText(b) {
-								body = string(b)
-							} else {
-								body = v
-							}
-						} else {
-							body = v
-						}
-					} else {
-						body = v
-					}
-				default:
-					yb, _ := yaml.Marshal(v)
-					body = string(yb)
-				}
-			}
-		}
-	}
-	if body == "" {
-		yb, _ := yaml.Marshal(content)
-		body = string(yb)
+	if filename == "" {
+		filename = title
 	}
 	theme := "dracula"
 	if a.cfg != nil && a.cfg.Viewer.Theme != "" {
 		theme = a.cfg.Viewer.Theme
 	}
-	titleName := name
-	if item != nil && item.Type == ItemTypeDirectory && len(parts) >= 4 && parts[3] == "pods" {
-		titleName = name + "/" + item.Name
-	}
-	if item != nil && item.Type == ItemTypeFile && (len(parts) >= 4 && (parts[3] == "configmaps" || parts[3] == "secrets")) {
-		titleName = name + ":" + item.Name
-	}
-    viewer := NewTextViewer(titleName, body, "yaml", "application/yaml", titleName, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
-		// Close the topmost modal (the YAML viewer itself)
+	viewer := NewTextViewer(title, body, lang, mime, filename, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
 		a.modalManager.Hide()
 		return nil
 	})
 	viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-	// Title: full breadcrumb of the object
-	title := path
-	if ok {
-		// If path doesn't already contain the object name (list level), append it
-		if !strings.HasSuffix(path, "/"+name) {
-			title = path + "/" + name
+	modalTitle := ""
+	if pa, ok := item.(interface{ Path() []string }); ok {
+		if segs := pa.Path(); len(segs) > 0 {
+			modalTitle = "/" + strings.Join(segs, "/")
 		}
-	} else if path == "/namespaces" {
-		title = "/namespaces/" + name
 	}
-	modal := NewModal(title, viewer)
+	if modalTitle == "" {
+		modalTitle = "/" + title
+	}
+	modal := NewModal(modalTitle, viewer)
 	modal.SetDimensions(a.width, a.height)
-	// In the YAML viewer we disable single-Esc close to avoid breaking Esc+digit
 	modal.SetCloseOnSingleEsc(false)
 	a.modalManager.Register("yaml_viewer", modal)
 	a.modalManager.Show("yaml_viewer")
@@ -1754,13 +1651,15 @@ func Run() error {
 
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
 func (a *App) initData() error {
-    // Kubeconfig manager and discovery
+	// Kubeconfig manager and discovery
 	a.kubeMgr = kubeconfig.NewManager()
-    if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
-        // Log and show toast
-        if a.toastLogger != nil { a.enqueueCmd(a.toastLogger.Errorf("Kubeconfig discovery failed: %v", err)) }
-        return fmt.Errorf("discover kubeconfigs: %w", err)
-    }
+	if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
+		// Log and show toast
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Kubeconfig discovery failed: %v", err))
+		}
+		return fmt.Errorf("discover kubeconfigs: %w", err)
+	}
 	// Select current context (prefer env KUBECONFIG first path)
 	a.currentCtx = a.selectCurrentContext()
 	if a.currentCtx == nil {
@@ -1776,33 +1675,35 @@ func (a *App) initData() error {
 		return fmt.Errorf("cluster pool get: %w", err)
 	}
 	a.cl = cl
-    // Discovery-backed catalog (for panel displays)
-    if infos, err := a.cl.GetResourceInfos(); err == nil {
-        a.leftPanel.SetResourceCatalog(infos)
-        a.rightPanel.SetResourceCatalog(infos)
-    } else {
-        if a.toastLogger != nil { a.enqueueCmd(a.toastLogger.Errorf("Discovery resources failed: %v", err)) }
-    }
+	// Discovery-backed catalog (for panel displays)
+	if infos, err := a.cl.GetResourceInfos(); err == nil {
+		a.leftPanel.SetResourceCatalog(infos)
+		a.rightPanel.SetResourceCatalog(infos)
+	} else {
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Discovery resources failed: %v", err))
+		}
+	}
 	// Legacy generic data sources removed; folders provide data directly
 	a.leftPanel.SetViewConfig(a.viewConfig)
 	a.rightPanel.SetViewConfig(a.viewConfig)
 	// Provide contexts count to panels for root display
 	a.leftPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
 	a.rightPanel.SetContextCountProvider(func() int { return len(a.kubeMgr.GetContexts()) })
-    // Initialize per-panel view options from config defaults
-    if a.cfg != nil {
-        a.leftPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
-        a.rightPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
-        // Initialize table mode from config defaults
-        a.leftPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
-        a.rightPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
-        // Initialize columns mode and objects order from config defaults
-        a.leftPanel.SetColumnsMode(a.cfg.Objects.Columns)
-        a.rightPanel.SetColumnsMode(a.cfg.Objects.Columns)
-        a.leftPanel.SetObjectOrder(a.cfg.Objects.Order)
-        a.rightPanel.SetObjectOrder(a.cfg.Objects.Order)
-    }
-    // Preview: Use folder-backed rendering starting at root (not contexts listing)
+	// Initialize per-panel view options from config defaults
+	if a.cfg != nil {
+		a.leftPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
+		a.rightPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
+		// Initialize table mode from config defaults
+		a.leftPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
+		a.rightPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
+		// Initialize columns mode and objects order from config defaults
+		a.leftPanel.SetColumnsMode(a.cfg.Objects.Columns)
+		a.rightPanel.SetColumnsMode(a.cfg.Objects.Columns)
+		a.leftPanel.SetObjectOrder(a.cfg.Objects.Order)
+		a.rightPanel.SetObjectOrder(a.cfg.Objects.Order)
+	}
+	// Preview: Use folder-backed rendering starting at root (not contexts listing)
 	{
 		// Programmatic navigation to current namespace for both panels
 		ns := "default"
@@ -1822,92 +1723,115 @@ func (a *App) goToNamespace(ns string) {
 	if ns == "" {
 		ns = "default"
 	}
-    // Build separate deps for left and right so each panel can have independent view options
-    depsLeft := navui.Deps{
-        Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
-        ListContexts: func() []string {
-            out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-            for _, c := range a.kubeMgr.GetContexts() { out = append(out, c.Name) }
-            return out
-        },
-        ViewOptions: func() navui.ViewOptions { return a.leftViewOptions() },
-    }
-    depsRight := navui.Deps{
-        Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
-        ListContexts: func() []string {
-            out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-            for _, c := range a.kubeMgr.GetContexts() { out = append(out, c.Name) }
-            return out
-        },
-        ViewOptions: func() navui.ViewOptions { return a.rightViewOptions() },
-    }
+	// Build separate deps for left and right so each panel can have independent view options
+	depsLeft := navui.Deps{
+		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+		ListContexts: func() []string {
+			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+			for _, c := range a.kubeMgr.GetContexts() {
+				out = append(out, c.Name)
+			}
+			return out
+		},
+		ViewOptions: func() navui.ViewOptions { return a.leftViewOptions() },
+	}
+	depsRight := navui.Deps{
+		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+		ListContexts: func() []string {
+			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+			for _, c := range a.kubeMgr.GetContexts() {
+				out = append(out, c.Name)
+			}
+			return out
+		},
+		ViewOptions: func() navui.ViewOptions { return a.rightViewOptions() },
+	}
 	// set EnterContext after deps to avoid forward reference
-    depsLeft.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
-        var target *kubeconfig.Context
-        for _, c := range a.kubeMgr.GetContexts() {
-            if c.Name == name {
-                target = c
-                break
-            }
-        }
-        if target == nil {
-            return nil, fmt.Errorf("context %q not found", name)
-        }
-        key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
-        cl, err := a.clPool.Get(a.ctx, key)
-        if err != nil {
-            return nil, err
-        }
-        ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() navui.ViewOptions { return a.leftViewOptions() }}
-        return navui.NewContextRootFolder(ndeps, basePath), nil
-    }
-    depsRight.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
-        var target *kubeconfig.Context
-        for _, c := range a.kubeMgr.GetContexts() {
-            if c.Name == name { target = c; break }
-        }
-        if target == nil { return nil, fmt.Errorf("context %q not found", name) }
-        key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
-        cl, err := a.clPool.Get(a.ctx, key)
-        if err != nil { return nil, err }
-        ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, ViewOptions: func() navui.ViewOptions { return a.rightViewOptions() }}
-        return navui.NewContextRootFolder(ndeps, basePath), nil
-    }
-    rootLeft := navui.NewRootFolder(depsLeft)
-    rootRight := navui.NewRootFolder(depsRight)
-    a.leftNav = navui.NewNavigator(rootLeft)
-    a.rightNav = navui.NewNavigator(rootRight)
-    if a.namespaceExists(ns) {
-        // Left panel: remember selection when entering
-        a.leftNav.SetSelectionID("namespaces")
-        leftNS := navui.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"})
-        a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = leftNS.Len(); return nil }))
-        a.leftNav.Push(leftNS)
-        a.leftNav.SetSelectionID(ns)
-        leftGroups := navui.NewNamespacedGroupsFolder(depsLeft, ns, []string{"namespaces", ns})
-        a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = leftGroups.Len(); return nil }))
-        a.leftNav.Push(leftGroups)
-        // Right panel: same
-        a.rightNav.SetSelectionID("namespaces")
-        rightNS := navui.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"})
-        a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = rightNS.Len(); return nil }))
-        a.rightNav.Push(rightNS)
-        a.rightNav.SetSelectionID(ns)
-        rightGroups := navui.NewNamespacedGroupsFolder(depsRight, ns, []string{"namespaces", ns})
-        a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = rightGroups.Len(); return nil }))
-        a.rightNav.Push(rightGroups)
-    }
-    curL := a.leftNav.Current(); hasBackL := a.leftNav.HasBack()
-    curR := a.rightNav.Current(); hasBackR := a.rightNav.HasBack()
-    a.leftPanel.SetFolder(curL, hasBackL)
-    a.rightPanel.SetFolder(curR, hasBackR)
-    // Use navigator paths for breadcrumbs
-    if a.leftNav != nil { a.leftPanel.SetCurrentPath(a.leftNav.Path()) }
-    if a.rightNav != nil { a.rightPanel.SetCurrentPath(a.rightNav.Path()) }
+	depsLeft.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
+		var target *kubeconfig.Context
+		for _, c := range a.kubeMgr.GetContexts() {
+			if c.Name == name {
+				target = c
+				break
+			}
+		}
+		if target == nil {
+			return nil, fmt.Errorf("context %q not found", name)
+		}
+		key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
+		cl, err := a.clPool.Get(a.ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() navui.ViewOptions { return a.leftViewOptions() }}
+		return navui.NewContextRootFolder(ndeps, basePath), nil
+	}
+	depsRight.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
+		var target *kubeconfig.Context
+		for _, c := range a.kubeMgr.GetContexts() {
+			if c.Name == name {
+				target = c
+				break
+			}
+		}
+		if target == nil {
+			return nil, fmt.Errorf("context %q not found", name)
+		}
+		key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
+		cl, err := a.clPool.Get(a.ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, ViewOptions: func() navui.ViewOptions { return a.rightViewOptions() }}
+		return navui.NewContextRootFolder(ndeps, basePath), nil
+	}
+	rootLeft := navui.NewRootFolder(depsLeft)
+	rootRight := navui.NewRootFolder(depsRight)
+	a.leftNav = navui.NewNavigator(rootLeft)
+	a.rightNav = navui.NewNavigator(rootRight)
+	if a.namespaceExists(ns) {
+		// Left panel: remember selection when entering
+		a.leftNav.SetSelectionID("namespaces")
+		leftNS := navui.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = leftNS.Len(); return nil }))
+		a.leftNav.Push(leftNS)
+		a.leftNav.SetSelectionID(ns)
+		leftGroups := navui.NewNamespacedGroupsFolder(depsLeft, ns, []string{"namespaces", ns})
+		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = leftGroups.Len(); return nil }))
+		a.leftNav.Push(leftGroups)
+		// Right panel: same
+		a.rightNav.SetSelectionID("namespaces")
+		rightNS := navui.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = rightNS.Len(); return nil }))
+		a.rightNav.Push(rightNS)
+		a.rightNav.SetSelectionID(ns)
+		rightGroups := navui.NewNamespacedGroupsFolder(depsRight, ns, []string{"namespaces", ns})
+		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = rightGroups.Len(); return nil }))
+		a.rightNav.Push(rightGroups)
+	}
+	curL := a.leftNav.Current()
+	hasBackL := a.leftNav.HasBack()
+	curR := a.rightNav.Current()
+	hasBackR := a.rightNav.HasBack()
+	a.leftPanel.SetFolder(curL, hasBackL)
+	a.rightPanel.SetFolder(curR, hasBackR)
+	// Use navigator paths for breadcrumbs
+	if a.leftNav != nil {
+		a.leftPanel.SetCurrentPath(a.leftNav.Path())
+	}
+	if a.rightNav != nil {
+		a.rightPanel.SetCurrentPath(a.rightNav.Path())
+	}
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
-    a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next navui.Folder) { a.activePanel = 0; a.handleFolderNav(back, selID, next) })
-    a.rightPanel.SetFolderNavHandler(func(back bool, selID string, next navui.Folder) { a.activePanel = 1; a.handleFolderNav(back, selID, next) })
+	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next navui.Folder) {
+		a.activePanel = 0
+		a.handleFolderNav(back, selID, next)
+	})
+	a.rightPanel.SetFolderNavHandler(func(back bool, selID string, next navui.Folder) {
+		a.activePanel = 1
+		a.handleFolderNav(back, selID, next)
+	})
 	a.leftPanel.ResetSelectionTop()
 	a.rightPanel.ResetSelectionTop()
 }
@@ -1915,73 +1839,87 @@ func (a *App) goToNamespace(ns string) {
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
 // currentNav returns the navigator for the active panel (left=0, right=1).
 func (a *App) currentNav() *navui.Navigator {
-    if a.activePanel == 0 { return a.leftNav }
-    return a.rightNav
+	if a.activePanel == 0 {
+		return a.leftNav
+	}
+	return a.rightNav
 }
 
 func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
-    // Use navigator for current active panel
-    ensure := func() *navui.Navigator {
-        // Build deps bound to the current active panel
-        vo := func() navui.ViewOptions {
-            if a.activePanel == 0 { return a.leftViewOptions() }
-            return a.rightViewOptions()
-        }
-        deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
-            ListContexts: func() []string {
-                out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-                for _, c := range a.kubeMgr.GetContexts() { out = append(out, c.Name) }
-                return out
-            },
-            ViewOptions: vo,
-        }
-        return navui.NewNavigator(navui.NewRootFolder(deps))
-    }
-    var nav *navui.Navigator
-    var panelSet func(navui.Folder, bool)
-    var panelSelectByID func(string)
-    var panelReset func()
-    if a.activePanel == 0 {
-        if a.leftNav == nil { a.leftNav = ensure() }
-        nav = a.leftNav
-        panelSet = a.leftPanel.SetFolder
-        panelSelectByID = a.leftPanel.SelectByRowID
-        panelReset = func(){ a.leftPanel.ResetSelectionTop() }
-    } else {
-        if a.rightNav == nil { a.rightNav = ensure() }
-        nav = a.rightNav
-        panelSet = a.rightPanel.SetFolder
-        panelSelectByID = a.rightPanel.SelectByRowID
-        panelReset = func(){ a.rightPanel.ResetSelectionTop() }
-    }
-    if back {
-        nav.Back()
-    } else if next != nil {
-        // Pre-warm the next folder in background to trigger informer/lister start.
-        // This shows a spinner if it takes longer than the delay and avoids UI freeze.
-        if a.activePanel == 0 {
-            a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
-        } else {
-            a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
-        }
-        nav.SetSelectionID(selID)
-        nav.Push(next)
-    }
-    cur := nav.Current()
-    hasBack := nav.HasBack()
-    panelSet(cur, hasBack)
-    // Update breadcrumbs from navigator state
-    if a.activePanel == 0 {
-        a.leftPanel.SetCurrentPath(nav.Path())
-    } else {
-        a.rightPanel.SetCurrentPath(nav.Path())
-    }
-    if back {
-        id := nav.CurrentSelectionID()
-        if id != "" { panelSelectByID(id) } else { panelReset() }
-    } else {
-        panelReset()
-    }
+	// Use navigator for current active panel
+	ensure := func() *navui.Navigator {
+		// Build deps bound to the current active panel
+		vo := func() navui.ViewOptions {
+			if a.activePanel == 0 {
+				return a.leftViewOptions()
+			}
+			return a.rightViewOptions()
+		}
+		deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+			ListContexts: func() []string {
+				out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+				for _, c := range a.kubeMgr.GetContexts() {
+					out = append(out, c.Name)
+				}
+				return out
+			},
+			ViewOptions: vo,
+		}
+		return navui.NewNavigator(navui.NewRootFolder(deps))
+	}
+	var nav *navui.Navigator
+	var panelSet func(navui.Folder, bool)
+	var panelSelectByID func(string)
+	var panelReset func()
+	if a.activePanel == 0 {
+		if a.leftNav == nil {
+			a.leftNav = ensure()
+		}
+		nav = a.leftNav
+		panelSet = a.leftPanel.SetFolder
+		panelSelectByID = a.leftPanel.SelectByRowID
+		panelReset = func() { a.leftPanel.ResetSelectionTop() }
+	} else {
+		if a.rightNav == nil {
+			a.rightNav = ensure()
+		}
+		nav = a.rightNav
+		panelSet = a.rightPanel.SetFolder
+		panelSelectByID = a.rightPanel.SelectByRowID
+		panelReset = func() { a.rightPanel.ResetSelectionTop() }
+	}
+	if back {
+		nav.Back()
+	} else if next != nil {
+		// Pre-warm the next folder in background to trigger informer/lister start.
+		// This shows a spinner if it takes longer than the delay and avoids UI freeze.
+		if a.activePanel == 0 {
+			a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
+		} else {
+			a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
+		}
+		nav.SetSelectionID(selID)
+		nav.Push(next)
+	}
+	cur := nav.Current()
+	hasBack := nav.HasBack()
+	panelSet(cur, hasBack)
+	// Update breadcrumbs from navigator state
+	if a.activePanel == 0 {
+		a.leftPanel.SetCurrentPath(nav.Path())
+	} else {
+		a.rightPanel.SetCurrentPath(nav.Path())
+	}
+	if back {
+		id := nav.CurrentSelectionID()
+		if id != "" {
+			panelSelectByID(id)
+		} else {
+			panelReset()
+		}
+	} else {
+		panelReset()
+	}
 }
 
 // namespaceExists returns true if the namespace exists in the current cluster.
@@ -2061,24 +1999,3 @@ func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (ma
 
 // RESTMapper exposes the app's RESTMapper to viewers for resource→GVK resolution.
 func (a *App) RESTMapper() metamapper.RESTMapper { return a.cl.RESTMapper() }
-
-// isProbablyText returns true if the byte slice looks like readable UTF-8
-// with a low proportion of control bytes.
-func isProbablyText(b []byte) bool {
-	if len(b) == 0 {
-		return true
-	}
-	if !utf8.Valid(b) {
-		return false
-	}
-	ctrl := 0
-	for _, r := range string(b) {
-		if r == '\n' || r == '\r' || r == '\t' {
-			continue
-		}
-		if r < 0x20 {
-			ctrl++
-		}
-	}
-	return ctrl*10 < len(b)
-}

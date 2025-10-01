@@ -35,7 +35,6 @@ func NewEnterableItemStyled(id string, cells []string, path []string, styles []*
 	return &EnterableItem{RowItem: newRowItemStyled(id, cells, path, styles), enter: enter}
 }
 
-func (e *EnterableItem) WithDetails(d string) *EnterableItem { e.RowItem.WithDetails(d); return e }
 func (e *EnterableItem) Enter() (Folder, error) {
 	if e.enter == nil {
 		return nil, nil

@@ -71,6 +71,15 @@ type ObjectItem interface {
 type Viewable interface {
     ViewContent() (title, body, lang, mime, filename string, err error)
 }
+
+// Countable reports aggregate information for list-style rows (resource groups, context lists).
+// Count must go through the shared informer (starting it if required) so downstream readers benefit
+// from a primed cache, whereas Empty performs a lightweight peek (limit=1) that avoids booting
+// informers; this lets the UI hide empty resources by default without paying the informer cost.
+type Countable interface {
+    Count() int
+    Empty() bool
+}
 ```
 
 Notes:
@@ -79,6 +88,7 @@ Notes:
 - `Path()` is the canonical breadcrumb path for this row (e.g., ["namespaces","ns1","pods","web-0"]). Panels/viewers render it with "/"+strings.Join(path, "/").
 - Row styling is set per-cell via the `styles` returned from `Columns()`. Default: make all cells green here; selection/other modes can override.
 - `ObjectItem` provides precise identity via accessors instead of brittle paths.
+- `Countable` rows (resource groups, context lists) lazily warm informers when counts are requested, while `Empty()` performs a cheap peek (limit=1) so the UI can hide empty collections without booting caches up-front.
 - Details semantics:
   - Resource groups (pods/configmaps/…): show "<resource> (<group>/<version>)" or just "<version>" for core.
   - Object rows: show "<ns>/<name> (Kind <group>/<version>)" when the group is set, otherwise "<ns>/<name> (Kind <version>)" for core; for cluster-scoped, drop the namespace prefix. Kind resolves via RESTMapper for the list GVR. Implementation uses `gvr.GroupVersion().String()` and `types.NamespacedName.String()`.
@@ -95,8 +105,8 @@ RowItem (minimal table-backed row)
 │  ├─ SecretItem (plain Secret object row)
 │  └─ …other resource-specific object rows
 ├─ ContextItem (enterable; opens the context-scoped hierarchy)
-├─ ContextListItem (enterable; lists contexts, no view content)
-├─ ResourceGroupItem (enterable; opens an object list/folder of ObjectItems)
+├─ ContextListItem (enterable; lists contexts, Countable via kubeconfig provider)
+├─ ResourceGroupItem (enterable; opens an object list/folder of ObjectItems; Countable for counts)
 ├─ ConfigKeyItem (viewable; ConfigMap/Secret key value)
 ├─ ContainerItem (viewable; pod container spec)
 └─ BackItem (synthetic ".." row; neither viewable nor enterable)

@@ -1,67 +1,73 @@
 package ui
 
 import (
-    "testing"
-    table "github.com/sttts/kc/internal/table"
+	"testing"
+
+	nav "github.com/sttts/kc/internal/navigation"
+	table "github.com/sttts/kc/internal/table"
 )
 
 // fakeFolder is a minimal Folder implementation for testing column handling.
-type fakeFolder struct{
-    cols []table.Column
-    list *table.SliceList
+type fakeFolder struct {
+	cols []table.Column
+	list *table.SliceList
 }
 
 // table.List implementation
-func (f *fakeFolder) Lines(top, num int) []table.Row { return f.list.Lines(top, num) }
-func (f *fakeFolder) Above(id string, n int) []table.Row { return f.list.Above(id, n) }
-func (f *fakeFolder) Below(id string, n int) []table.Row { return f.list.Below(id, n) }
-func (f *fakeFolder) Len() int { return f.list.Len() }
+func (f *fakeFolder) Lines(top, num int) []table.Row        { return f.list.Lines(top, num) }
+func (f *fakeFolder) Above(id string, n int) []table.Row    { return f.list.Above(id, n) }
+func (f *fakeFolder) Below(id string, n int) []table.Row    { return f.list.Below(id, n) }
+func (f *fakeFolder) Len() int                              { return f.list.Len() }
 func (f *fakeFolder) Find(id string) (int, table.Row, bool) { return f.list.Find(id) }
 
 // Folder metadata
-func (f *fakeFolder) Columns() []table.Column { return f.cols }
-func (f *fakeFolder) Title() string { return "fake" }
-func (f *fakeFolder) Key() string   { return "fake" }
+func (f *fakeFolder) Columns() []table.Column          { return f.cols }
+func (f *fakeFolder) Title() string                    { return "fake" }
+func (f *fakeFolder) Key() string                      { return "fake" }
+func (f *fakeFolder) ItemByID(string) (nav.Item, bool) { return nil, false }
 
 func newFakeFolder(cols []string, rows [][]string) *fakeFolder {
-    tc := make([]table.Column, len(cols))
-    for i := range cols { tc[i] = table.Column{Title: cols[i]} }
-    tr := make([]table.Row, 0, len(rows))
-    for i := range rows { tr = append(tr, table.SimpleRow{ID: rows[i][0], Cells: rows[i]}) }
-    return &fakeFolder{cols: tc, list: table.NewSliceList(tr)}
+	tc := make([]table.Column, len(cols))
+	for i := range cols {
+		tc[i] = table.Column{Title: cols[i]}
+	}
+	tr := make([]table.Row, 0, len(rows))
+	for i := range rows {
+		tr = append(tr, table.SimpleRow{ID: rows[i][0], Cells: rows[i]})
+	}
+	return &fakeFolder{cols: tc, list: table.NewSliceList(tr)}
 }
 
 func TestPanelSetFolderUsesServerColumns(t *testing.T) {
-    // Two columns present initially
-    ff := newFakeFolder([]string{"Name", "Ready"}, [][]string{{"a", "0/1"}, {"b", "0/1"}})
-    p := NewPanel("")
-    p.UseFolder(true)
-    p.SetDimensions(80, 20)
-    p.SetFolder(ff, false)
-    if p.bt == nil {
-        t.Fatalf("bigtable not initialized")
-    }
-    if len(p.lastColTitles) < 2 {
-        t.Fatalf("expected >=2 columns, got %v", p.lastColTitles)
-    }
+	// Two columns present initially
+	ff := newFakeFolder([]string{"Name", "Ready"}, [][]string{{"a", "0/1"}, {"b", "0/1"}})
+	p := NewPanel("")
+	p.UseFolder(true)
+	p.SetDimensions(80, 20)
+	p.SetFolder(ff, false)
+	if p.bt == nil {
+		t.Fatalf("bigtable not initialized")
+	}
+	if len(p.lastColTitles) < 2 {
+		t.Fatalf("expected >=2 columns, got %v", p.lastColTitles)
+	}
 }
 
 func TestPanelRefreshFolderRebuildsOnColumnChange(t *testing.T) {
-    // Start with single column
-    ff := newFakeFolder([]string{"Name"}, [][]string{{"a"}, {"b"}})
-    p := NewPanel("")
-    p.UseFolder(true)
-    p.SetDimensions(80, 20)
-    p.SetFolder(ff, false)
-    if len(p.lastColTitles) != 1 {
-        t.Fatalf("expected 1 column initially, got %d", len(p.lastColTitles))
-    }
-    // Change folder columns to simulate server-side table columns arriving
-    ff.cols = []table.Column{{Title: "Name"}, {Title: "Ready"}, {Title: "Status"}}
-    // Trigger refresh; Panel should compare and rebuild
-    p.RefreshFolder()
-    if want, got := 3, len(p.lastColTitles); got != want {
-        t.Fatalf("expected %d columns after refresh, got %d (%v)", want, got, p.lastColTitles)
-    }
+	// Start with single column
+	ff := newFakeFolder([]string{"Name"}, [][]string{{"a"}, {"b"}})
+	p := NewPanel("")
+	p.UseFolder(true)
+	p.SetDimensions(80, 20)
+	p.SetFolder(ff, false)
+	if len(p.lastColTitles) != 1 {
+		t.Fatalf("expected 1 column initially, got %d", len(p.lastColTitles))
+	}
+	// Change folder columns to simulate server-side table columns arriving
+	ff.cols = []table.Column{{Title: "Name"}, {Title: "Ready"}, {Title: "Status"}}
+	// Trigger refresh; Panel should compare and rebuild
+	p.RefreshFolder()
+	if want, got := 3, len(p.lastColTitles); got != want {
+		t.Fatalf("expected %d columns after refresh, got %d (%v)", want, got, p.lastColTitles)
+	}
 }
-

@@ -1,20 +1,20 @@
 package navigation
 
 import (
-    table "github.com/sttts/kc/internal/table"
-    "k8s.io/apimachinery/pkg/runtime/schema"
+	table "github.com/sttts/kc/internal/table"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // SliceFolder is a basic Folder backed by a table.SliceList and static columns.
 type SliceFolder struct {
-    title string
-    key   string
-    cols  []table.Column
-    list  *table.SliceList
-    // optional object-list metadata for YAML/F3
-    gvr       schema.GroupVersionResource
-    namespace string
-    hasMeta   bool
+	title string
+	key   string
+	cols  []table.Column
+	list  *table.SliceList
+	// optional object-list metadata for YAML/F3
+	gvr       schema.GroupVersionResource
+	namespace string
+	hasMeta   bool
 }
 
 var _ Folder = (*SliceFolder)(nil)
@@ -25,26 +25,40 @@ var _ Folder = (*SliceFolder)(nil)
 
 // NewSliceFolder builds a Folder from rows and columns with title/key metadata.
 func NewSliceFolder(title, key string, cols []table.Column, rows []table.Row) *SliceFolder {
-    return &SliceFolder{title: title, key: key, cols: cols, list: table.NewSliceList(rows)}
+	return &SliceFolder{title: title, key: key, cols: cols, list: table.NewSliceList(rows)}
 }
 
 // Folder interface implementation -------------------------------------------------
 
 func (f *SliceFolder) Columns() []table.Column { return f.cols }
-func (f *SliceFolder) Title() string          { return f.title }
-func (f *SliceFolder) Key() string            { return f.key }
+func (f *SliceFolder) Title() string           { return f.title }
+func (f *SliceFolder) Key() string             { return f.key }
 
 // ObjectListMeta returns GVR/namespace when this folder represents a concrete
 // object listing. ok=false if not applicable.
 func (f *SliceFolder) ObjectListMeta() (schema.GroupVersionResource, string, bool) {
-    if f.hasMeta { return f.gvr, f.namespace, true }
-    return schema.GroupVersionResource{}, "", false
+	if f.hasMeta {
+		return f.gvr, f.namespace, true
+	}
+	return schema.GroupVersionResource{}, "", false
 }
 
-func (f *SliceFolder) Lines(top, num int) []table.Row { return f.list.Lines(top, num) }
-func (f *SliceFolder) Above(rowID string, num int) []table.Row { return f.list.Above(rowID, num) }
-func (f *SliceFolder) Below(rowID string, num int) []table.Row { return f.list.Below(rowID, num) }
-func (f *SliceFolder) Len() int { return f.list.Len() }
+func (f *SliceFolder) Lines(top, num int) []table.Row           { return f.list.Lines(top, num) }
+func (f *SliceFolder) Above(rowID string, num int) []table.Row  { return f.list.Above(rowID, num) }
+func (f *SliceFolder) Below(rowID string, num int) []table.Row  { return f.list.Below(rowID, num) }
+func (f *SliceFolder) Len() int                                 { return f.list.Len() }
 func (f *SliceFolder) Find(rowID string) (int, table.Row, bool) { return f.list.Find(rowID) }
+
+func (f *SliceFolder) ItemByID(id string) (Item, bool) {
+	if id == "" {
+		return nil, false
+	}
+	_, row, ok := f.list.Find(id)
+	if !ok {
+		return nil, false
+	}
+	it, ok := row.(Item)
+	return it, ok
+}
 
 // Constructors removed (see note above).

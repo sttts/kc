@@ -28,9 +28,9 @@ Hierarchy refactor and tests — ordered
 - [ ] Programmatic goto (namespaces): implement simple Enter‑driven path stepping for `/namespaces/<ns>` without builders.
 - [ ] Envtest integration tests: start apiserver, seed ns/configmap/secret/node; verify walking Root → Namespaces → Groups → Objects → Keys; Back to parent; cluster‑scoped list. Tests only import navigation/internal/cluster/table (no UI).
 - [ ] Item/view refactor:
-  - [ ] Introduce `RowItem`/`ObjectItem` hierarchy (NamespaceItem, PodItem, ConfigMapItem, SecretItem, ContextItem, ContextListItem, ResourceGroupItem, ConfigKeyItem, ContainerItem, BackItem) with `ViewContent` + optional `Enter`.
-  - [ ] Extend `Folder`/`BaseFolder` with `ItemByID` and update `populate` implementations to construct concrete items instead of generic `SimpleItem`/`EnterableItem`.
-  - [ ] Update `panel.go` and `app.go` to drop path heuristics and rely on `ItemByID` + `Viewable` when enabling F3.
+  - [x] Introduce `RowItem`/`ObjectItem` hierarchy (NamespaceItem, PodItem, ConfigMapItem, SecretItem, ContextItem, ContextListItem, ResourceGroupItem, ConfigKeyItem, ContainerItem, BackItem) with `ViewContent` + optional `Enter`.
+  - [x] Extend `Folder`/`BaseFolder` with `ItemByID` and update `populate` implementations to construct concrete items instead of generic `SimpleItem`/`EnterableItem`.
+  - [x] Update `panel.go` and `app.go` to drop path heuristics and rely on `ItemByID` + `Viewable` when enabling F3.
   - [ ] Ensure `ViewContent` metadata feeds `TextViewer` (lang/mime/filename) and remove legacy `viewpkg.ViewProvider` plumbing.
 
 Detailed next steps (post‑compaction anchors)
