@@ -37,9 +37,9 @@ Every location is backed by exact identities (GVR), never heuristic breadcrumb p
   - Depends on `internal/cluster` and `internal/table`.
 
 - `internal/ui/view` (modular viewers)
-  - `ViewProvider` — provides `BuildView() (title, body string, err error)` for `F3`.
+  - Helpers that navigation items can call from `ViewContent()` to format specialised views.
   - Concrete viewers capture required dependencies (e.g., store/manager) at construction time.
-  - Example viewers:
+  - Example helpers:
     - `KubeObjectView`: YAML of a full object.
     - `ConfigKeyView`: value for a single key (secret values decoded when textual).
     - `PodContainerView`: YAML of a single container’s spec.
@@ -67,10 +67,9 @@ type ObjectItem interface {
     // Optional: GVK() schema.GroupVersionKind // for visuals only
 }
 
-// Viewable is a capability: an item can render a focused view for F3.
-// Items that don’t implement Viewable fall back to a generic object view (when ObjectItem).
+// Viewable is a capability: an item can render a focused view for F3 and optionally provide syntax hints.
 type Viewable interface {
-    BuildView() (title, body string, err error)
+    ViewContent() (title, body, lang, mime, filename string, err error)
 }
 ```
 
@@ -80,10 +79,28 @@ Notes:
 - `Path()` is the canonical breadcrumb path for this row (e.g., ["namespaces","ns1","pods","web-0"]). Panels/viewers render it with "/"+strings.Join(path, "/").
 - Row styling is set per-cell via the `styles` returned from `Columns()`. Default: make all cells green here; selection/other modes can override.
 - `ObjectItem` provides precise identity via accessors instead of brittle paths.
- - Details semantics:
-   - Resource groups (pods/configmaps/…): show "<resource> (<group>/<version>)" or just "<version>" for core.
+- Details semantics:
+  - Resource groups (pods/configmaps/…): show "<resource> (<group>/<version>)" or just "<version>" for core.
   - Object rows: show "<ns>/<name> (Kind <group>/<version>)" when the group is set, otherwise "<ns>/<name> (Kind <version>)" for core; for cluster-scoped, drop the namespace prefix. Kind resolves via RESTMapper for the list GVR. Implementation uses `gvr.GroupVersion().String()` and `types.NamespacedName.String()`.
-   - Panels prefer `Item.Details()` for the footer when available; otherwise fall back to the item’s `TypedGVR`.
+  - Panels prefer `Item.Details()` for the footer when available; otherwise fall back to the item’s `TypedGVR`.
+
+#### Planned Item Hierarchy
+
+```
+RowItem (minimal table-backed row)
+├─ ObjectItem (adds GVR/Namespace/Name + ViewContent via handler registry)
+│  ├─ NamespaceItem (adds Enter into namespace resource groups)
+│  ├─ PodItem (plain pod object row)
+│  ├─ ConfigMapItem (plain ConfigMap object row)
+│  ├─ SecretItem (plain Secret object row)
+│  └─ …other resource-specific object rows
+├─ ContextItem (enterable; opens the context-scoped hierarchy)
+├─ ContextListItem (enterable; lists contexts, no view content)
+├─ ResourceGroupItem (enterable; opens an object list/folder of ObjectItems)
+├─ ConfigKeyItem (viewable; ConfigMap/Secret key value)
+├─ ContainerItem (viewable; pod container spec)
+└─ BackItem (synthetic ".." row; neither viewable nor enterable)
+```
 
 ### Panel (internal/ui)
 
@@ -101,7 +118,7 @@ Notes:
 - `ConfigKeyView` — renders only the key’s value, never the whole object. For secrets, base64 is decoded and displayed as UTF‑8 text when appropriate; otherwise the base64 string is shown. Constructed with store access and key coordinates (GVR/ns/name/key).
 - `PodContainerView` — renders a single container/initContainer spec from `spec.containers`/`spec.initContainers` by name. Constructed with store access and container coordinates (pod GVR/ns/name/container).
 
-These enable a strict, type‑safe F3 experience without relying on breadcrumb string matching. Viewers are created by factories that bind dependencies upfront; `BuildView()` takes no parameters.
+These helpers enable a strict, type‑safe F3 experience without relying on breadcrumb string matching. Navigation items (or handlers) call them from `ViewContent()` with dependencies bound upfront.
 
 ### Enterable and Folder
 
