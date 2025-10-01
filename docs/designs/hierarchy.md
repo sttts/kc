@@ -161,6 +161,30 @@ Notes:
 - `Folder.Columns` returns `[]table.Column` (initially just titles). Future additions can include width, orientation, or priority.
 - Root, contexts, namespaces, resource groups, object lists, and virtual children (containers, config/secret keys, logs) are all represented as Folders.
 
+### Folder Hierarchy and Responsibilities
+
+Folders embed smaller building blocks so shared behaviour lives in one place instead of string checks. The intended hierarchy is:
+
+```
+BaseFolder
+├─ ResourcesFolder             // shared count/peek logic for resource groups
+│  ├─ ClusterResourcesFolder   // cluster-scoped resource groups (namespaces, nodes, …)
+│  │  ├─ RootFolder            // "/" entrypoint; wraps contexts, namespaces, cluster resources
+│  │  └─ ContextRootFolder     // root when browsing a context tree (same behaviour as RootFolder)
+│  └─ NamespacedResourcesFolder // namespaced resource groups (pods, configmaps, …)
+├─ ObjectsFolder               // shared population for object lists and server-side Tables
+│  ├─ ClusterObjectsFolder     // cluster-scoped objects for a GVR
+│  └─ NamespacedObjectsFolder  // namespace-scoped objects for a GVR
+├─ PodContainersFolder         // virtual folder for pod containers/initContainers
+├─ ConfigMapKeysFolder         // virtual folder for ConfigMap data keys
+└─ SecretKeysFolder            // virtual folder for Secret data keys
+```
+
+- `ResourcesFolder` wires the `Countable` interface, async informer startup, throttled peeks using `resources.peekInterval`, and ViewOptions filtering. Children only describe which `ResourceGroupItem`s to build.
+- `ObjectsFolder` centralises server-side Table usage, fallback `GetByGVR` listing, and `ObjectListMeta` bookkeeping so viewers consistently know the active GVR + namespace.
+- `RootFolder` and `ContextRootFolder` embed `ClusterResourcesFolder`; their only differences are breadcrumb titles and keys.
+- Synthetic folders (containers / config-map keys / secret keys) embed `BaseFolder` directly because they only need lazy population.
+
 ### Back navigation and breadcrumbs
 
 The “..” row is a Back item (not Enterable). It signals the app to pop the current Folder and restore prior selection/scroll state.
@@ -202,11 +226,11 @@ Notes:
   - `CtxName string` (for keys/titles)
   - `ListContexts func() []string` (optional; used for contexts listing)
   - `EnterContext func(name string, basePath []string) (Folder, error)` (optional; builds a context‑scoped root)
-- Constructors (UI‑agnostic) live in `internal/navigation` and carry base path segments:
+- Constructors (UI‑agnostic) live in `internal/navigation/folders/` (same Go package) and carry base path segments:
   - `NewRootFolder(deps)`
-  - `NewContextsFolder(deps, basePath []string)`
   - `NewContextRootFolder(deps, basePath []string)`
-  - `NewNamespacedGroupsFolder(deps, ns, basePath []string)`
+  - `NewContextsFolder(deps, basePath []string)`
+  - `NewNamespacedResourcesFolder(deps, ns, basePath []string)`
   - `NewNamespacedObjectsFolder(deps, gvr, ns, basePath []string)`
   - `NewClusterObjectsFolder(deps, gvr, basePath []string)`
   - `NewPodContainersFolder(deps, ns, pod, basePath []string)`

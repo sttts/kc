@@ -23,6 +23,7 @@ Current tasks
 - [ ] Favorites: build a favorites list of resource types (seed from discovery alias "all"); allow users to add/remove favorites to override discovery. Persist and use favorites to populate resource selectors and shortcuts.
 
 Hierarchy refactor and tests — ordered
+- [ ] Navigation: move folder implementations into `internal/navigation/folders/` (one type per file) with the shared `ResourcesFolder` and `ObjectsFolder` bases; make `RootFolder` and `ContextRootFolder` embed `ClusterResourcesFolder` and rename `NamespacedGroupsFolder`→`NamespacedResourcesFolder`.
 - [ ] Navigation: make Folders self‑sufficient. Each Folder lazily populates its rows from injected Deps and Enterable rows return the next Folder. Keep `WithBack` for a synthetic ".." row in presentation.
 - [ ] Extract UI‑agnostic Folder constructors into `internal/navigation` with a small `Deps` bundle (ResMgr, Store, CtxName). Remove row‑building from the UI.
 - [ ] Programmatic goto (namespaces): implement simple Enter‑driven path stepping for `/namespaces/<ns>` without builders.
@@ -34,10 +35,10 @@ Hierarchy refactor and tests — ordered
   - [ ] Ensure `ViewContent` metadata feeds `TextViewer` (lang/mime/filename) and remove legacy `viewpkg.ViewProvider` plumbing.
 
 Detailed next steps (post‑compaction anchors)
-- [ ] Replace legacy folder builders in `internal/ui/app.go` (buildNamespacesFolder/buildNamespacedGroupsFolder/buildNamespacedObjectsFolder/buildClusterObjectsFolder) with the new self‑sufficient folders:
+- [ ] Replace legacy folder builders in `internal/ui/app.go` (buildNamespacesFolder/buildNamespacedResourcesFolder/buildNamespacedObjectsFolder/buildClusterObjectsFolder) with the new self‑sufficient folders:
   - Root: `nav.NewRootFolder(nav.Deps{Cl:a.cl, Ctx:a.ctx, CtxName:a.currentCtx.Name})` [done]
   - Namespaces: `nav.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"", Version:"v1", Resource:"namespaces"}, []string{"namespaces"})`
-  - Groups: `nav.NewNamespacedGroupsFolder(deps, ns, []string{"namespaces", ns})`
+  - Groups: `nav.NewNamespacedResourcesFolder(deps, ns, []string{"namespaces", ns})`
   - Objects (namespaced/cluster): `nav.NewNamespacedObjectsFolder(deps, gvr, ns, []string{"namespaces", ns, gvr.Resource})` / `nav.NewClusterObjectsFolder(deps, gvr, []string{gvr.Resource})`
   - Virtual children (pods/configmaps/secrets): use the GVR→child registry; no string comparisons.
 - [ ] Programmatic goto for namespaces without builders:
@@ -168,6 +169,6 @@ Tracking
   - [ ] Add object-list filtering (menu item) in panels; apply to current listing.
   - [ ] Implement `Ctrl+F` find in panels with highlighted match and `F2` next.
   - [ ] Add horizontal scrolling in panel object viewers similar to YAML (Left/Right, Ctrl-A/E), no wrapping.
-- [ ] Remove deprecated legacy builders from `internal/ui/app.go` (buildNamespacesFolder, buildNamespacedGroupsFolder, buildNamespacedObjectsFolder, buildClusterObjectsFolder). Confirm no references remain and delete code.
+- [ ] Remove deprecated legacy builders from `internal/ui/app.go` (buildNamespacesFolder, buildNamespacedResourcesFolder, buildNamespacedObjectsFolder, buildClusterObjectsFolder). Confirm no references remain and delete code.
 - [ ] Wire watchers for group-level counts, or document that counts update on next access; consider caching counts with debounce.
 - [ ] Extend GVR→child registry with more defaults as needed (e.g., deployments→replicasets) and provide a public registration hook.
