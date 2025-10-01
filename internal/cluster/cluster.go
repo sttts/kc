@@ -63,6 +63,14 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 		fn(o)
 	}
 
+	// Increase client-side QPS/Burst so the shared cache can issue frequent LIST calls without throttling.
+	if cfg.QPS == 0 {
+		cfg.QPS = 50
+	}
+	if cfg.Burst == 0 {
+		cfg.Burst = 100
+	}
+
 	// controller-runtime cluster using the default cache; we keep it unchanged.
 	// We initialize discovery/mapper lazily in ensureDiscovery() before first use.
 	cl, err := crcluster.New(cfg, func(co *crcluster.Options) {
@@ -279,8 +287,8 @@ func (c *Cluster) HasAnyByGVR(ctx context.Context, gvr schema.GroupVersionResour
 	} else {
 		iface = res
 	}
-    // Leave ResourceVersion empty to avoid forcing a quorum read; the apiserver may serve from cache.
-    list, err := iface.List(ctx, metav1.ListOptions{Limit: 1, ResourceVersion: ""})
+	// Leave ResourceVersion empty to avoid forcing a quorum read; the apiserver may serve from cache.
+	list, err := iface.List(ctx, metav1.ListOptions{Limit: 1, ResourceVersion: ""})
 	if err != nil {
 		return false, err
 	}

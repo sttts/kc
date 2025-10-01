@@ -1,18 +1,18 @@
 package navigation
 
 import (
-    "context"
-    "sync"
+	"context"
+	"sync"
 
-    lipgloss "github.com/charmbracelet/lipgloss/v2"
-    table "github.com/sttts/kc/internal/table"
-    apierrors "k8s.io/apimachinery/pkg/api/errors"
-    "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-    "k8s.io/apimachinery/pkg/runtime/schema"
-    toolscache "k8s.io/client-go/tools/cache"
-    crcache "sigs.k8s.io/controller-runtime/pkg/cache"
-    crclient "sigs.k8s.io/controller-runtime/pkg/client"
-    crlog "sigs.k8s.io/controller-runtime/pkg/log"
+	lipgloss "github.com/charmbracelet/lipgloss/v2"
+	table "github.com/sttts/kc/internal/table"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	toolscache "k8s.io/client-go/tools/cache"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // RowItem is the minimal table-backed item implementation shared by all rows.
@@ -232,6 +232,7 @@ type ResourceGroupItem struct {
 	countKnown bool
 	empty      bool
 	emptyKnown bool
+	countOnce  sync.Once
 }
 
 var _ Enterable = (*ResourceGroupItem)(nil)
@@ -308,10 +309,10 @@ func (r *ResourceGroupItem) Empty() bool {
 }
 
 func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
-    if r.deps.Cl == nil {
-        return 0, false
-    }
-    ctx := r.deps.Ctx
+	if r.deps.Cl == nil {
+		return 0, false
+	}
+	ctx := r.deps.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -321,17 +322,17 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 	}
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
-    informer, err := r.deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(true))
-    if err != nil {
-        if apierrors.IsMethodNotSupported(err) {
-            if r.deps.Ctx != nil {
-                crlog.FromContext(r.deps.Ctx).Info("resource watch not supported; skipping informer", "gvr", r.gvr.String(), "namespace", r.namespace)
-            }
-            r.watchable = false
-            return 0, true
-        }
-        return 0, false
-    }
+	informer, err := r.deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(true))
+	if err != nil {
+		if apierrors.IsMethodNotSupported(err) {
+			if r.deps.Ctx != nil {
+				crlog.FromContext(r.deps.Ctx).Info("resource watch not supported; skipping informer", "gvr", r.gvr.String(), "namespace", r.namespace)
+			}
+			r.watchable = false
+			return 0, true
+		}
+		return 0, false
+	}
 	if !informer.HasSynced() {
 		toolscache.WaitForCacheSync(ctx.Done(), informer.HasSynced)
 	}
@@ -384,6 +385,34 @@ func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 		return false, false
 	}
 	return !has, true
+}
+
+func (r *ResourceGroupItem) TryCount() (int, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.watchable {
+		return 0, true
+	}
+	if !r.countKnown {
+		return 0, false
+	}
+	return r.count, true
+}
+
+func (r *ResourceGroupItem) ComputeCountAsync(onReady func()) {
+	if !r.watchable {
+		return
+	}
+	r.countOnce.Do(func() {
+		go func() {
+			r.Count()
+			if onReady != nil {
+				if _, ok := r.TryCount(); ok {
+					onReady()
+				}
+			}
+		}()
+	})
 }
 
 // ConfigKeyItem exposes a ConfigMap/Secret key value.

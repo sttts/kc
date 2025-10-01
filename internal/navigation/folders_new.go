@@ -277,49 +277,39 @@ func groupVersionString(gvk schema.GroupVersionKind) string {
 }
 
 func verbsInclude(vs []string, want string) bool {
-    for _, v := range vs {
-        if strings.EqualFold(v, want) {
-            return true
-        }
-    }
-    return false
+	for _, v := range vs {
+		if strings.EqualFold(v, want) {
+			return true
+		}
+	}
+	return false
 }
 
-func finalizeResourceGroupItems(items []*ResourceGroupItem, opts ViewOptions) []table.Row {
-    if len(items) == 0 {
-        return nil
-    }
-    type result struct {
-        item  *ResourceGroupItem
-        count int
-        empty bool
-    }
-    results := make([]result, len(items))
-    var wg sync.WaitGroup
-    for i := range items {
-        results[i].item = items[i]
-        wg.Add(1)
-        go func(res *result) {
-            defer wg.Done()
-            if opts.ShowNonEmptyOnly {
-                res.empty = res.item.Empty()
-                if res.empty {
-                    return
-                }
-            }
-            res.count = res.item.Count()
-        }(&results[i])
-    }
-    wg.Wait()
-    rows := make([]table.Row, 0, len(items))
-    for _, res := range results {
-        if opts.ShowNonEmptyOnly && res.empty {
-            continue
-        }
-        res.item.Cells[2] = fmt.Sprintf("%d", res.count)
-        rows = append(rows, res.item)
-    }
-    return rows
+func finalizeResourceGroupItems(base *BaseFolder, items []*ResourceGroupItem, opts ViewOptions) []table.Row {
+	if len(items) == 0 {
+		return nil
+	}
+	rows := make([]table.Row, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if opts.ShowNonEmptyOnly && item.Empty() {
+			continue
+		}
+		if count, ok := item.TryCount(); ok {
+			item.Cells[2] = fmt.Sprintf("%d", count)
+		} else {
+			item.Cells[2] = ""
+			item.ComputeCountAsync(func() {
+				if base != nil {
+					base.markDirty()
+				}
+			})
+		}
+		rows = append(rows, item)
+	}
+	return rows
 }
 
 func objectViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name string) ViewContentFunc {
@@ -462,24 +452,24 @@ func (f *RootFolder) populate() {
 		opts = f.deps.ViewOptions()
 	}
 
-    if f.deps.ListContexts != nil {
-        base := append(append([]string(nil), f.path...), "contexts")
-        item := newContextListItem("contexts", []string{"/contexts", "", ""}, base, GreenStyle(), f.deps.ListContexts, func() (Folder, error) {
-            return NewContextsFolder(f.deps, base), nil
-        })
-        if !(opts.ShowNonEmptyOnly && item.Empty()) {
-            item.Cells[2] = fmt.Sprintf("%d", item.Count())
-            rows = append(rows, item)
-        }
-    }
+	if f.deps.ListContexts != nil {
+		base := append(append([]string(nil), f.path...), "contexts")
+		item := newContextListItem("contexts", []string{"/contexts", "", ""}, base, GreenStyle(), f.deps.ListContexts, func() (Folder, error) {
+			return NewContextsFolder(f.deps, base), nil
+		})
+		if !(opts.ShowNonEmptyOnly && item.Empty()) {
+			item.Cells[2] = fmt.Sprintf("%d", item.Count())
+			rows = append(rows, item)
+		}
+	}
 
-    gvrNS := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
-    nsBase := append(append([]string(nil), f.path...), "namespaces")
-    groupItems := make([]*ResourceGroupItem, 0, 32)
-    nsItem := newResourceGroupItem(f.deps, gvrNS, "", "namespaces", []string{"/namespaces", "v1", ""}, nsBase, nameSty, true, func() (Folder, error) {
-        return NewClusterObjectsFolder(f.deps, gvrNS, nsBase), nil
-    })
-    groupItems = append(groupItems, nsItem)
+	gvrNS := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
+	nsBase := append(append([]string(nil), f.path...), "namespaces")
+	groupItems := make([]*ResourceGroupItem, 0, 32)
+	nsItem := newResourceGroupItem(f.deps, gvrNS, "", "namespaces", []string{"/namespaces", "v1", ""}, nsBase, nameSty, true, func() (Folder, error) {
+		return NewClusterObjectsFolder(f.deps, gvrNS, nsBase), nil
+	})
+	groupItems = append(groupItems, nsItem)
 
 	if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
 		type entry struct {
@@ -519,19 +509,19 @@ func (f *RootFolder) populate() {
 		default:
 			sort.Slice(entries, func(i, j int) bool { return entries[i].info.Resource < entries[j].info.Resource })
 		}
-        for _, e := range entries {
-            id := e.gvr.Group + "/" + e.gvr.Version + "/" + e.gvr.Resource
-            base := append(append([]string(nil), f.path...), e.info.Resource)
-            item := newResourceGroupItem(f.deps, e.gvr, "", id, []string{"/" + e.info.Resource, groupVersionString(e.info.GVK), ""}, base, nameSty, true, func() (Folder, error) {
-                return NewClusterObjectsFolder(f.deps, e.gvr, base), nil
-            })
-            groupItems = append(groupItems, item)
-        }
-    }
+		for _, e := range entries {
+			id := e.gvr.Group + "/" + e.gvr.Version + "/" + e.gvr.Resource
+			base := append(append([]string(nil), f.path...), e.info.Resource)
+			item := newResourceGroupItem(f.deps, e.gvr, "", id, []string{"/" + e.info.Resource, groupVersionString(e.info.GVK), ""}, base, nameSty, true, func() (Folder, error) {
+				return NewClusterObjectsFolder(f.deps, e.gvr, base), nil
+			})
+			groupItems = append(groupItems, item)
+		}
+	}
 
-    rows = append(rows, finalizeResourceGroupItems(groupItems, opts)...)
+	rows = append(rows, finalizeResourceGroupItems(&f.BaseFolder, groupItems, opts)...)
 
-    f.setRows(rows)
+	f.setRows(rows)
 }
 
 // ContextRootFolder shows a context-scoped root, equivalent to "/" but under /contexts/<ctx>.
@@ -556,11 +546,11 @@ func (f *ContextRootFolder) populate() {
 
 	gvrNS := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 	nsBase := append(append([]string(nil), f.path...), "namespaces")
-    groupItems := make([]*ResourceGroupItem, 0, 32)
-    nsItem := newResourceGroupItem(f.deps, gvrNS, "", "namespaces", []string{"/namespaces", "v1", ""}, nsBase, nameSty, true, func() (Folder, error) {
-        return NewClusterObjectsFolder(f.deps, gvrNS, nsBase), nil
-    })
-    groupItems = append(groupItems, nsItem)
+	groupItems := make([]*ResourceGroupItem, 0, 32)
+	nsItem := newResourceGroupItem(f.deps, gvrNS, "", "namespaces", []string{"/namespaces", "v1", ""}, nsBase, nameSty, true, func() (Folder, error) {
+		return NewClusterObjectsFolder(f.deps, gvrNS, nsBase), nil
+	})
+	groupItems = append(groupItems, nsItem)
 
 	if infos, err := f.deps.Cl.GetResourceInfos(); err == nil {
 		type entry struct {
@@ -600,19 +590,19 @@ func (f *ContextRootFolder) populate() {
 		default:
 			sort.Slice(filtered, func(i, j int) bool { return filtered[i].info.Resource < filtered[j].info.Resource })
 		}
-        for _, e := range filtered {
-            id := e.gvr.Group + "/" + e.gvr.Version + "/" + e.gvr.Resource
-            base := append(append([]string(nil), f.path...), e.info.Resource)
-            item := newResourceGroupItem(f.deps, e.gvr, "", id, []string{"/" + e.info.Resource, groupVersionString(e.info.GVK), ""}, base, nameSty, true, func() (Folder, error) {
-                return NewClusterObjectsFolder(f.deps, e.gvr, base), nil
-            })
-            groupItems = append(groupItems, item)
-        }
-    }
+		for _, e := range filtered {
+			id := e.gvr.Group + "/" + e.gvr.Version + "/" + e.gvr.Resource
+			base := append(append([]string(nil), f.path...), e.info.Resource)
+			item := newResourceGroupItem(f.deps, e.gvr, "", id, []string{"/" + e.info.Resource, groupVersionString(e.info.GVK), ""}, base, nameSty, true, func() (Folder, error) {
+				return NewClusterObjectsFolder(f.deps, e.gvr, base), nil
+			})
+			groupItems = append(groupItems, item)
+		}
+	}
 
-    rows = append(rows, finalizeResourceGroupItems(groupItems, opts)...)
+	rows = append(rows, finalizeResourceGroupItems(&f.BaseFolder, groupItems, opts)...)
 
-    f.setRows(rows)
+	f.setRows(rows)
 }
 
 // ContextsFolder lists available contexts (if provided in Deps).
@@ -705,19 +695,19 @@ func (f *NamespacedGroupsFolder) populate() {
 		sort.Slice(entries, func(i, j int) bool { return entries[i].info.Resource < entries[j].info.Resource })
 	}
 
-    groupItems := make([]*ResourceGroupItem, 0, len(entries))
-    for _, e := range entries {
-        id := e.gvr.Group + "/" + e.gvr.Version + "/" + e.gvr.Resource
-        base := append(append([]string(nil), f.path...), e.info.Resource)
-        item := newResourceGroupItem(f.deps, e.gvr, f.ns, id, []string{"/" + e.info.Resource, groupVersionString(e.info.GVK), ""}, base, nameSty, true, func() (Folder, error) {
-            return NewNamespacedObjectsFolder(f.deps, e.gvr, f.ns, base), nil
-        })
-        groupItems = append(groupItems, item)
-    }
+	groupItems := make([]*ResourceGroupItem, 0, len(entries))
+	for _, e := range entries {
+		id := e.gvr.Group + "/" + e.gvr.Version + "/" + e.gvr.Resource
+		base := append(append([]string(nil), f.path...), e.info.Resource)
+		item := newResourceGroupItem(f.deps, e.gvr, f.ns, id, []string{"/" + e.info.Resource, groupVersionString(e.info.GVK), ""}, base, nameSty, true, func() (Folder, error) {
+			return NewNamespacedObjectsFolder(f.deps, e.gvr, f.ns, base), nil
+		})
+		groupItems = append(groupItems, item)
+	}
 
-    rows = append(rows, finalizeResourceGroupItems(groupItems, opts)...)
+	rows = append(rows, finalizeResourceGroupItems(&f.BaseFolder, groupItems, opts)...)
 
-    f.setRows(rows)
+	f.setRows(rows)
 }
 
 func (f *NamespacedObjectsFolder) populate() {
