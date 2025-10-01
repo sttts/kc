@@ -152,11 +152,25 @@ func (a *App) favSet() map[string]bool {
 }
 func (a *App) leftViewOptions() navui.ViewOptions {
 	show, order := a.leftPanel.ResourceViewOptions()
-	return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.leftPanel.ColumnsMode(), ObjectsOrder: a.leftPanel.ObjectOrder()}
+	return navui.ViewOptions{
+		ShowNonEmptyOnly: show,
+		Order:            order,
+		Favorites:        a.favSet(),
+		Columns:          a.leftPanel.ColumnsMode(),
+		ObjectsOrder:     a.leftPanel.ObjectOrder(),
+		PeekInterval:     a.cfg.Resources.PeekInterval.Duration,
+	}
 }
 func (a *App) rightViewOptions() navui.ViewOptions {
 	show, order := a.rightPanel.ResourceViewOptions()
-	return navui.ViewOptions{ShowNonEmptyOnly: show, Order: order, Favorites: a.favSet(), Columns: a.rightPanel.ColumnsMode(), ObjectsOrder: a.rightPanel.ObjectOrder()}
+	return navui.ViewOptions{
+		ShowNonEmptyOnly: show,
+		Order:            order,
+		Favorites:        a.favSet(),
+		Columns:          a.rightPanel.ColumnsMode(),
+		ObjectsOrder:     a.rightPanel.ObjectOrder(),
+		PeekInterval:     a.cfg.Resources.PeekInterval.Duration,
+	}
 }
 
 // Update handles messages and updates the application state

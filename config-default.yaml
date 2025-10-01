@@ -17,6 +17,8 @@ kubernetes:
 resources:
   # Default behavior: hide resources with zero objects
   showNonEmptyOnly: true
+  # How often to re-peek hidden resources for changes when showNonEmptyOnly is true
+  peekInterval: 30s
   # Default ordering: alphabetic by resource plural
   order: alpha
   # Favorites are used when order=favorites
@@ -29,4 +31,3 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
-

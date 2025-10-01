@@ -2,6 +2,8 @@ package navigation
 
 import (
 	"context"
+	"time"
+
 	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
 )
@@ -46,4 +48,19 @@ type ViewOptions struct {
 	// ObjectsOrder controls ordering within object lists:
 	// "name", "-name", "creation", "-creation"
 	ObjectsOrder string
+	// PeekInterval throttles API peeks when filtering empty resource groups.
+	PeekInterval time.Duration
+}
+
+const defaultPeekInterval = 30 * time.Second
+
+func resolveViewOptions(deps Deps) ViewOptions {
+	if deps.ViewOptions == nil {
+		return ViewOptions{PeekInterval: defaultPeekInterval}
+	}
+	opts := deps.ViewOptions()
+	if opts.PeekInterval <= 0 {
+		opts.PeekInterval = defaultPeekInterval
+	}
+	return opts
 }

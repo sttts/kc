@@ -120,6 +120,8 @@ kubernetes:
 resources:
   # Show only resource groups with non-zero counts (true) or all (false).
   showNonEmptyOnly: true
+  # How often hidden resources are re-checked via API peeks (duration, default 30s).
+  peekInterval: 30s
   # Ordering of resource groups: alpha | group | favorites
   order: alpha
   # Favorites for order=favorites. Plural names, lower-case.

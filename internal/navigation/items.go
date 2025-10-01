@@ -3,6 +3,7 @@ package navigation
 import (
 	"context"
 	"sync"
+	"time"
 
 	lipgloss "github.com/charmbracelet/lipgloss/v2"
 	table "github.com/sttts/kc/internal/table"
@@ -233,6 +234,7 @@ type ResourceGroupItem struct {
 	empty      bool
 	emptyKnown bool
 	countOnce  sync.Once
+	lastPeek   time.Time
 }
 
 var _ Enterable = (*ResourceGroupItem)(nil)
@@ -283,19 +285,26 @@ func (r *ResourceGroupItem) Count() int {
 }
 
 func (r *ResourceGroupItem) Empty() bool {
+	return r.EmptyWithin(defaultPeekInterval)
+}
+
+func (r *ResourceGroupItem) EmptyWithin(interval time.Duration) bool {
 	if !r.watchable {
 		return true
 	}
+	if interval <= 0 {
+		interval = defaultPeekInterval
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.emptyKnown {
+	if r.emptyKnown && !r.lastPeek.IsZero() && time.Since(r.lastPeek) < interval {
 		return r.empty
 	}
 	if r.deps.Ctx != nil {
-		logger := crlog.FromContext(r.deps.Ctx)
-		logger.Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
+		crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
 	}
 	empty, ok := r.peekEmptyLocked()
+	r.lastPeek = time.Now()
 	if ok {
 		r.empty = empty
 		r.emptyKnown = true
@@ -305,7 +314,7 @@ func (r *ResourceGroupItem) Empty() bool {
 		}
 		return r.empty
 	}
-	return false
+	return r.empty
 }
 
 func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {

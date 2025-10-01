@@ -294,22 +294,54 @@ func finalizeResourceGroupItems(base *BaseFolder, items []*ResourceGroupItem, op
 		if item == nil {
 			continue
 		}
-		if opts.ShowNonEmptyOnly && item.Empty() {
+		if base != nil {
+			if reused := reuseResourceGroupItem(base, item); reused != nil {
+				item = reused
+			}
+		}
+		item.ComputeCountAsync(func() {
+			if base != nil {
+				base.markDirty()
+			}
+		})
+		if opts.ShowNonEmptyOnly && item.EmptyWithin(opts.PeekInterval) {
 			continue
 		}
 		if count, ok := item.TryCount(); ok {
 			item.Cells[2] = fmt.Sprintf("%d", count)
 		} else {
 			item.Cells[2] = ""
-			item.ComputeCountAsync(func() {
-				if base != nil {
-					base.markDirty()
-				}
-			})
 		}
 		rows = append(rows, item)
 	}
 	return rows
+}
+
+func reuseResourceGroupItem(base *BaseFolder, fresh *ResourceGroupItem) *ResourceGroupItem {
+	if fresh == nil || base == nil || base.items == nil {
+		return nil
+	}
+	id := fresh.SimpleRow.ID
+	if id == "" {
+		return nil
+	}
+	if existing, ok := base.items[id]; ok {
+		if cur, ok := existing.(*ResourceGroupItem); ok {
+			if cur.RowItem != nil && fresh.RowItem != nil {
+				cur.RowItem.SimpleRow = fresh.RowItem.SimpleRow
+				cur.RowItem.path = fresh.RowItem.path
+			}
+			cur.enter = fresh.enter
+			cur.deps = fresh.deps
+			cur.gvr = fresh.gvr
+			cur.namespace = fresh.namespace
+			if cur.watchable {
+				cur.watchable = fresh.watchable
+			}
+			return cur
+		}
+	}
+	return nil
 }
 
 func objectViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name string) ViewContentFunc {
@@ -447,10 +479,7 @@ func isProbablyText(b []byte) bool {
 func (f *RootFolder) populate() {
 	rows := make([]table.Row, 0, 64)
 	nameSty := WhiteStyle()
-	opts := ViewOptions{}
-	if f.deps.ViewOptions != nil {
-		opts = f.deps.ViewOptions()
-	}
+	opts := resolveViewOptions(f.deps)
 
 	if f.deps.ListContexts != nil {
 		base := append(append([]string(nil), f.path...), "contexts")
@@ -539,10 +568,7 @@ func (f *ContextRootFolder) Key() string   { return depsKey(f.deps, "contexts/"+
 func (f *ContextRootFolder) populate() {
 	rows := make([]table.Row, 0, 64)
 	nameSty := WhiteStyle()
-	opts := ViewOptions{}
-	if f.deps.ViewOptions != nil {
-		opts = f.deps.ViewOptions()
-	}
+	opts := resolveViewOptions(f.deps)
 
 	gvrNS := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 	nsBase := append(append([]string(nil), f.path...), "namespaces")
@@ -651,10 +677,7 @@ func (f *NamespacedGroupsFolder) populate() {
 		return
 	}
 
-	opts := ViewOptions{}
-	if f.deps.ViewOptions != nil {
-		opts = f.deps.ViewOptions()
-	}
+	opts := resolveViewOptions(f.deps)
 
 	type entry struct {
 		info kccluster.ResourceInfo
@@ -712,10 +735,7 @@ func (f *NamespacedGroupsFolder) populate() {
 
 func (f *NamespacedObjectsFolder) populate() {
 	nameSty := WhiteStyle()
-	opts := ViewOptions{}
-	if f.deps.ViewOptions != nil {
-		opts = f.deps.ViewOptions()
-	}
+	opts := resolveViewOptions(f.deps)
 
 	// Try server-side Rows via tablecache first for richer columns
 	if rl, err := f.deps.Cl.ListRowsByGVR(f.deps.Ctx, f.gvr, f.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
