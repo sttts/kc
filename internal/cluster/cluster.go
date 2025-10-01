@@ -279,7 +279,8 @@ func (c *Cluster) HasAnyByGVR(ctx context.Context, gvr schema.GroupVersionResour
 	} else {
 		iface = res
 	}
-	list, err := iface.List(ctx, metav1.ListOptions{Limit: 1})
+    // Leave ResourceVersion empty to avoid forcing a quorum read; the apiserver may serve from cache.
+    list, err := iface.List(ctx, metav1.ListOptions{Limit: 1, ResourceVersion: ""})
 	if err != nil {
 		return false, err
 	}
