@@ -18,7 +18,17 @@ var (
 )
 
 func init() {
-    models.ResolveChild = childFor
+    models.ResolveChild = func(gvr schema.GroupVersionResource) (models.ChildConstructor, bool) {
+        ctor, ok := childFor(gvr)
+        if !ok {
+            return nil, false
+        }
+        return func(deps models.Deps, ns, name string, basePath []string) models.Folder {
+            navDeps := fromModelsDeps(deps)
+            folder := ctor(navDeps, ns, name, basePath)
+            return unwrapFolder(folder)
+        }, true
+    }
 }
 
 // RegisterChild registers a constructor for virtual children under object rows

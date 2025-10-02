@@ -25,6 +25,10 @@ func NewSecretKeysFolder(deps Deps, parentPath []string, namespace, name string)
 	return folder
 }
 
+func (f *SecretKeysFolder) Parent() (schema.GroupVersionResource, string, string) {
+	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}, f.Namespace, f.Name
+}
+
 func (f *SecretKeysFolder) populate(*BaseFolder) ([]table.Row, error) {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
 	obj, err := f.Deps.Cl.GetByGVR(f.Deps.Ctx, gvr, f.Namespace, f.Name)

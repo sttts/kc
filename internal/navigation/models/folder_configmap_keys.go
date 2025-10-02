@@ -25,6 +25,10 @@ func NewConfigMapKeysFolder(deps Deps, parentPath []string, namespace, name stri
 	return folder
 }
 
+func (f *ConfigMapKeysFolder) Parent() (schema.GroupVersionResource, string, string) {
+	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}, f.Namespace, f.Name
+}
+
 func (f *ConfigMapKeysFolder) populate(*BaseFolder) ([]table.Row, error) {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 	obj, err := f.Deps.Cl.GetByGVR(f.Deps.Ctx, gvr, f.Namespace, f.Name)

@@ -39,6 +39,10 @@ func (o *ObjectsFolder) GVR() schema.GroupVersionResource { return o.gvr }
 // Namespace returns the namespace when the folder is namespaced, or an empty string when cluster scoped.
 func (o *ObjectsFolder) Namespace() string { return o.namespace }
 
+func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, bool) {
+	return o.gvr, o.namespace, true
+}
+
 func (o *ObjectsFolder) populateRows(opts ViewOptions) ([]table.Row, error) {
 	if rl, err := o.Deps.Cl.ListRowsByGVR(o.Deps.Ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
 		return o.rowsFromRowList(rl, opts), nil
