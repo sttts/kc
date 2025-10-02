@@ -1,7 +1,5 @@
 package models
 
-import "github.com/charmbracelet/lipgloss/v2"
-
 // NamespaceItem embeds an ObjectRow and adds Enter support.
 type NamespaceItem struct {
 	*ObjectRow

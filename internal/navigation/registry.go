@@ -2,6 +2,8 @@ package navigation
 
 import (
     "sync"
+
+    "github.com/sttts/kc/internal/navigation/models"
     "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -14,6 +16,10 @@ var (
     regMu  sync.RWMutex
     regMap = map[schema.GroupVersionResource]ChildConstructor{}
 )
+
+func init() {
+    models.ResolveChild = childFor
+}
 
 // RegisterChild registers a constructor for virtual children under object rows
 // of the given GVR (e.g., pods → containers, configmaps/secrets → data keys).

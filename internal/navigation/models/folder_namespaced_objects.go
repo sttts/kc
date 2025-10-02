@@ -1,6 +1,9 @@
 package models
 
-import "k8s.io/apimachinery/pkg/runtime/schema"
+import (
+	table "github.com/sttts/kc/internal/table"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
 
 // NamespacedObjectsFolder lists namespace-scoped resources for a GVR.
 type NamespacedObjectsFolder struct {
@@ -9,7 +12,13 @@ type NamespacedObjectsFolder struct {
 
 // NewNamespacedObjectsFolder constructs a namespaced objects folder.
 func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string, key string) *NamespacedObjectsFolder {
-	return &NamespacedObjectsFolder{
+	folder := &NamespacedObjectsFolder{
 		ObjectsFolder: NewObjectsFolder(deps, gvr, namespace, path, key),
 	}
+	folder.BaseFolder.SetPopulate(folder.populate)
+	return folder
+}
+
+func (f *NamespacedObjectsFolder) populate(*BaseFolder) ([]table.Row, error) {
+	return f.ObjectsFolder.populateRows(resolveViewOptions(f.Deps))
 }
