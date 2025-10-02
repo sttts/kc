@@ -69,21 +69,13 @@ func reuseResourceGroupItem(base *BaseFolder, fresh *ResourceGroupItem) *Resourc
 	if base == nil || fresh == nil || base.items == nil {
 		return nil
 	}
-	id := fresh.ID
+	id := fresh.ID()
 	if id == "" {
 		return nil
 	}
 	if existing, ok := base.items[id]; ok {
 		if cur, ok := existing.(*ResourceGroupItem); ok {
-			if cur.RowItem != nil && fresh.RowItem != nil {
-				cur.RowItem.SimpleRow = fresh.RowItem.SimpleRow
-				cur.RowItem.path = append([]string(nil), fresh.RowItem.path...)
-			}
-			cur.enter = fresh.enter
-			cur.deps = fresh.deps
-			cur.gvr = fresh.gvr
-			cur.namespace = fresh.namespace
-			cur.watchable = fresh.watchable
+			cur.CopyFrom(fresh)
 			return cur
 		}
 	}

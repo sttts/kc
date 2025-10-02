@@ -218,3 +218,27 @@ func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 func (r *ResourceGroupItem) String() string {
 	return fmt.Sprintf("%s/%s", r.gvr.Resource, r.namespace)
 }
+
+func (r *ResourceGroupItem) ID() string {
+	if r == nil || r.RowItem == nil {
+		return ""
+	}
+	return r.RowItem.ID()
+}
+
+func (r *ResourceGroupItem) CopyFrom(other *ResourceGroupItem) {
+	if r == nil || other == nil {
+		return
+	}
+	if r.RowItem == nil && other.RowItem != nil {
+		r.RowItem = NewRowItem(other.RowItem.ID(), nil, nil, nil)
+	}
+	if r.RowItem != nil && other.RowItem != nil {
+		r.RowItem.copyFrom(other.RowItem)
+	}
+	r.enter = other.enter
+	r.deps = other.deps
+	r.gvr = other.gvr
+	r.namespace = other.namespace
+	r.watchable = other.watchable
+}

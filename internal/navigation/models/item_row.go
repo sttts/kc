@@ -36,3 +36,13 @@ func NewRowItemStyled(id string, cells []string, path []string, styles []*lipglo
 
 func (r *RowItem) Details() string { return r.details }
 func (r *RowItem) Path() []string  { return append([]string(nil), r.path...) }
+func (r *RowItem) ID() string      { return r.SimpleRow.ID }
+
+func (r *RowItem) copyFrom(other *RowItem) {
+	if r == nil || other == nil {
+		return
+	}
+	r.SimpleRow = other.SimpleRow
+	r.details = other.details
+	r.path = append([]string(nil), other.path...)
+}
