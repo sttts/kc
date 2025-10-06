@@ -83,7 +83,7 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	objs := NewNamespacedObjectsFolder(deps, gvrCM, "testns", objsPath)
 	waitFolder(t, objs)
 	assertRows(t, "configmap-objects", objs, map[string][]string{
-		"cm1": {"cm1"},
+		"cm1": {"/cm1"},
 	})
 
 	keysPath := []string{"namespaces", "testns", "configmaps", "cm1"}
