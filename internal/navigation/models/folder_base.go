@@ -51,12 +51,6 @@ func (b *BaseFolder) SetColumns(cols []table.Column) {
 	b.columns = append([]table.Column(nil), cols...)
 }
 
-// SetPath replaces the breadcrumb path segments.
-func (b *BaseFolder) SetPath(path []string) { b.path = append([]string(nil), path...) }
-
-// SetKey updates the stable folder key.
-func (b *BaseFolder) SetKey(key string) { b.key = key }
-
 // SetPopulate assigns the populate callback used to rebuild rows lazily.
 func (b *BaseFolder) SetPopulate(fn PopulateFunc) { b.populate = fn }
 

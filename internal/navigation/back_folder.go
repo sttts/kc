@@ -23,7 +23,7 @@ func WithBack(f Folder, hasBack bool) Folder {
 // Folder interface -------------------------------------------------------------
 
 func (b *backFolder) Columns() []table.Column { return b.inner.Columns() }
-func (b *backFolder) Title() string           { return b.inner.Title() }
+func (b *backFolder) Path() []string          { return b.inner.Path() }
 func (b *backFolder) Key() string             { return b.inner.Key() }
 
 func (b *backFolder) ItemByID(id string) (Item, bool) {

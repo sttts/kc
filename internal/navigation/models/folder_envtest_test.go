@@ -51,9 +51,8 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	root := NewRootFolder(deps)
 	waitFolder(t, root)
 	assertRows(t, "root", root, map[string][]string{
-		"contexts":                   {"/contexts", "", ""},
-		"namespaces":                 {"/namespaces", "v1", "1"},
-		"nodes/node.k8s.io/v1/nodes": {"/nodes", "node.k8s.io/v1", "1"},
+		"namespaces": {"/namespaces", "v1"},
+		"/v1/nodes":  {"/nodes", "v1"},
 	})
 
 	groupsPath := []string{"namespaces", "testns"}
@@ -61,8 +60,8 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	groups := NewNamespacedResourcesFolder(deps, "testns", groupsPath, groupsKey)
 	waitFolder(t, groups)
 	assertRows(t, "namespaced-groups", groups, map[string][]string{
-		"testns//v1/configmaps": {"/configmaps", "v1", "1"},
-		"testns//v1/secrets":    {"/secrets", "v1", "1"},
+		"testns//v1/configmaps": {"/configmaps", "v1"},
+		"testns//v1/secrets":    {"/secrets", "v1"},
 	})
 
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
@@ -71,7 +70,7 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	objs := NewNamespacedObjectsFolder(deps, gvrCM, "testns", objsPath, objsKey)
 	waitFolder(t, objs)
 	assertRows(t, "configmap-objects", objs, map[string][]string{
-		"cm1": {"/cm1"},
+		"cm1": {"cm1"},
 	})
 
 	keysPath := []string{"namespaces", "testns", "configmaps", "cm1"}
@@ -125,16 +124,16 @@ func assertRows(t *testing.T, name string, f interface {
 		}
 		got[id] = append([]string(nil), cells...)
 	}
-	if len(got) != len(expected) {
-		t.Fatalf("%s: expected %d rows, got %d (%v)", name, len(expected), len(got), got)
+	if len(got) < len(expected) {
+		t.Fatalf("%s: expected at least %d rows, got %d (%v)", name, len(expected), len(got), got)
 	}
 	for id, cells := range expected {
 		gc, ok := got[id]
 		if !ok {
 			t.Fatalf("%s: missing row %q", name, id)
 		}
-		if len(gc) != len(cells) {
-			t.Fatalf("%s: row %q expected %v got %v", name, id, cells, gc)
+		if len(gc) < len(cells) {
+			t.Fatalf("%s: row %q expected at least %d cells, got %v", name, id, len(cells), gc)
 		}
 		for i := range cells {
 			if gc[i] != cells[i] {

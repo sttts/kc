@@ -3,109 +3,53 @@ package navigation
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/sttts/kc/internal/navigation/models"
-	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-type folderWrapper struct {
-	inner models.Folder
+// Exported constructors -----------------------------------------------------------------
+
+func NewRootFolder(deps Deps) Folder {
+	return models.NewRootFolder(toModelsDeps(deps))
 }
 
-func newFolderWrapper(m models.Folder) *folderWrapper {
-	if m == nil {
-		return nil
+func NewContextRootFolder(deps Deps, basePath []string) Folder {
+	name := ""
+	if len(basePath) > 1 {
+		name = basePath[len(basePath)-1]
 	}
-	return &folderWrapper{inner: m}
+	return models.NewContextRootFolder(toModelsDeps(deps), name)
 }
 
-func (w *folderWrapper) innerFolder() models.Folder { return w.inner }
-
-func (w *folderWrapper) Columns() []table.Column { return w.inner.Columns() }
-
-func (w *folderWrapper) Title() string {
-	path := w.inner.Path()
-	if len(path) == 0 {
-		return "/"
-	}
-	return strings.Join(path, "/")
+func NewNamespacedGroupsFolder(deps Deps, namespace string, basePath []string) Folder {
+	key := composeKey(deps, basePath)
+	return models.NewNamespacedResourcesFolder(toModelsDeps(deps), namespace, basePath, key)
 }
 
-func (w *folderWrapper) Key() string { return w.inner.Key() }
-
-func (w *folderWrapper) ItemByID(id string) (Item, bool) {
-	item, ok := w.inner.ItemByID(id)
-	if !ok {
-		return nil, false
-	}
-	if navItem, ok := item.(Item); ok {
-		return navItem, true
-	}
-	return &itemWrapper{inner: item}, true
+func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, basePath []string) Folder {
+	key := composeKey(deps, basePath)
+	return models.NewNamespacedObjectsFolder(toModelsDeps(deps), gvr, namespace, basePath, key)
 }
 
-func (w *folderWrapper) Lines(top, num int) []table.Row        { return w.inner.Lines(top, num) }
-func (w *folderWrapper) Above(id string, n int) []table.Row    { return w.inner.Above(id, n) }
-func (w *folderWrapper) Below(id string, n int) []table.Row    { return w.inner.Below(id, n) }
-func (w *folderWrapper) Len() int                              { return w.inner.Len() }
-func (w *folderWrapper) Find(id string) (int, table.Row, bool) { return w.inner.Find(id) }
-
-func (w *folderWrapper) ObjectListMeta() (schema.GroupVersionResource, string, bool) {
-	if prov, ok := w.inner.(interface {
-		ObjectListMeta() (schema.GroupVersionResource, string, bool)
-	}); ok {
-		return prov.ObjectListMeta()
-	}
-	return schema.GroupVersionResource{}, "", false
+func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource, basePath []string) Folder {
+	key := composeKey(deps, basePath)
+	return models.NewClusterObjectsFolder(toModelsDeps(deps), gvr, basePath, key)
 }
 
-func (w *folderWrapper) Parent() (schema.GroupVersionResource, string, string) {
-	if prov, ok := w.inner.(interface {
-		Parent() (schema.GroupVersionResource, string, string)
-	}); ok {
-		return prov.Parent()
-	}
-	return schema.GroupVersionResource{}, "", ""
+func NewPodContainersFolder(deps Deps, namespace, pod string, basePath []string) Folder {
+	return models.NewPodContainersFolder(toModelsDeps(deps), basePath, namespace, pod)
 }
 
-func (w *folderWrapper) Refresh() {
-	if refresher, ok := w.inner.(interface{ Refresh() }); ok {
-		refresher.Refresh()
-	}
+func NewConfigMapKeysFolder(deps Deps, namespace, name string, basePath []string) Folder {
+	return models.NewConfigMapKeysFolder(toModelsDeps(deps), basePath, namespace, name)
 }
 
-func (w *folderWrapper) IsDirty() bool {
-	if dirty, ok := w.inner.(interface{ IsDirty() bool }); ok {
-		return dirty.IsDirty()
-	}
-	return false
+func NewSecretKeysFolder(deps Deps, namespace, name string, basePath []string) Folder {
+	return models.NewSecretKeysFolder(toModelsDeps(deps), basePath, namespace, name)
 }
 
-// itemWrapper bridges a models.Item that may not directly satisfy navigation.Item.
-type itemWrapper struct {
-	inner models.Item
-}
-
-func (i *itemWrapper) Columns() (string, []string, []*lipgloss.Style, bool) { return i.inner.Columns() }
-func (i *itemWrapper) Details() string                                      { return i.inner.Details() }
-func (i *itemWrapper) Path() []string                                       { return i.inner.Path() }
-
-func wrapFolder(m models.Folder) Folder {
-	if m == nil {
-		return nil
-	}
-	return &folderWrapper{inner: m}
-}
-
-func unwrapFolder(f Folder) models.Folder {
-	switch v := f.(type) {
-	case *folderWrapper:
-		return v.inner
-	case interface{ innerFolder() models.Folder }:
-		return v.innerFolder()
-	}
-	return nil
+func NewContextsFolder(deps Deps, basePath []string) Folder {
+	return models.NewContextsFolder(toModelsDeps(deps))
 }
 
 func toModelsDeps(d Deps) models.Deps {
@@ -118,11 +62,7 @@ func toModelsDeps(d Deps) models.Deps {
 			if d.EnterContext == nil {
 				return nil, nil
 			}
-			f, err := d.EnterContext(name, basePath)
-			if err != nil {
-				return nil, err
-			}
-			return unwrapFolder(f), nil
+			return d.EnterContext(name, basePath)
 		},
 		ViewOptions: func() models.ViewOptions {
 			if d.ViewOptions == nil {
@@ -151,11 +91,7 @@ func fromModelsDeps(d models.Deps) Deps {
 			if d.EnterContext == nil {
 				return nil, nil
 			}
-			mf, err := d.EnterContext(name, basePath)
-			if err != nil {
-				return nil, err
-			}
-			return wrapFolder(mf), nil
+			return d.EnterContext(name, basePath)
 		},
 		ViewOptions: func() ViewOptions {
 			if d.ViewOptions == nil {

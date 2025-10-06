@@ -141,10 +141,7 @@ func (o *ObjectsFolder) kindString() string {
 }
 
 func (o *ObjectsFolder) childConstructor() (ChildConstructor, bool) {
-	if ResolveChild == nil {
-		return nil, false
-	}
-	return ResolveChild(o.gvr)
+	return ChildFor(o.gvr)
 }
 
 func visibleColumns(cols []metav1.TableColumnDefinition, mode string) []int {

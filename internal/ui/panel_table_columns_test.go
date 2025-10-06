@@ -11,6 +11,7 @@ import (
 type fakeFolder struct {
 	cols []table.Column
 	list *table.SliceList
+	path []string
 }
 
 // table.List implementation
@@ -22,7 +23,7 @@ func (f *fakeFolder) Find(id string) (int, table.Row, bool) { return f.list.Find
 
 // Folder metadata
 func (f *fakeFolder) Columns() []table.Column          { return f.cols }
-func (f *fakeFolder) Title() string                    { return "fake" }
+func (f *fakeFolder) Path() []string                   { return append([]string(nil), f.path...) }
 func (f *fakeFolder) Key() string                      { return "fake" }
 func (f *fakeFolder) ItemByID(string) (nav.Item, bool) { return nil, false }
 
@@ -35,7 +36,7 @@ func newFakeFolder(cols []string, rows [][]string) *fakeFolder {
 	for i := range rows {
 		tr = append(tr, table.SimpleRow{ID: rows[i][0], Cells: rows[i]})
 	}
-	return &fakeFolder{cols: tc, list: table.NewSliceList(tr)}
+	return &fakeFolder{cols: tc, list: table.NewSliceList(tr), path: []string{"fake"}}
 }
 
 func TestPanelSetFolderUsesServerColumns(t *testing.T) {
