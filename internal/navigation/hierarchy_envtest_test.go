@@ -7,7 +7,7 @@ import (
 	"time"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/navigation/models"
+	"github.com/sttts/kc/internal/models"
 	kctesting "github.com/sttts/kc/internal/testing"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

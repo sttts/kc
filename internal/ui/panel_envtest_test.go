@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
-	"github.com/sttts/kc/internal/navigation/models"
+	"github.com/sttts/kc/internal/models"
 )
 
 func TestFooterShowsGroupVersionForPods(t *testing.T) {

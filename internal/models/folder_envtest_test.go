@@ -56,7 +56,7 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	})
 
 	groupsPath := []string{"namespaces", "testns"}
-    groups := NewNamespacedResourcesFolder(deps, "testns", groupsPath)
+	groups := NewNamespacedResourcesFolder(deps, "testns", groupsPath)
 	waitFolder(t, groups)
 	assertRows(t, "namespaced-groups", groups, map[string][]string{
 		"testns//v1/configmaps": {"/configmaps", "v1"},
@@ -65,7 +65,7 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 	objsPath := []string{"namespaces", "testns", gvrCM.Resource}
-    objs := NewNamespacedObjectsFolder(deps, gvrCM, "testns", objsPath)
+	objs := NewNamespacedObjectsFolder(deps, gvrCM, "testns", objsPath)
 	waitFolder(t, objs)
 	assertRows(t, "configmap-objects", objs, map[string][]string{
 		"cm1": {"cm1"},

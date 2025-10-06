@@ -3,7 +3,7 @@ package navigation
 import (
 	"strings"
 
-	"github.com/sttts/kc/internal/navigation/models"
+	"github.com/sttts/kc/internal/models"
 )
 
 // Navigator is a minimal, UI-agnostic helper to manage Folder navigation.

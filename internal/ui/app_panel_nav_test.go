@@ -3,14 +3,15 @@ package ui
 import (
 	"testing"
 
+	"github.com/sttts/kc/internal/models"
+	modeltesting "github.com/sttts/kc/internal/models/testing"
 	nav "github.com/sttts/kc/internal/navigation"
-	"github.com/sttts/kc/internal/navigation/models"
 	table "github.com/sttts/kc/internal/table"
 )
 
 // helper to make a simple folder
 func mkFolder(title string) models.Folder {
-	return nav.NewSliceFolder(title, []table.Column{{Title: " Name"}}, nil)
+	return modeltesting.NewSliceFolder(title, []table.Column{{Title: " Name"}}, nil)
 }
 
 func TestIndependentPanelNavigation(t *testing.T) {

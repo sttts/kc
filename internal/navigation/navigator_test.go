@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sttts/kc/internal/navigation/models"
+	"github.com/sttts/kc/internal/models"
+	modeltesting "github.com/sttts/kc/internal/models/testing"
 	table "github.com/sttts/kc/internal/table"
 )
 
@@ -19,7 +20,7 @@ func mkFolder(path []string, names ...string) models.Folder {
 	if len(path) > 0 {
 		title = strings.Join(path, "/")
 	}
-	return NewSliceFolder(title, []table.Column{{Title: " Name"}}, rows)
+	return modeltesting.NewSliceFolder(title, []table.Column{{Title: " Name"}}, rows)
 }
 
 func TestNavigator_BackFromRootNamespacesGoesToRoot(t *testing.T) {

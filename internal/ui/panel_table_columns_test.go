@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/sttts/kc/internal/navigation/models"
+	"github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
 )
 

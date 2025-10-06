@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
-	navmodels "github.com/sttts/kc/internal/navigation/models"
+	navmodels "github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
 	viewpkg "github.com/sttts/kc/internal/ui/view"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
