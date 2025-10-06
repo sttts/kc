@@ -72,7 +72,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	// Order by name ascending
 	f1 := models.NewClusterObjectsFolder(makeDeps("name"), gvrNS, []string{"namespaces"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len() >= 3 })
-	rows := f1.Lines(0, 3)
+	rows := f1.Lines(0, f1.Len())
 	got := normFirstCells(rows)
 	// Assert relative order of our namespaces regardless of other system entries
 	idxA, idxB, idxC := indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
@@ -87,7 +87,10 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	// Age cells non-empty
 	ageIdx := len(cols) - 1
 	for _, r := range rows {
-		_, cells, _, _ := r.Columns()
+		id, cells, _, _ := r.Columns()
+		if id == "__back__" {
+			continue
+		}
 		if len(cells) <= ageIdx || strings.TrimSpace(cells[ageIdx]) == "" {
 			t.Fatalf("empty Age cell: %+v", cells)
 		}

@@ -75,19 +75,9 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	// Asc by name
 	f1 := models.NewNamespacedObjectsFolder(makeDeps("name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len() >= 3 })
-	rows := f1.Lines(0, 3)
-	got := []string{}
-	for _, r := range rows {
-		_, cells, _, _ := r.Columns()
-		if len(cells) > 0 {
-			v := cells[0]
-			if len(v) > 0 && v[0] == '/' {
-				v = v[1:]
-			}
-			got = append(got, v)
-		}
-	}
-	if !(got[0] == "cm-a" && got[1] == "cm-b") {
+	rows := f1.Lines(0, f1.Len())
+	got := normFirstCellsNS(rows)
+	if len(got) < 2 || !(got[0] == "cm-a" && got[1] == "cm-b") {
 		t.Fatalf("name asc unexpected: %+v", got)
 	}
 	// Age column present and non-empty
@@ -97,7 +87,10 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 	ageIdx := len(cols) - 1
 	for _, r := range rows {
-		_, cells, _, _ := r.Columns()
+		id, cells, _, _ := r.Columns()
+		if id == "__back__" {
+			continue
+		}
 		if len(cells) <= ageIdx || strings.TrimSpace(cells[ageIdx]) == "" {
 			t.Fatalf("empty Age cell: %+v", cells)
 		}
@@ -138,7 +131,10 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 func normFirstCellsNS(rows []table.Row) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		_, cells, _, _ := r.Columns()
+		id, cells, _, _ := r.Columns()
+		if id == "__back__" {
+			continue
+		}
 		if len(cells) > 0 {
 			v := cells[0]
 			if strings.HasPrefix(v, "/") {
