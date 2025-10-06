@@ -1,13 +1,15 @@
 package ui
 
 import (
-	nav "github.com/sttts/kc/internal/navigation"
-	table "github.com/sttts/kc/internal/table"
 	"testing"
+
+	nav "github.com/sttts/kc/internal/navigation"
+	"github.com/sttts/kc/internal/navigation/models"
+	table "github.com/sttts/kc/internal/table"
 )
 
 // helper to make a simple folder
-func mkFolder(title, key string) nav.Folder {
+func mkFolder(title, key string) models.Folder {
 	return nav.NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, nil)
 }
 
@@ -18,14 +20,14 @@ func TestIndependentPanelNavigation(t *testing.T) {
 	rightRoot := mkFolder("RRoot", "RRoot")
 	a.leftNav = nav.NewNavigator(leftRoot)
 	a.rightNav = nav.NewNavigator(rightRoot)
-    // Bind folders to panels
-    a.leftPanel.UseFolder(true)
-    a.rightPanel.UseFolder(true)
-    a.leftPanel.SetFolder(leftRoot, false)
-    a.rightPanel.SetFolder(rightRoot, false)
-    // Set initial breadcrumbs from navigators
-    a.leftPanel.SetCurrentPath(a.leftNav.Path())
-    a.rightPanel.SetCurrentPath(a.rightNav.Path())
+	// Bind folders to panels
+	a.leftPanel.UseFolder(true)
+	a.rightPanel.UseFolder(true)
+	a.leftPanel.SetFolder(leftRoot, false)
+	a.rightPanel.SetFolder(rightRoot, false)
+	// Set initial breadcrumbs from navigators
+	a.leftPanel.SetCurrentPath(a.leftNav.Path())
+	a.rightPanel.SetCurrentPath(a.rightNav.Path())
 
 	// Navigate left only
 	a.activePanel = 0
@@ -34,9 +36,9 @@ func TestIndependentPanelNavigation(t *testing.T) {
 	if got := a.leftPanel.GetCurrentPath(); got != "/L2" {
 		t.Fatalf("left panel path = %q, want /L2", got)
 	}
-    if got := a.rightPanel.GetCurrentPath(); got != "/RRoot" {
-        t.Fatalf("right panel path changed to %q", got)
-    }
+	if got := a.rightPanel.GetCurrentPath(); got != "/RRoot" {
+		t.Fatalf("right panel path changed to %q", got)
+	}
 
 	// Navigate right only
 	a.activePanel = 1

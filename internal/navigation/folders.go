@@ -3,6 +3,7 @@ package navigation
 import (
 	"strings"
 
+	"github.com/sttts/kc/internal/navigation/models"
 	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -19,7 +20,7 @@ type SliceFolder struct {
 	hasMeta   bool
 }
 
-var _ Folder = (*SliceFolder)(nil)
+var _ models.Folder = (*SliceFolder)(nil)
 
 // Note: legacy alias types and specialized constructors have been removed in
 // favor of concrete folders in folders_new.go. This file now only provides
@@ -61,7 +62,7 @@ func (f *SliceFolder) Below(rowID string, num int) []table.Row  { return f.list.
 func (f *SliceFolder) Len() int                                 { return f.list.Len() }
 func (f *SliceFolder) Find(rowID string) (int, table.Row, bool) { return f.list.Find(rowID) }
 
-func (f *SliceFolder) ItemByID(id string) (Item, bool) {
+func (f *SliceFolder) ItemByID(id string) (models.Item, bool) {
 	if id == "" {
 		return nil, false
 	}
@@ -69,7 +70,7 @@ func (f *SliceFolder) ItemByID(id string) (Item, bool) {
 	if !ok {
 		return nil, false
 	}
-	it, ok := row.(Item)
+	it, ok := row.(models.Item)
 	return it, ok
 }
 

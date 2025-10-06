@@ -1,19 +1,20 @@
 package navigation
 
 import (
+	"github.com/sttts/kc/internal/navigation/models"
 	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // backFolder wraps a Folder and injects a ".." BackItem as the first row when hasBack is true.
 type backFolder struct {
-	inner   Folder
+	inner   models.Folder
 	hasBack bool
 }
 
 // WithBack returns a Folder that yields a ".." BackItem as first row when hasBack is true.
 // When hasBack is false, it returns the original folder unmodified.
-func WithBack(f Folder, hasBack bool) Folder {
+func WithBack(f models.Folder, hasBack bool) models.Folder {
 	if f == nil || !hasBack {
 		return f
 	}
@@ -26,17 +27,21 @@ func (b *backFolder) Columns() []table.Column { return b.inner.Columns() }
 func (b *backFolder) Path() []string          { return b.inner.Path() }
 func (b *backFolder) Key() string             { return b.inner.Key() }
 
-func (b *backFolder) ItemByID(id string) (Item, bool) {
+func (b *backFolder) ItemByID(id string) (models.Item, bool) {
 	if !b.hasBack {
-		if lookup, ok := b.inner.(interface{ ItemByID(string) (Item, bool) }); ok {
+		if lookup, ok := b.inner.(interface {
+			ItemByID(string) (models.Item, bool)
+		}); ok {
 			return lookup.ItemByID(id)
 		}
 		return nil, false
 	}
 	if id == "__back__" {
-		return BackItem{}, true
+		return models.BackItem{}, true
 	}
-	if lookup, ok := b.inner.(interface{ ItemByID(string) (Item, bool) }); ok {
+	if lookup, ok := b.inner.(interface {
+		ItemByID(string) (models.Item, bool)
+	}); ok {
 		return lookup.ItemByID(id)
 	}
 	return nil, false
@@ -57,10 +62,7 @@ func (b *backFolder) ObjectListMeta() (schema.GroupVersionResource, string, bool
 // (e.g., ConfigMap/Secret data folders), delegate to it so callers can detect
 // KeyFolder even when wrapped with back support.
 func (b *backFolder) Parent() (schema.GroupVersionResource, string, string) {
-	type keyFolder interface {
-		Parent() (schema.GroupVersionResource, string, string)
-	}
-	if kf, ok := b.inner.(keyFolder); ok {
+	if kf, ok := b.inner.(models.KeyFolder); ok {
 		return kf.Parent()
 	}
 	return schema.GroupVersionResource{}, "", ""
@@ -84,7 +86,7 @@ func (b *backFolder) Lines(top, num int) []table.Row {
 	}
 	if top <= 0 {
 		out := make([]table.Row, 0, num)
-		out = append(out, BackItem{})
+		out = append(out, models.BackItem{})
 		if num-1 > 0 {
 			out = append(out, b.inner.Lines(0, num-1)...)
 		}
@@ -118,7 +120,7 @@ func (b *backFolder) Find(rowID string) (int, table.Row, bool) {
 		return b.inner.Find(rowID)
 	}
 	if rowID == "__back__" {
-		return 0, BackItem{}, true
+		return 0, models.BackItem{}, true
 	}
 	idx, r, ok := b.inner.Find(rowID)
 	if !ok {

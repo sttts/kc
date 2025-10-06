@@ -5,6 +5,7 @@ import (
 	"time"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/internal/navigation/models"
 	table "github.com/sttts/kc/internal/table"
 )
 
@@ -26,7 +27,7 @@ type Deps struct {
 	// EnterContext returns a Folder for the selected context (optional).
 	// Typically returns a ContextRootFolder bound to the new context's cluster.
 	// basePath is the absolute path segments to the target (e.g., ["contexts", name]).
-	EnterContext func(name string, basePath []string) (Folder, error)
+	EnterContext func(name string, basePath []string) (models.Folder, error)
 
 	// ViewOptions returns live resource view options (sorting/filtering) that
 	// affect how folders populate their rows (e.g., group listing order).

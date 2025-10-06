@@ -1,6 +1,10 @@
 package navigation
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/sttts/kc/internal/navigation/models"
+)
 
 // Navigator is a minimal, UI-agnostic helper to manage Folder navigation.
 // It maintains a simple stack of Folders and exposes push/back semantics.
@@ -10,12 +14,12 @@ type Navigator struct {
 }
 
 type frame struct {
-	f     Folder
+	f     models.Folder
 	selID string
 }
 
 // NewNavigator constructs a navigator with an optional root folder.
-func NewNavigator(root Folder) *Navigator {
+func NewNavigator(root models.Folder) *Navigator {
 	n := &Navigator{}
 	if root != nil {
 		n.stack = []frame{{f: root}}
@@ -24,7 +28,7 @@ func NewNavigator(root Folder) *Navigator {
 }
 
 // SetRoot resets the stack to the provided root.
-func (n *Navigator) SetRoot(root Folder) {
+func (n *Navigator) SetRoot(root models.Folder) {
 	if root == nil {
 		n.stack = nil
 	} else {
@@ -33,7 +37,7 @@ func (n *Navigator) SetRoot(root Folder) {
 }
 
 // Current returns the top-most folder (or nil if empty).
-func (n *Navigator) Current() Folder {
+func (n *Navigator) Current() models.Folder {
 	if len(n.stack) == 0 {
 		return nil
 	}
@@ -41,7 +45,7 @@ func (n *Navigator) Current() Folder {
 }
 
 // Push appends a new folder if non-nil and returns it.
-func (n *Navigator) Push(f Folder) Folder {
+func (n *Navigator) Push(f models.Folder) models.Folder {
 	if f == nil {
 		return n.Current()
 	}
@@ -50,7 +54,7 @@ func (n *Navigator) Push(f Folder) Folder {
 }
 
 // Back pops one folder if possible and returns the resulting current folder.
-func (n *Navigator) Back() Folder {
+func (n *Navigator) Back() models.Folder {
 	if len(n.stack) == 0 {
 		return nil
 	}

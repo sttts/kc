@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	navui "github.com/sttts/kc/internal/navigation"
+	navmodels "github.com/sttts/kc/internal/navigation/models"
 	"github.com/sttts/kc/internal/overlay"
 	_ "github.com/sttts/kc/internal/ui/view"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -1218,7 +1219,7 @@ func (a *App) showViewOptionsModal() tea.Cmd {
 	}
 
 	// Prefer navigator folder (unwrapped) to detect object lists.
-	var curFolder navui.Folder
+	var curFolder navmodels.Folder
 	if a.activePanel == 0 && a.leftNav != nil {
 		curFolder = a.leftNav.Current()
 	}
@@ -1338,7 +1339,7 @@ func (a *App) openViewerForSelection() tea.Cmd {
 	if _, isBack := item.(navui.Back); isBack {
 		return nil
 	}
-	viewable, ok := item.(navui.Viewable)
+	viewable, ok := item.(navmodels.Viewable)
 	if !ok {
 		type vc interface {
 			ViewContent() (string, string, string, string, string, error)
@@ -1761,7 +1762,7 @@ func (a *App) goToNamespace(ns string) {
 		ViewOptions: func() navui.ViewOptions { return a.rightViewOptions() },
 	}
 	// set EnterContext after deps to avoid forward reference
-	depsLeft.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
+	depsLeft.EnterContext = func(name string, basePath []string) (navmodels.Folder, error) {
 		var target *kubeconfig.Context
 		for _, c := range a.kubeMgr.GetContexts() {
 			if c.Name == name {
@@ -1780,7 +1781,7 @@ func (a *App) goToNamespace(ns string) {
 		ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() navui.ViewOptions { return a.leftViewOptions() }}
 		return navui.NewContextRootFolder(ndeps, basePath), nil
 	}
-	depsRight.EnterContext = func(name string, basePath []string) (navui.Folder, error) {
+	depsRight.EnterContext = func(name string, basePath []string) (navmodels.Folder, error) {
 		var target *kubeconfig.Context
 		for _, c := range a.kubeMgr.GetContexts() {
 			if c.Name == name {
@@ -1838,11 +1839,11 @@ func (a *App) goToNamespace(ns string) {
 	}
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
-	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next navui.Folder) {
+	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next navmodels.Folder) {
 		a.activePanel = 0
 		a.handleFolderNav(back, selID, next)
 	})
-	a.rightPanel.SetFolderNavHandler(func(back bool, selID string, next navui.Folder) {
+	a.rightPanel.SetFolderNavHandler(func(back bool, selID string, next navmodels.Folder) {
 		a.activePanel = 1
 		a.handleFolderNav(back, selID, next)
 	})
@@ -1859,7 +1860,7 @@ func (a *App) currentNav() *navui.Navigator {
 	return a.rightNav
 }
 
-func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
+func (a *App) handleFolderNav(back bool, selID string, next navmodels.Folder) {
 	// Use navigator for current active panel
 	ensure := func() *navui.Navigator {
 		// Build deps bound to the current active panel
@@ -1882,7 +1883,7 @@ func (a *App) handleFolderNav(back bool, selID string, next navui.Folder) {
 		return navui.NewNavigator(navui.NewRootFolder(deps))
 	}
 	var nav *navui.Navigator
-	var panelSet func(navui.Folder, bool)
+	var panelSet func(navmodels.Folder, bool)
 	var panelSelectByID func(string)
 	var panelReset func()
 	if a.activePanel == 0 {

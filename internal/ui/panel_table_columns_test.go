@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	nav "github.com/sttts/kc/internal/navigation"
+	"github.com/sttts/kc/internal/navigation/models"
 	table "github.com/sttts/kc/internal/table"
 )
 
@@ -22,10 +22,10 @@ func (f *fakeFolder) Len() int                              { return f.list.Len(
 func (f *fakeFolder) Find(id string) (int, table.Row, bool) { return f.list.Find(id) }
 
 // Folder metadata
-func (f *fakeFolder) Columns() []table.Column          { return f.cols }
-func (f *fakeFolder) Path() []string                   { return append([]string(nil), f.path...) }
-func (f *fakeFolder) Key() string                      { return "fake" }
-func (f *fakeFolder) ItemByID(string) (nav.Item, bool) { return nil, false }
+func (f *fakeFolder) Columns() []table.Column             { return f.cols }
+func (f *fakeFolder) Path() []string                      { return append([]string(nil), f.path...) }
+func (f *fakeFolder) Key() string                         { return "fake" }
+func (f *fakeFolder) ItemByID(string) (models.Item, bool) { return nil, false }
 
 func newFakeFolder(cols []string, rows [][]string) *fakeFolder {
 	tc := make([]table.Column, len(cols))

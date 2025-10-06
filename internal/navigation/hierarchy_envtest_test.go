@@ -7,6 +7,7 @@ import (
 	"time"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/internal/navigation/models"
 	kctesting "github.com/sttts/kc/internal/testing"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
-func pathString(f Folder) string {
+func pathString(f models.Folder) string {
 	if f == nil {
 		return ""
 	}
@@ -242,12 +243,12 @@ func TestContextNamespaceWalk(t *testing.T) {
 	ctxRoot := NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return ctxRoot.Len() > 0 })
 	// Enter /namespaces
-	var nsFolder Folder
+	var nsFolder models.Folder
 	rows := ctxRoot.Lines(0, ctxRoot.Len())
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 0 && cells[0] == "/namespaces" {
-			if e, ok := r.(Enterable); ok {
+			if e, ok := r.(models.Enterable); ok {
 				f, err := e.Enter()
 				if err == nil {
 					nsFolder = f
@@ -262,12 +263,12 @@ func TestContextNamespaceWalk(t *testing.T) {
 	// Wait for namespace
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len() > 0 })
 	// Enter testns
-	var grp Folder
+	var grp models.Folder
 	rows = nsFolder.Lines(0, nsFolder.Len())
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 0 && cells[0] == "/testns" {
-			if e, ok := r.(Enterable); ok {
+			if e, ok := r.(models.Enterable); ok {
 				f, err := e.Enter()
 				if err == nil {
 					grp = f
@@ -280,7 +281,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 		t.Fatalf("enter groups for testns failed")
 	}
 	// Enter configmaps group; verify proper "/" prefix and core group displayed as "v1"
-	var objs Folder
+	var objs models.Folder
 	rows = grp.Lines(0, grp.Len())
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
@@ -288,7 +289,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 			if cells[1] != "v1" {
 				t.Fatalf("expected group column 'v1' for core resources, got %q", cells[1])
 			}
-			if e, ok := r.(Enterable); ok {
+			if e, ok := r.(models.Enterable); ok {
 				f, err := e.Enter()
 				if err == nil {
 					objs = f
@@ -302,12 +303,12 @@ func TestContextNamespaceWalk(t *testing.T) {
 	}
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len() > 0 })
 	// Enter cm1 keys
-	var keys Folder
+	var keys models.Folder
 	rows = objs.Lines(0, objs.Len())
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 0 && cells[0] == "/cm1" {
-			if e, ok := r.(Enterable); ok {
+			if e, ok := r.(models.Enterable); ok {
 				f, err := e.Enter()
 				if err == nil {
 					keys = f
@@ -479,14 +480,14 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	nav.SetSelectionID("testns")
 	nav.Push(NewNamespacedGroupsFolder(deps, "testns", []string{"namespaces", "testns"}))
 	// Find configmaps group and enter objects
-	var objs Folder
+	var objs models.Folder
 	var groupID string
 	rows := nav.Current().Lines(0, nav.Current().Len())
 	for _, r := range rows {
 		id, cells, _, _ := r.Columns()
 		if len(cells) > 0 && cells[0] == "/configmaps" {
 			groupID = id
-			if e, ok := r.(Enterable); ok {
+			if e, ok := r.(models.Enterable); ok {
 				f, err := e.Enter()
 				if err == nil {
 					objs = f
@@ -506,11 +507,11 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	nav.SetSelectionID("cm1")
 	// Ensure a keys folder can be constructed by calling Enterable on cm1 row
 	rows = nav.Current().Lines(0, nav.Current().Len())
-	var keys Folder
+	var keys models.Folder
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 0 && cells[0] == "/cm1" {
-			if e, ok := r.(Enterable); ok {
+			if e, ok := r.(models.Enterable); ok {
 				f, err := e.Enter()
 				if err == nil {
 					keys = f

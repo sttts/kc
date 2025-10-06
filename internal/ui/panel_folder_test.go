@@ -10,11 +10,11 @@ import (
 )
 
 // make a simple folder with provided row names
-func mkTestFolder(path []string, names ...string) nav.Folder {
+func mkTestFolder(path []string, names ...string) models.Folder {
 	rows := make([]table.Row, 0, len(names))
 	base := append([]string(nil), path...)
 	for _, n := range names {
-		rows = append(rows, models.NewSimpleItem(n, []string{n}, append(append([]string(nil), base...), n), nav.WhiteStyle()))
+		rows = append(rows, models.NewSimpleItem(n, []string{n}, append(append([]string(nil), base...), n), models.WhiteStyle()))
 	}
 	key := strings.Join(path, "/")
 	title := "/"
@@ -24,7 +24,7 @@ func mkTestFolder(path []string, names ...string) nav.Folder {
 	return nav.NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, rows)
 }
 
-func folderPathString(f nav.Folder) string {
+func folderPathString(f models.Folder) string {
 	if f == nil {
 		return ""
 	}
@@ -42,7 +42,7 @@ func TestEnterBackFromNamespacesFolder(t *testing.T) {
 	p.SetFolder(f, true)
 	p.UseFolder(true)
 	backCalls := 0
-	p.SetFolderNavHandler(func(back bool, _ string, next nav.Folder) {
+	p.SetFolderNavHandler(func(back bool, _ string, next models.Folder) {
 		if back {
 			backCalls++
 		}
@@ -64,12 +64,12 @@ func TestEnterFromNamespacesIntoGroups(t *testing.T) {
 	p := NewPanel("")
 	// namespaces folder with one namespace row that enters a groups folder
 	groups := mkTestFolder([]string{"groups"}, "pods", "configmaps")
-	nsRow := nav.NewEnterableItem("default", []string{"default"}, []string{"namespaces", "default"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle())
+	nsRow := nav.NewEnterableItem("default", []string{"default"}, []string{"namespaces", "default"}, func() (models.Folder, error) { return groups, nil }, models.WhiteStyle())
 	nsFolder := nav.NewSliceFolder("namespaces", "namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
 	p.SetFolder(nsFolder, true)
 	p.UseFolder(true)
-	var gotNext nav.Folder
-	p.SetFolderNavHandler(func(back bool, _ string, next nav.Folder) {
+	var gotNext models.Folder
+	p.SetFolderNavHandler(func(back bool, _ string, next models.Folder) {
 		if !back {
 			gotNext = next
 		}
@@ -88,8 +88,8 @@ func TestSelectionRestoredOnBack(t *testing.T) {
 	// Build a root folder with enterable namespaces row
 	groups := mkTestFolder("groups", "pods")
 	rows := []table.Row{
-		models.NewSimpleItem("contexts", []string{"contexts"}, []string{"contexts"}, nav.WhiteStyle()),
-		nav.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle()),
+		models.NewSimpleItem("contexts", []string{"contexts"}, []string{"contexts"}, models.WhiteStyle()),
+		nav.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (models.Folder, error) { return groups, nil }, models.WhiteStyle()),
 	}
 	root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, rows)
 
@@ -97,7 +97,7 @@ func TestSelectionRestoredOnBack(t *testing.T) {
 	navg := nav.NewNavigator(root)
 	p.SetFolder(root, false)
 	p.UseFolder(true)
-	p.SetFolderNavHandler(func(back bool, selID string, next nav.Folder) {
+	p.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		if back {
 			navg.Back()
 		} else if next != nil {
@@ -166,21 +166,21 @@ func TestSelectionRestoreWithinContexts(t *testing.T) {
 	ctxANamespaces := mkTestFolder("namespaces", "default", "kube-system")
 	// contexts folder: ctxA enterable to its namespaces, plus another context
 	ctxsRows := []table.Row{
-		nav.NewEnterableItem("ctxA", []string{"ctxA"}, []string{"contexts", "ctxA"}, func() (nav.Folder, error) { return ctxANamespaces, nil }, nav.WhiteStyle()),
-		models.NewSimpleItem("ctxB", []string{"ctxB"}, []string{"contexts", "ctxB"}, nav.WhiteStyle()),
+		nav.NewEnterableItem("ctxA", []string{"ctxA"}, []string{"contexts", "ctxA"}, func() (models.Folder, error) { return ctxANamespaces, nil }, models.WhiteStyle()),
+		models.NewSimpleItem("ctxB", []string{"ctxB"}, []string{"contexts", "ctxB"}, models.WhiteStyle()),
 	}
 	contexts := nav.NewSliceFolder("contexts", "contexts", []table.Column{{Title: " Name"}}, ctxsRows)
 
 	// root folder with enterable contexts
 	root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, []table.Row{
-		nav.NewEnterableItem("contexts", []string{"contexts"}, []string{"contexts"}, func() (nav.Folder, error) { return contexts, nil }, nav.WhiteStyle()),
+		nav.NewEnterableItem("contexts", []string{"contexts"}, []string{"contexts"}, func() (models.Folder, error) { return contexts, nil }, models.WhiteStyle()),
 	})
 
 	// Wire navigator-like handler
 	navg := nav.NewNavigator(root)
 	p.SetFolder(root, false)
 	p.UseFolder(true)
-	p.SetFolderNavHandler(func(back bool, selID string, next nav.Folder) {
+	p.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		if back {
 			navg.Back()
 		} else if next != nil {
@@ -279,14 +279,14 @@ func TestSelectionRestoreNamespacesToGroupsAndBack(t *testing.T) {
 	p := NewPanel("")
 	// Build folders: root(namespaces) -> groups
 	groups := mkTestFolder("groups", "pods", "configmaps")
-	nsRow := nav.NewEnterableItem("default", []string{"default"}, []string{"namespaces", "default"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle())
+	nsRow := nav.NewEnterableItem("default", []string{"default"}, []string{"namespaces", "default"}, func() (models.Folder, error) { return groups, nil }, models.WhiteStyle())
 	nsFolder := nav.NewSliceFolder("namespaces", "namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
-	root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, []table.Row{nav.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (nav.Folder, error) { return nsFolder, nil }, nav.WhiteStyle())})
+	root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, []table.Row{nav.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (models.Folder, error) { return nsFolder, nil }, models.WhiteStyle())})
 
 	navg := nav.NewNavigator(root)
 	p.SetFolder(root, false)
 	p.UseFolder(true)
-	p.SetFolderNavHandler(func(back bool, selID string, next nav.Folder) {
+	p.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		if back {
 			navg.Back()
 		} else if next != nil {

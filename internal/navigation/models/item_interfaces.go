@@ -30,6 +30,29 @@ type Folder interface {
 	ItemByID(string) (Item, bool)
 }
 
+// Enterable identifies rows that can return a child folder when Enter is pressed.
+type Enterable interface {
+	Item
+	Enter() (Folder, error)
+}
+
+// Viewable exposes focused content for viewer panes (F3).
+type Viewable interface {
+	ViewContent() (title, body, lang, mime, filename string, err error)
+}
+
+// Countable reports aggregate information for list-style rows (resource groups, context lists).
+type Countable interface {
+	Count() int
+	Empty() bool
+}
+
+// KeyFolder identifies key/value listings such as ConfigMap or Secret data folders.
+type KeyFolder interface {
+	Folder
+	Parent() (schema.GroupVersionResource, string, string)
+}
+
 // BackItem renders the synthetic ".." row.
 type BackItem struct{}
 

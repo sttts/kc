@@ -9,11 +9,11 @@ import (
 
 // Exported constructors -----------------------------------------------------------------
 
-func NewRootFolder(deps Deps) Folder {
+func NewRootFolder(deps Deps) models.Folder {
 	return models.NewRootFolder(toModelsDeps(deps))
 }
 
-func NewContextRootFolder(deps Deps, basePath []string) Folder {
+func NewContextRootFolder(deps Deps, basePath []string) models.Folder {
 	name := ""
 	if len(basePath) > 1 {
 		name = basePath[len(basePath)-1]
@@ -21,34 +21,34 @@ func NewContextRootFolder(deps Deps, basePath []string) Folder {
 	return models.NewContextRootFolder(toModelsDeps(deps), name)
 }
 
-func NewNamespacedGroupsFolder(deps Deps, namespace string, basePath []string) Folder {
+func NewNamespacedGroupsFolder(deps Deps, namespace string, basePath []string) models.Folder {
 	key := composeKey(deps, basePath)
 	return models.NewNamespacedResourcesFolder(toModelsDeps(deps), namespace, basePath, key)
 }
 
-func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, basePath []string) Folder {
+func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, basePath []string) models.Folder {
 	key := composeKey(deps, basePath)
 	return models.NewNamespacedObjectsFolder(toModelsDeps(deps), gvr, namespace, basePath, key)
 }
 
-func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource, basePath []string) Folder {
+func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource, basePath []string) models.Folder {
 	key := composeKey(deps, basePath)
 	return models.NewClusterObjectsFolder(toModelsDeps(deps), gvr, basePath, key)
 }
 
-func NewPodContainersFolder(deps Deps, namespace, pod string, basePath []string) Folder {
+func NewPodContainersFolder(deps Deps, namespace, pod string, basePath []string) models.Folder {
 	return models.NewPodContainersFolder(toModelsDeps(deps), basePath, namespace, pod)
 }
 
-func NewConfigMapKeysFolder(deps Deps, namespace, name string, basePath []string) Folder {
+func NewConfigMapKeysFolder(deps Deps, namespace, name string, basePath []string) models.Folder {
 	return models.NewConfigMapKeysFolder(toModelsDeps(deps), basePath, namespace, name)
 }
 
-func NewSecretKeysFolder(deps Deps, namespace, name string, basePath []string) Folder {
+func NewSecretKeysFolder(deps Deps, namespace, name string, basePath []string) models.Folder {
 	return models.NewSecretKeysFolder(toModelsDeps(deps), basePath, namespace, name)
 }
 
-func NewContextsFolder(deps Deps, basePath []string) Folder {
+func NewContextsFolder(deps Deps, basePath []string) models.Folder {
 	return models.NewContextsFolder(toModelsDeps(deps))
 }
 
@@ -87,7 +87,7 @@ func fromModelsDeps(d models.Deps) Deps {
 		Ctx:          d.Ctx,
 		CtxName:      d.CtxName,
 		ListContexts: d.ListContexts,
-		EnterContext: func(name string, basePath []string) (Folder, error) {
+		EnterContext: func(name string, basePath []string) (models.Folder, error) {
 			if d.EnterContext == nil {
 				return nil, nil
 			}
