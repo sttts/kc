@@ -1336,7 +1336,7 @@ func (a *App) openViewerForSelection() tea.Cmd {
 	if !ok || item == nil {
 		return nil
 	}
-	if _, isBack := item.(navui.Back); isBack {
+	if _, isBack := item.(navmodels.Back); isBack {
 		return nil
 	}
 	viewable, ok := item.(navmodels.Viewable)
