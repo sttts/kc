@@ -1352,7 +1352,7 @@ func (a *App) openViewerForSelection() tea.Cmd {
 	}
 	title, body, lang, mime, filename, err := viewable.ViewContent()
 	if err != nil {
-		if errors.Is(err, navui.ErrNoViewContent) {
+		if errors.Is(err, navmodels.ErrNoViewContent) {
 			return nil
 		}
 		if a.toastLogger != nil {
