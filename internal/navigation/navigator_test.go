@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sttts/kc/internal/navigation/models"
 	table "github.com/sttts/kc/internal/table"
 )
 
@@ -12,7 +13,7 @@ func mkFolder(path []string, key string, names ...string) Folder {
 	rows := make([]table.Row, 0, len(names))
 	base := append([]string(nil), path...)
 	for _, n := range names {
-		rows = append(rows, NewSimpleItem(n, []string{n}, append(append([]string(nil), base...), n), WhiteStyle()))
+		rows = append(rows, models.NewSimpleItem(n, []string{n}, append(append([]string(nil), base...), n), WhiteStyle()))
 	}
 	title := "/"
 	if len(path) > 0 {

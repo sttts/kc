@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	nav "github.com/sttts/kc/internal/navigation"
+	"github.com/sttts/kc/internal/navigation/models"
 	table "github.com/sttts/kc/internal/table"
 )
 
@@ -13,7 +14,7 @@ func mkTestFolder(path []string, names ...string) nav.Folder {
 	rows := make([]table.Row, 0, len(names))
 	base := append([]string(nil), path...)
 	for _, n := range names {
-		rows = append(rows, nav.NewSimpleItem(n, []string{n}, append(append([]string(nil), base...), n), nav.WhiteStyle()))
+		rows = append(rows, models.NewSimpleItem(n, []string{n}, append(append([]string(nil), base...), n), nav.WhiteStyle()))
 	}
 	key := strings.Join(path, "/")
 	title := "/"
@@ -87,7 +88,7 @@ func TestSelectionRestoredOnBack(t *testing.T) {
 	// Build a root folder with enterable namespaces row
 	groups := mkTestFolder("groups", "pods")
 	rows := []table.Row{
-		nav.NewSimpleItem("contexts", []string{"contexts"}, []string{"contexts"}, nav.WhiteStyle()),
+		models.NewSimpleItem("contexts", []string{"contexts"}, []string{"contexts"}, nav.WhiteStyle()),
 		nav.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (nav.Folder, error) { return groups, nil }, nav.WhiteStyle()),
 	}
 	root := nav.NewSliceFolder("/", "root", []table.Column{{Title: " Name"}}, rows)
@@ -166,7 +167,7 @@ func TestSelectionRestoreWithinContexts(t *testing.T) {
 	// contexts folder: ctxA enterable to its namespaces, plus another context
 	ctxsRows := []table.Row{
 		nav.NewEnterableItem("ctxA", []string{"ctxA"}, []string{"contexts", "ctxA"}, func() (nav.Folder, error) { return ctxANamespaces, nil }, nav.WhiteStyle()),
-		nav.NewSimpleItem("ctxB", []string{"ctxB"}, []string{"contexts", "ctxB"}, nav.WhiteStyle()),
+		models.NewSimpleItem("ctxB", []string{"ctxB"}, []string{"contexts", "ctxB"}, nav.WhiteStyle()),
 	}
 	contexts := nav.NewSliceFolder("contexts", "contexts", []table.Column{{Title: " Name"}}, ctxsRows)
 

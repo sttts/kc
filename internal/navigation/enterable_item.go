@@ -1,13 +1,15 @@
 package navigation
 
 import (
-	lipgloss "github.com/charmbracelet/lipgloss/v2"
 	"strings"
+
+	lipgloss "github.com/charmbracelet/lipgloss/v2"
+	"github.com/sttts/kc/internal/navigation/models"
 )
 
 // EnterableItem is a reusable Item that is also Enterable via a provided function.
 type EnterableItem struct {
-	*RowItem
+	*models.RowItem
 	enter  func() (Folder, error)
 	viewFn ViewContentFunc
 }
@@ -22,7 +24,7 @@ func NewEnterableItem(id string, cells []string, path []string, enter func() (Fo
 		cloned[0] = "/" + cloned[0]
 		cells = cloned
 	}
-	return &EnterableItem{RowItem: newRowItem(id, cells, path, style), enter: enter}
+	return &EnterableItem{RowItem: models.NewRowItem(id, cells, path, style), enter: enter}
 }
 
 // NewEnterableItemStyled constructs an EnterableItem with per-cell styles.
@@ -32,7 +34,7 @@ func NewEnterableItemStyled(id string, cells []string, path []string, styles []*
 		cloned[0] = "/" + cloned[0]
 		cells = cloned
 	}
-	return &EnterableItem{RowItem: newRowItemStyled(id, cells, path, styles), enter: enter}
+	return &EnterableItem{RowItem: models.NewRowItemStyled(id, cells, path, styles), enter: enter}
 }
 
 func (e *EnterableItem) Enter() (Folder, error) {
