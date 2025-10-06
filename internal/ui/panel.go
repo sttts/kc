@@ -177,7 +177,7 @@ func (p *Panel) SetFolder(f navmodels.Folder, hasBack bool) {
 		// Force population so Columns() reflects server-provided headers
 		_ = p.folder.Len()
 		cols := p.folder.Columns()
-		p.lastColTitles = nav.ColumnsToTitles(cols)
+		p.lastColTitles = columnsToTitles(cols)
 		bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
 		bt.SetMode(p.tableMode)
 		// Apply panel-aligned styles
@@ -213,9 +213,9 @@ func (p *Panel) syncFromFolder() {
 	if !p.useFolder || p.folder == nil {
 		return
 	}
-	cols := nav.ColumnsToTitles(p.folder.Columns())
+	cols := columnsToTitles(p.folder.Columns())
 	rows := p.folder.Lines(0, p.folder.Len())
-	cells := nav.RowsToCells(rows)
+	cells := rowsToCells(rows)
 	// Prepare headers and rows
 	p.tableHeaders = cols
 	// Build items aligned to rows and mark enterable where applicable
@@ -437,7 +437,7 @@ func (p *Panel) RefreshFolder() {
 		_ = p.folder.Len()
 		newCols := p.folder.Columns()
 		// Compare titles only (width hints are advisory)
-		titles := nav.ColumnsToTitles(newCols)
+		titles := columnsToTitles(newCols)
 		same := len(titles) == len(p.lastColTitles)
 		if same {
 			for i := range titles {
@@ -763,7 +763,7 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 		// Ensure BigTable exists and is sized
 		if p.bt == nil {
 			cols := p.folder.Columns()
-			p.lastColTitles = nav.ColumnsToTitles(cols)
+			p.lastColTitles = columnsToTitles(cols)
 			bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
 			bt.SetMode(p.tableMode)
 			st := table.DefaultStyles()
@@ -1961,22 +1961,38 @@ func (p *Panel) showGlobPatternDialog(key string) tea.Cmd {
 	return nil
 }
 
-// Helper functions
-func max(a, b int) int {
-	if a > b {
-		return a
+// ColumnsToTitles extracts column titles for legacy renderers that expect []string.
+func columnsToTitles(cols []table.Column) []string {
+	out := make([]string, len(cols))
+	for i := range cols {
+		out[i] = cols[i].Title
 	}
-	return b
+	return out
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+// rowsToCells converts []table.Row into [][]string of cells for legacy renderers.
+// It drops styles and pads missing cells with empty strings to the max column count.
+func rowsToCells(rows []table.Row) [][]string {
+	// determine max columns across rows
+	maxCols := 0
+	tmp := make([][]string, len(rows))
+	for i, r := range rows {
+		_, cells, _, _ := r.Columns()
+		tmp[i] = cells
+		if len(cells) > maxCols {
+			maxCols = len(cells)
+		}
 	}
-	return b
+	out := make([][]string, len(rows))
+	for i := range rows {
+		cells := tmp[i]
+		if len(cells) == maxCols {
+			out[i] = cells
+			continue
+		}
+		padded := make([]string, maxCols)
+		copy(padded, cells)
+		out[i] = padded
+	}
+	return out
 }
-
-// makeListForTable builds a table.List for BigTable from the current folder,
-// inserting a ".." back row when appropriate and prefixing enterable rows with
-// a leading slash in the first column.
-// makeListForTable removed: folder now yields BackItem when applicable via navigation.WithBack.
