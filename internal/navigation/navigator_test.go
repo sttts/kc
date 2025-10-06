@@ -9,7 +9,7 @@ import (
 )
 
 // helper to make a trivial folder with a path and one name column
-func mkFolder(path []string, key string, names ...string) models.Folder {
+func mkFolder(path []string, names ...string) models.Folder {
 	rows := make([]table.Row, 0, len(names))
 	base := append([]string(nil), path...)
 	for _, n := range names {
@@ -23,8 +23,8 @@ func mkFolder(path []string, key string, names ...string) models.Folder {
 }
 
 func TestNavigator_BackFromRootNamespacesGoesToRoot(t *testing.T) {
-	root := mkFolder(nil, "root", "contexts", "namespaces")
-	ns := mkFolder([]string{"namespaces"}, "root/namespaces", "default", "kube-system")
+	root := mkFolder(nil, "contexts", "namespaces")
+	ns := mkFolder([]string{"namespaces"}, "default", "kube-system")
 
 	nav := NewNavigator(root)
 	if nav.HasBack() {
@@ -41,9 +41,9 @@ func TestNavigator_BackFromRootNamespacesGoesToRoot(t *testing.T) {
 }
 
 func TestNavigator_BackFromContextNamespacesGoesToContexts(t *testing.T) {
-	root := mkFolder(nil, "root", "contexts")
-	contexts := mkFolder([]string{"contexts"}, "root/contexts", "ctxA", "ctxB")
-	ctxNamespaces := mkFolder([]string{"contexts", "ctxA", "namespaces"}, "contexts/ctxA/namespaces", "default")
+	root := mkFolder(nil, "contexts")
+	contexts := mkFolder([]string{"contexts"}, "ctxA", "ctxB")
+	ctxNamespaces := mkFolder([]string{"contexts", "ctxA", "namespaces"}, "default")
 
 	nav := NewNavigator(root)
 	nav.Push(contexts)

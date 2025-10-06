@@ -12,11 +12,7 @@ func NewRootFolder(deps models.Deps) models.Folder {
 }
 
 func NewContextRootFolder(deps models.Deps, basePath []string) models.Folder {
-	name := ""
-	if len(basePath) > 1 {
-		name = basePath[len(basePath)-1]
-	}
-	return models.NewContextRootFolder(deps, name)
+	return models.NewContextRootFolder(deps, basePath)
 }
 
 func NewNamespacedGroupsFolder(deps models.Deps, namespace string, basePath []string) models.Folder {

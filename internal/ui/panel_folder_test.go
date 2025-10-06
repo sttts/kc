@@ -16,7 +16,6 @@ func mkTestFolder(path []string, names ...string) models.Folder {
 	for _, n := range names {
 		rows = append(rows, models.NewSimpleItem(n, []string{n}, append(append([]string(nil), base...), n), models.WhiteStyle()))
 	}
-	key := strings.Join(path, "/")
 	title := "/"
 	if len(path) > 0 {
 		title = strings.Join(path, "/")

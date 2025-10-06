@@ -235,15 +235,14 @@ func (p *Panel) syncFromFolder() {
 	items := make([]Item, 0, len(cells)+1)
 	tableRows := make([][]string, 0, len(cells)+1)
 	for i := range rows {
+		if back, ok := rows[i].(navmodels.Back); ok && back.IsBack() {
+			items = append(items, Item{Name: "..", Type: ItemTypeDirectory, Enterable: true})
+			continue
+		}
 		id, rcells, _, _ := rows[i].Columns()
 		name := ""
 		if len(rcells) > 0 {
 			name = rcells[0]
-		}
-		if id == "__back__" {
-			items = append(items, Item{Name: "..", Type: ItemTypeDirectory, Enterable: true})
-			// do not append to tableRows; keep alignment to data rows only
-			continue
 		}
 		enter := false
 		if _, ok := rows[i].(navmodels.Enterable); ok {
@@ -408,11 +407,14 @@ func (p *Panel) SelectedNavItem() (navmodels.Item, bool) {
 	}
 	p.syncFromFolder()
 	id := p.selectedRowID()
-	if id == "" || id == "__back__" {
+	if id == "" {
 		return nil, false
 	}
 	item, ok := p.folder.ItemByID(id)
 	if !ok || item == nil {
+		return nil, false
+	}
+	if back, ok := item.(navmodels.Back); ok && back.IsBack() {
 		return nil, false
 	}
 	return item, true
@@ -565,11 +567,13 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "up", "down", "left", "right", "home", "end", "pgup", "pgdown", "ctrl+t", "insert":
 				_, _ = p.bt.Update(msg)
 				if id, ok := p.bt.CurrentID(); ok {
-					if id == "__back__" {
-						p.selected = 0
-						p.scrollTop = 0
-					} else {
-						p.SelectByRowID(id)
+					if item, ok := p.folder.ItemByID(id); ok {
+						if back, ok := item.(navmodels.Back); ok && back.IsBack() {
+							p.selected = 0
+							p.scrollTop = 0
+						} else {
+							p.SelectByRowID(id)
+						}
 					}
 				}
 				return p, nil
@@ -1330,7 +1334,7 @@ func (p *Panel) enterItem() tea.Cmd {
 			}
 			rows := p.folder.Lines(0, p.folder.Len())
 			id, _, _, _ := rows[p.selected].Columns()
-			if id == "__back__" {
+			if back, ok := rows[p.selected].(navmodels.Back); ok && back.IsBack() {
 				p.folderHandler(true, "", nil)
 				return nil
 			}
