@@ -33,7 +33,7 @@ Every location is backed by exact identities (GVR), never heuristic breadcrumb p
 - `internal/navigation` (items + folders)
   - Owns the core navigation model: `Item`, `Enterable`, `Folder`, `Back`.
   - Folders are self‑sufficient: each lazily populates rows from injected dependencies and `Enterable.Enter()` returns the next Folder.
-  - `WithBack(f, hasBack)` injects a synthetic “..” row for presentation.
+- `BaseFolder` automatically exposes a synthetic “..” row (`BackItem`) whenever `len(path) > 0`.
   - Depends on `internal/cluster` and `internal/table`.
 
 - `internal/ui/view` (modular viewers)
@@ -214,7 +214,7 @@ Notes:
 ## Data Flow
 
 1. App creates a `Navigator` with the root `Folder` (Deps injected).
-2. Panel shows `WithBack(Current(), HasBack())` and routes keys.
+2. Panel renders `Current()` directly and uses `HasBack()` only to decide cursor defaults or disable the back action when inactive.
 3. Enter pushes the next Folder returned by the selected `Enterable` row. Back pops.
 4. Viewers use GVR/ns/rowID from the current Folder to fetch content; titles use `item.Path()` when available (fallback: GVR/ns path).
 
@@ -239,14 +239,14 @@ Notes:
 - Lazy population: first access to `Lines/Len/Find` triggers a single populate pass that builds
   a `table.SliceList` of rows. Rows are `table.Row` values (typically `SimpleRow`/`EnterableItem`).
 - Enterable rows: items that can be entered implement `Enterable` and return the exact next Folder with `deps` already bound. Rows and child folders get a propagated `path []string` so breadcrumbs remain consistent at every level.
-- Back: The “..” entry is injected by `WithBack(f, hasBack)` as a presentational wrapper. The underlying Folder remains pure data.
+- Back: The “..” entry is emitted by the folder itself (via `BaseFolder`) when the breadcrumb path is non-empty; no wrapper is required.
 
 ## Programmatic Navigation
 
 - Paths are UX‑level, not a data source. Programmatic navigation composes Enter calls and sets selection IDs on the navigator:
   - Example: `/namespaces/<ns>` → `nav.SetSelectionID("namespaces"); nav.Push(NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group:"",Version:"v1",Resource:"namespaces"}, ["namespaces"]))`; then `nav.SetSelectionID(ns); nav.Push(NewNamespacedGroupsFolder(deps, ns, ["namespaces",ns]))`.
   - Validation (missing ns/resource/object) falls back to the nearest valid parent.
-- The App owns a `Navigator`; `GoToNamespace(ns)` builds a clean stack using Enterable rows and updates the panels with `WithBack(Current(), HasBack())`.
+- The App owns a `Navigator`; `GoToNamespace(ns)` builds a clean stack using Enterable rows and updates the panels with `Current()`/`HasBack()`.
 
 ## Breadcrumbs and Paths
 
@@ -265,7 +265,7 @@ Notes:
   3. Enter `/<ns>` (groups) → assert `/configmaps`, `/secrets` with counts.
   4. Enter `/configmaps` → assert `/cm1`.
   5. Enter `cm1` → assert keys `a`, `b`.
-  6. Back using `Navigator` + `WithBack` → verify parent restored.
+  6. Back using `Navigator.Back()` → verify parent restored.
   7. Cluster objects (`nodes`) → assert `n1`.
 
 

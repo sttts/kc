@@ -27,15 +27,6 @@ func NewNavigator(root models.Folder) *Navigator {
 	return n
 }
 
-// SetRoot resets the stack to the provided root.
-func (n *Navigator) SetRoot(root models.Folder) {
-	if root == nil {
-		n.stack = nil
-	} else {
-		n.stack = []frame{{f: root}}
-	}
-}
-
 // Current returns the top-most folder (or nil if empty).
 func (n *Navigator) Current() models.Folder {
 	if len(n.stack) == 0 {

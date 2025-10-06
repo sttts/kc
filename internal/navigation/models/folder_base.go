@@ -24,7 +24,6 @@ type BaseFolder struct {
 	mu   sync.Mutex
 
 	dirty bool
-	back  bool
 
 	list  *table.SliceList
 	items map[string]Item
@@ -50,9 +49,6 @@ func (b *BaseFolder) SetColumns(cols []table.Column) {
 // SetPopulate assigns the populate callback used to rebuild rows lazily.
 func (b *BaseFolder) SetPopulate(fn PopulateFunc) { b.populate = fn }
 
-// EnableBack toggles whether the folder should expose a synthetic ".." row.
-func (b *BaseFolder) EnableBack(enable bool) { b.back = enable }
-
 // Refresh marks the folder dirty so the next access repopulates rows.
 func (b *BaseFolder) Refresh() { b.markDirty() }
 
@@ -75,7 +71,7 @@ func (b *BaseFolder) ItemByID(id string) (Item, bool) {
 		return nil, false
 	}
 	b.ensure()
-	if b.back && id == "__back__" {
+	if b.hasBack() && id == "__back__" {
 		return BackItem{}, true
 	}
 	if b.items == nil {
@@ -91,7 +87,7 @@ func (b *BaseFolder) Lines(top, num int) []table.Row {
 		return nil
 	}
 	b.ensure()
-	if !b.back {
+	if !b.hasBack() {
 		return b.list.Lines(top, num)
 	}
 	if top <= 0 {
@@ -111,7 +107,7 @@ func (b *BaseFolder) Above(id string, n int) []table.Row {
 		return nil
 	}
 	b.ensure()
-	if !b.back || id == "__back__" {
+	if !b.hasBack() || id == "__back__" {
 		return nil
 	}
 	return b.list.Above(id, n)
@@ -123,7 +119,7 @@ func (b *BaseFolder) Below(id string, n int) []table.Row {
 		return nil
 	}
 	b.ensure()
-	if b.back && id == "__back__" {
+	if b.hasBack() && id == "__back__" {
 		return b.list.Lines(0, n)
 	}
 	return b.list.Below(id, n)
@@ -132,7 +128,7 @@ func (b *BaseFolder) Below(id string, n int) []table.Row {
 // Len reports the number of rows including the synthetic back row.
 func (b *BaseFolder) Len() int {
 	b.ensure()
-	if b.back {
+	if b.hasBack() {
 		return b.list.Len() + 1
 	}
 	return b.list.Len()
@@ -141,7 +137,7 @@ func (b *BaseFolder) Len() int {
 // Find locates a row by ID, accounting for the back row.
 func (b *BaseFolder) Find(id string) (int, table.Row, bool) {
 	b.ensure()
-	if b.back {
+	if b.hasBack() {
 		if id == "__back__" {
 			return 0, BackItem{}, true
 		}
@@ -153,6 +149,8 @@ func (b *BaseFolder) Find(id string) (int, table.Row, bool) {
 	}
 	return b.list.Find(id)
 }
+
+func (b *BaseFolder) hasBack() bool { return len(b.path) > 0 }
 
 // setRows replaces the underlying row list and rebuilds the ID cache.
 func (b *BaseFolder) setRows(rows []table.Row) {

@@ -24,7 +24,7 @@ Current tasks
 
 Hierarchy refactor and tests — ordered
 - [ ] Navigation: move folder implementations into `internal/navigation/folders/` (one type per file) with the shared `ResourcesFolder` and `ObjectsFolder` bases; make `RootFolder` and `ContextRootFolder` embed `ClusterResourcesFolder` and rename `NamespacedGroupsFolder`→`NamespacedResourcesFolder`.
-- [ ] Navigation: make Folders self‑sufficient. Each Folder lazily populates its rows from injected Deps and Enterable rows return the next Folder. Keep `WithBack` for a synthetic ".." row in presentation.
+- [ ] Navigation: make Folders self‑sufficient. Each Folder lazily populates its rows from injected Deps and Enterable rows return the next Folder. Base folders emit a synthetic ".." row whenever their path is non-empty.
 - [ ] Extract UI‑agnostic Folder constructors into `internal/navigation` with a small `Deps` bundle (ResMgr, Store, CtxName). Remove row‑building from the UI.
 - [ ] Programmatic goto (namespaces): implement simple Enter‑driven path stepping for `/namespaces/<ns>` without builders.
 - [ ] Envtest integration tests: start apiserver, seed ns/configmap/secret/node; verify walking Root → Namespaces → Groups → Objects → Keys; Back to parent; cluster‑scoped list. Tests only import navigation/internal/cluster/table (no UI).
@@ -57,7 +57,7 @@ Detailed next steps (post‑compaction anchors)
     3) Enter `testns` groups ⇒ assert `/configmaps` and `/secrets` with correct counts.
     4) Enter `/configmaps` ⇒ assert `cm1` present.
     5) Enter `cm1` ⇒ assert keys `a`, `b`.
-    6) Use `Navigator` + `WithBack` to test back navigation.
+    6) Use `Navigator.Back()` and the folder-provided `BackItem` to test back navigation.
     7) Cluster objects for `nodes` ⇒ assert `n1` present.
 - [ ] App shutdown & ctx:
   - Ensure `app.cancel()` and `clPool.Stop()` are called on exit (done) and that all folder informers share `app.ctx`.

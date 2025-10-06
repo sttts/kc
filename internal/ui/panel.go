@@ -9,7 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
-	nav "github.com/sttts/kc/internal/navigation"
 	navmodels "github.com/sttts/kc/internal/navigation/models"
 	table "github.com/sttts/kc/internal/table"
 	viewpkg "github.com/sttts/kc/internal/ui/view"
@@ -168,9 +167,7 @@ func (p *Panel) ResetSelectionTop() {
 // This does not alter legacy behaviors beyond rendering headers/rows from the
 // folder for preview purposes. Selection/enter logic remains unchanged.
 func (p *Panel) SetFolder(f navmodels.Folder, hasBack bool) {
-	// Wrap with back-row synthetic folder for presentation
-	eff := nav.WithBack(f, hasBack)
-	p.folder = eff
+	p.folder = f
 	p.folderHasBack = hasBack
 	// Initialize or refresh BigTable from folder columns and data when enabled
 	if p.useFolder && p.folder != nil {

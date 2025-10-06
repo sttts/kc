@@ -54,15 +54,71 @@ func (f *SliceFolder) ObjectListMeta() (schema.GroupVersionResource, string, boo
 	return schema.GroupVersionResource{}, "", false
 }
 
-func (f *SliceFolder) Lines(top, num int) []table.Row           { return f.list.Lines(top, num) }
-func (f *SliceFolder) Above(rowID string, num int) []table.Row  { return f.list.Above(rowID, num) }
-func (f *SliceFolder) Below(rowID string, num int) []table.Row  { return f.list.Below(rowID, num) }
-func (f *SliceFolder) Len() int                                 { return f.list.Len() }
-func (f *SliceFolder) Find(rowID string) (int, table.Row, bool) { return f.list.Find(rowID) }
+func (f *SliceFolder) Lines(top, num int) []table.Row {
+	if num <= 0 {
+		return nil
+	}
+	if !f.hasBack() {
+		return f.list.Lines(top, num)
+	}
+	if top <= 0 {
+		rows := make([]table.Row, 0, num)
+		rows = append(rows, models.BackItem{})
+		if num-1 > 0 {
+			rows = append(rows, f.list.Lines(0, num-1)...)
+		}
+		return rows
+	}
+	return f.list.Lines(top-1, num)
+}
+
+func (f *SliceFolder) Above(rowID string, num int) []table.Row {
+	if num <= 0 {
+		return nil
+	}
+	if !f.hasBack() || rowID == "__back__" {
+		return nil
+	}
+	return f.list.Above(rowID, num)
+}
+
+func (f *SliceFolder) Below(rowID string, num int) []table.Row {
+	if num <= 0 {
+		return nil
+	}
+	if f.hasBack() && rowID == "__back__" {
+		return f.list.Lines(0, num)
+	}
+	return f.list.Below(rowID, num)
+}
+
+func (f *SliceFolder) Len() int {
+	if f.hasBack() {
+		return f.list.Len() + 1
+	}
+	return f.list.Len()
+}
+
+func (f *SliceFolder) Find(rowID string) (int, table.Row, bool) {
+	if f.hasBack() {
+		if rowID == "__back__" {
+			return 0, models.BackItem{}, true
+		}
+		idx, row, ok := f.list.Find(rowID)
+		if !ok {
+			return -1, nil, false
+		}
+		return idx + 1, row, true
+	}
+	return f.list.Find(rowID)
+}
 
 func (f *SliceFolder) ItemByID(id string) (models.Item, bool) {
 	if id == "" {
 		return nil, false
+	}
+	if f.hasBack() && id == "__back__" {
+		return models.BackItem{}, true
 	}
 	_, row, ok := f.list.Find(id)
 	if !ok {
@@ -71,5 +127,7 @@ func (f *SliceFolder) ItemByID(id string) (models.Item, bool) {
 	it, ok := row.(models.Item)
 	return it, ok
 }
+
+func (f *SliceFolder) hasBack() bool { return len(f.path) > 0 }
 
 // Constructors removed (see note above).
