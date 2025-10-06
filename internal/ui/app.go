@@ -14,7 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
-	navmodels "github.com/sttts/kc/internal/models"
+	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
 	_ "github.com/sttts/kc/internal/ui/view"
@@ -151,9 +151,9 @@ func (a *App) favSet() map[string]bool {
 	}
 	return fav
 }
-func (a *App) leftViewOptions() navmodels.ViewOptions {
+func (a *App) leftViewOptions() models.ViewOptions {
 	show, order := a.leftPanel.ResourceViewOptions()
-	return navmodels.ViewOptions{
+	return models.ViewOptions{
 		ShowNonEmptyOnly: show,
 		Order:            order,
 		Favorites:        a.favSet(),
@@ -162,9 +162,9 @@ func (a *App) leftViewOptions() navmodels.ViewOptions {
 		PeekInterval:     a.cfg.Resources.PeekInterval.Duration,
 	}
 }
-func (a *App) rightViewOptions() navmodels.ViewOptions {
+func (a *App) rightViewOptions() models.ViewOptions {
 	show, order := a.rightPanel.ResourceViewOptions()
-	return navmodels.ViewOptions{
+	return models.ViewOptions{
 		ShowNonEmptyOnly: show,
 		Order:            order,
 		Favorites:        a.favSet(),
@@ -1219,7 +1219,7 @@ func (a *App) showViewOptionsModal() tea.Cmd {
 	}
 
 	// Prefer navigator folder (unwrapped) to detect object lists.
-	var curFolder navmodels.Folder
+	var curFolder models.Folder
 	if a.activePanel == 0 && a.leftNav != nil {
 		curFolder = a.leftNav.Current()
 	}
@@ -1336,10 +1336,10 @@ func (a *App) openViewerForSelection() tea.Cmd {
 	if !ok || item == nil {
 		return nil
 	}
-	if _, isBack := item.(navmodels.Back); isBack {
+	if _, isBack := item.(models.Back); isBack {
 		return nil
 	}
-	viewable, ok := item.(navmodels.Viewable)
+	viewable, ok := item.(models.Viewable)
 	if !ok {
 		type vc interface {
 			ViewContent() (string, string, string, string, string, error)
@@ -1352,7 +1352,7 @@ func (a *App) openViewerForSelection() tea.Cmd {
 	}
 	title, body, lang, mime, filename, err := viewable.ViewContent()
 	if err != nil {
-		if errors.Is(err, navmodels.ErrNoViewContent) {
+		if errors.Is(err, models.ErrNoViewContent) {
 			return nil
 		}
 		if a.toastLogger != nil {
@@ -1739,7 +1739,7 @@ func (a *App) goToNamespace(ns string) {
 		ns = "default"
 	}
 	// Build separate deps for left and right so each panel can have independent view options
-	depsLeft := navmodels.Deps{
+	depsLeft := models.Deps{
 		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
 		ListContexts: func() []string {
 			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
@@ -1748,9 +1748,9 @@ func (a *App) goToNamespace(ns string) {
 			}
 			return out
 		},
-		ViewOptions: func() navmodels.ViewOptions { return a.leftViewOptions() },
+		ViewOptions: func() models.ViewOptions { return a.leftViewOptions() },
 	}
-	depsRight := navmodels.Deps{
+	depsRight := models.Deps{
 		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
 		ListContexts: func() []string {
 			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
@@ -1759,10 +1759,10 @@ func (a *App) goToNamespace(ns string) {
 			}
 			return out
 		},
-		ViewOptions: func() navmodels.ViewOptions { return a.rightViewOptions() },
+		ViewOptions: func() models.ViewOptions { return a.rightViewOptions() },
 	}
 	// set EnterContext after deps to avoid forward reference
-	depsLeft.EnterContext = func(name string, basePath []string) (navmodels.Folder, error) {
+	depsLeft.EnterContext = func(name string, basePath []string) (models.Folder, error) {
 		var target *kubeconfig.Context
 		for _, c := range a.kubeMgr.GetContexts() {
 			if c.Name == name {
@@ -1778,10 +1778,10 @@ func (a *App) goToNamespace(ns string) {
 		if err != nil {
 			return nil, err
 		}
-		ndeps := navmodels.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() navmodels.ViewOptions { return a.leftViewOptions() }}
-		return navmodels.NewContextRootFolder(ndeps, basePath), nil
+		ndeps := models.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() models.ViewOptions { return a.leftViewOptions() }}
+		return models.NewContextRootFolder(ndeps, basePath), nil
 	}
-	depsRight.EnterContext = func(name string, basePath []string) (navmodels.Folder, error) {
+	depsRight.EnterContext = func(name string, basePath []string) (models.Folder, error) {
 		var target *kubeconfig.Context
 		for _, c := range a.kubeMgr.GetContexts() {
 			if c.Name == name {
@@ -1797,30 +1797,30 @@ func (a *App) goToNamespace(ns string) {
 		if err != nil {
 			return nil, err
 		}
-		ndeps := navmodels.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, ViewOptions: func() navmodels.ViewOptions { return a.rightViewOptions() }}
-		return navmodels.NewContextRootFolder(ndeps, basePath), nil
+		ndeps := models.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, ViewOptions: func() models.ViewOptions { return a.rightViewOptions() }}
+		return models.NewContextRootFolder(ndeps, basePath), nil
 	}
-	rootLeft := navmodels.NewRootFolder(depsLeft)
-	rootRight := navmodels.NewRootFolder(depsRight)
+	rootLeft := models.NewRootFolder(depsLeft)
+	rootRight := models.NewRootFolder(depsRight)
 	a.leftNav = navui.NewNavigator(rootLeft)
 	a.rightNav = navui.NewNavigator(rootRight)
 	if a.namespaceExists(ns) {
 		// Left panel: remember selection when entering
 		a.leftNav.SetSelectionID("namespaces")
-		leftNS := navmodels.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+		leftNS := models.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
 		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = leftNS.Len(); return nil }))
 		a.leftNav.Push(leftNS)
 		a.leftNav.SetSelectionID(ns)
-		leftGroups := navmodels.NewNamespacedResourcesFolder(depsLeft, ns, []string{"namespaces", ns})
+		leftGroups := models.NewNamespacedResourcesFolder(depsLeft, ns, []string{"namespaces", ns})
 		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = leftGroups.Len(); return nil }))
 		a.leftNav.Push(leftGroups)
 		// Right panel: same
 		a.rightNav.SetSelectionID("namespaces")
-		rightNS := navmodels.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+		rightNS := models.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
 		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = rightNS.Len(); return nil }))
 		a.rightNav.Push(rightNS)
 		a.rightNav.SetSelectionID(ns)
-		rightGroups := navmodels.NewNamespacedResourcesFolder(depsRight, ns, []string{"namespaces", ns})
+		rightGroups := models.NewNamespacedResourcesFolder(depsRight, ns, []string{"namespaces", ns})
 		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = rightGroups.Len(); return nil }))
 		a.rightNav.Push(rightGroups)
 	}
@@ -1839,11 +1839,11 @@ func (a *App) goToNamespace(ns string) {
 	}
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
-	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next navmodels.Folder) {
+	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		a.activePanel = 0
 		a.handleFolderNav(back, selID, next)
 	})
-	a.rightPanel.SetFolderNavHandler(func(back bool, selID string, next navmodels.Folder) {
+	a.rightPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		a.activePanel = 1
 		a.handleFolderNav(back, selID, next)
 	})
@@ -1860,17 +1860,17 @@ func (a *App) currentNav() *navui.Navigator {
 	return a.rightNav
 }
 
-func (a *App) handleFolderNav(back bool, selID string, next navmodels.Folder) {
+func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	// Use navigator for current active panel
 	ensure := func() *navui.Navigator {
 		// Build deps bound to the current active panel
-		vo := func() navmodels.ViewOptions {
+		vo := func() models.ViewOptions {
 			if a.activePanel == 0 {
 				return a.leftViewOptions()
 			}
 			return a.rightViewOptions()
 		}
-		deps := navmodels.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+		deps := models.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
 			ListContexts: func() []string {
 				out := make([]string, 0, len(a.kubeMgr.GetContexts()))
 				for _, c := range a.kubeMgr.GetContexts() {
@@ -1880,10 +1880,10 @@ func (a *App) handleFolderNav(back bool, selID string, next navmodels.Folder) {
 			},
 			ViewOptions: vo,
 		}
-		return navui.NewNavigator(navmodels.NewRootFolder(deps))
+		return navui.NewNavigator(models.NewRootFolder(deps))
 	}
 	var nav *navui.Navigator
-	var panelSet func(navmodels.Folder, bool)
+	var panelSet func(models.Folder, bool)
 	var panelSelectByID func(string)
 	var panelReset func()
 	if a.activePanel == 0 {

@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
-	navmodels "github.com/sttts/kc/internal/models"
+	models "github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
 	viewpkg "github.com/sttts/kc/internal/ui/view"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -54,9 +54,9 @@ type Panel struct {
 	contextCountProvider func() int // returns number of contexts, or negative if unknown
 	// Optional: folder-backed rendering (preview path using internal/navigation)
 	useFolder     bool
-	folder        navmodels.Folder
+	folder        models.Folder
 	folderHasBack bool
-	folderHandler func(back bool, selID string, next navmodels.Folder)
+	folderHandler func(back bool, selID string, next models.Folder)
 	// Per-panel resource group view options
 	resShowNonEmpty bool
 	resOrder        string // "alpha", "group", "favorites"
@@ -166,7 +166,7 @@ func (p *Panel) ResetSelectionTop() {
 // SetFolder enables folder-backed rendering using the new navigation package.
 // This does not alter legacy behaviors beyond rendering headers/rows from the
 // folder for preview purposes. Selection/enter logic remains unchanged.
-func (p *Panel) SetFolder(f navmodels.Folder, hasBack bool) {
+func (p *Panel) SetFolder(f models.Folder, hasBack bool) {
 	p.folder = f
 	p.folderHasBack = hasBack
 	// Initialize or refresh BigTable from folder columns and data when enabled
@@ -221,7 +221,7 @@ func (p *Panel) syncFromFolder() {
 	var parentNS, parentName string
 	var isSecret bool
 	// Detect key folders via the KeyFolder interface (works through wrappers like backFolder)
-	if kf, ok := p.folder.(navmodels.KeyFolder); ok {
+	if kf, ok := p.folder.(models.KeyFolder); ok {
 		gvr, ns, name := kf.Parent()
 		if gvr.Resource == "configmaps" || gvr.Resource == "secrets" {
 			isKeysFolder = true
@@ -232,7 +232,7 @@ func (p *Panel) syncFromFolder() {
 	items := make([]Item, 0, len(cells)+1)
 	tableRows := make([][]string, 0, len(cells)+1)
 	for i := range rows {
-		if back, ok := rows[i].(navmodels.Back); ok && back.IsBack() {
+		if back, ok := rows[i].(models.Back); ok && back.IsBack() {
 			items = append(items, Item{Name: "..", Type: ItemTypeDirectory, Enterable: true})
 			continue
 		}
@@ -242,7 +242,7 @@ func (p *Panel) syncFromFolder() {
 			name = rcells[0]
 		}
 		enter := false
-		if _, ok := rows[i].(navmodels.Enterable); ok {
+		if _, ok := rows[i].(models.Enterable); ok {
 			enter = true
 		}
 		typ := ItemTypeResource
@@ -398,7 +398,7 @@ func (p *Panel) selectedRowID() string {
 
 // SelectedNavItem resolves the currently focused navigation item, skipping the
 // synthetic back entry. Returns false when no concrete item is selected.
-func (p *Panel) SelectedNavItem() (navmodels.Item, bool) {
+func (p *Panel) SelectedNavItem() (models.Item, bool) {
 	if !p.useFolder || p.folder == nil {
 		return nil, false
 	}
@@ -411,7 +411,7 @@ func (p *Panel) SelectedNavItem() (navmodels.Item, bool) {
 	if !ok || item == nil {
 		return nil, false
 	}
-	if back, ok := item.(navmodels.Back); ok && back.IsBack() {
+	if back, ok := item.(models.Back); ok && back.IsBack() {
 		return nil, false
 	}
 	return item, true
@@ -420,7 +420,7 @@ func (p *Panel) SelectedNavItem() (navmodels.Item, bool) {
 // SetFolderNavHandler installs a callback invoked when Enter is pressed while
 // folder-backed rendering is active. The callback receives whether a back
 // navigation was requested and, if not back, the next Folder (may be nil).
-func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next navmodels.Folder)) {
+func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next models.Folder)) {
 	p.folderHandler = h
 }
 
@@ -565,7 +565,7 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_, _ = p.bt.Update(msg)
 				if id, ok := p.bt.CurrentID(); ok {
 					if item, ok := p.folder.ItemByID(id); ok {
-						if back, ok := item.(navmodels.Back); ok && back.IsBack() {
+						if back, ok := item.(models.Back); ok && back.IsBack() {
 							p.selected = 0
 							p.scrollTop = 0
 						} else {
@@ -1331,11 +1331,11 @@ func (p *Panel) enterItem() tea.Cmd {
 			}
 			rows := p.folder.Lines(0, p.folder.Len())
 			id, _, _, _ := rows[p.selected].Columns()
-			if back, ok := rows[p.selected].(navmodels.Back); ok && back.IsBack() {
+			if back, ok := rows[p.selected].(models.Back); ok && back.IsBack() {
 				p.folderHandler(true, "", nil)
 				return nil
 			}
-			if e, ok := rows[p.selected].(navmodels.Enterable); ok {
+			if e, ok := rows[p.selected].(models.Enterable); ok {
 				next, err := e.Enter()
 				if err == nil {
 					p.folderHandler(false, id, next)

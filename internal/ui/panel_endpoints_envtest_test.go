@@ -47,7 +47,7 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	go cl.Start(ctx)
 	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env"}
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpoints"}
-	folder := navmodels.NewNamespacedObjectsFolder(deps, gvr, "kube-system", []string{"namespaces", "kube-system", gvr.Resource})
+	folder := models.NewNamespacedObjectsFolder(deps, gvr, "kube-system", []string{"namespaces", "kube-system", gvr.Resource})
 
 	// Wait until at least one row appears
 	kctesting.Eventually(t, 5_000_000_000, 50_000_000, func() bool { return folder.Len() > 0 })

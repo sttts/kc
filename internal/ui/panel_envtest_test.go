@@ -19,7 +19,7 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 	ctx := context.TODO()
 	go cl.Start(ctx)
 	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env"}
-	folder := navmodels.NewNamespacedResourcesFolder(deps, "default", []string{"namespaces", "default"})
+	folder := models.NewNamespacedResourcesFolder(deps, "default", []string{"namespaces", "default"})
 	// Build panel and attach folder
 	p := NewPanel("")
 	p.UseFolder(true)
@@ -58,7 +58,7 @@ func TestFooterShowsGroupVersionForCoreGroups(t *testing.T) {
 	ctx := context.TODO()
 	go cl.Start(ctx)
 	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env"}
-	folder := navmodels.NewNamespacedResourcesFolder(deps, "default", []string{"namespaces", "default"})
+	folder := models.NewNamespacedResourcesFolder(deps, "default", []string{"namespaces", "default"})
 	p := NewPanel("")
 	p.UseFolder(true)
 	p.SetFolder(folder, false)

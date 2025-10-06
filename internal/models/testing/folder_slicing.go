@@ -3,7 +3,7 @@ package modeltesting
 import (
 	"strings"
 
-	navmodels "github.com/sttts/kc/internal/models"
+	models "github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -19,7 +19,7 @@ type SliceFolder struct {
 	hasMeta   bool
 }
 
-var _ navmodels.Folder = (*SliceFolder)(nil)
+var _ models.Folder = (*SliceFolder)(nil)
 
 // NewSliceFolder builds a testing folder from rows and columns. The title is
 // converted into path segments ("/" -> root, "a/b" -> ["a","b"], etc.).
@@ -55,7 +55,7 @@ func (f *SliceFolder) Lines(top, num int) []table.Row {
 	}
 	if top <= 0 {
 		rows := make([]table.Row, 0, num)
-		rows = append(rows, navmodels.BackItem{})
+		rows = append(rows, models.BackItem{})
 		if num-1 > 0 {
 			rows = append(rows, f.list.Lines(0, num-1)...)
 		}
@@ -94,7 +94,7 @@ func (f *SliceFolder) Len() int {
 func (f *SliceFolder) Find(rowID string) (int, table.Row, bool) {
 	if f.hasBack() {
 		if rowID == "__back__" {
-			return 0, navmodels.BackItem{}, true
+			return 0, models.BackItem{}, true
 		}
 		idx, row, ok := f.list.Find(rowID)
 		if !ok {
@@ -105,18 +105,18 @@ func (f *SliceFolder) Find(rowID string) (int, table.Row, bool) {
 	return f.list.Find(rowID)
 }
 
-func (f *SliceFolder) ItemByID(id string) (navmodels.Item, bool) {
+func (f *SliceFolder) ItemByID(id string) (models.Item, bool) {
 	if id == "" {
 		return nil, false
 	}
 	if f.hasBack() && id == "__back__" {
-		return navmodels.BackItem{}, true
+		return models.BackItem{}, true
 	}
 	_, row, ok := f.list.Find(id)
 	if !ok {
 		return nil, false
 	}
-	it, ok := row.(navmodels.Item)
+	it, ok := row.(models.Item)
 	return it, ok
 }
 
