@@ -19,9 +19,8 @@ type PodContainersFolder struct {
 // NewPodContainersFolder constructs the pod containers folder.
 func NewPodContainersFolder(deps Deps, parentPath []string, namespace, pod string) *PodContainersFolder {
 	path := append([]string{}, parentPath...)
-	key := composeKey(deps, path)
 	cols := []table.Column{{Title: " Name"}}
-	base := NewBaseFolder(deps, cols, path, key, nil)
+	base := NewBaseFolder(deps, cols, path, nil)
 	folder := &PodContainersFolder{BaseFolder: base, Namespace: namespace, Pod: pod}
 	base.SetPopulate(folder.populate)
 	return folder
@@ -93,8 +92,7 @@ type PodContainerListFolder struct {
 }
 
 func NewPodContainerListFolder(deps Deps, path []string, namespace, pod string, kind containerKind) *PodContainerListFolder {
-	key := composeKey(deps, path)
-	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path, key, nil)
+	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path, nil)
 	folder := &PodContainerListFolder{BaseFolder: base, Namespace: namespace, Pod: pod, Kind: kind}
 	base.SetPopulate(folder.populate)
 	return folder
@@ -170,8 +168,7 @@ type PodContainerLogsFolder struct {
 }
 
 func NewPodContainerLogsFolder(deps Deps, path []string, namespace, pod, container string) *PodContainerLogsFolder {
-	key := composeKey(deps, path)
-	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path, key, nil)
+	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path, nil)
 	folder := &PodContainerLogsFolder{BaseFolder: base, Namespace: namespace, Pod: pod, Container: container}
 	base.SetPopulate(folder.populate)
 	return folder

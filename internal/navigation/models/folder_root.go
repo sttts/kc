@@ -14,7 +14,7 @@ type RootFolder struct {
 
 // NewRootFolder scaffolds a root folder with default columns.
 func NewRootFolder(deps Deps) *RootFolder {
-	cluster := NewClusterResourcesFolder(deps, nil, "root")
+	cluster := NewClusterResourcesFolder(deps, nil)
 	root := &RootFolder{ClusterResourcesFolder: cluster}
 	cluster.BaseFolder.SetPopulate(root.populate)
 	return root
@@ -39,8 +39,7 @@ func (f *RootFolder) populate(*BaseFolder) ([]table.Row, error) {
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 	nsPath := append(append([]string{}, f.Path()...), "namespaces")
 	namespacesItem := NewResourceGroupItem(f.Deps, gvrNamespaces, "", "namespaces", []string{"/namespaces", "v1", ""}, nsPath, nameStyle, true, func() (Folder, error) {
-		key := composeKey(f.Deps, nsPath)
-		return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPath, key), nil
+		return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPath), nil
 	})
 
 	groupItems := []*ResourceGroupItem{namespacesItem}

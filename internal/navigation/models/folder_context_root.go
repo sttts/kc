@@ -13,12 +13,11 @@ type ContextRootFolder struct {
 
 // NewContextRootFolder scaffolds a context-specific root folder.
 func NewContextRootFolder(deps Deps, contextName string) *ContextRootFolder {
-	path := []string{"contexts"}
-	if contextName != "" {
-		path = append(path, contextName)
-	}
-	key := composeKey(deps, path)
-	cluster := NewClusterResourcesFolder(deps, path, key)
+    path := []string{"contexts"}
+    if contextName != "" {
+        path = append(path, contextName)
+    }
+    cluster := NewClusterResourcesFolder(deps, path)
 	folder := &ContextRootFolder{
 		ClusterResourcesFolder: cluster,
 		ContextName:            contextName,
@@ -34,9 +33,8 @@ func (f *ContextRootFolder) populate(*BaseFolder) ([]table.Row, error) {
 
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 	nsPath := append(append([]string{}, f.Path()...), "namespaces")
-	namespacesItem := NewResourceGroupItem(f.Deps, gvrNamespaces, "", "namespaces", []string{"/namespaces", "v1", ""}, nsPath, nameStyle, true, func() (Folder, error) {
-		key := composeKey(f.Deps, nsPath)
-		return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPath, key), nil
+    namespacesItem := NewResourceGroupItem(f.Deps, gvrNamespaces, "", "namespaces", []string{"/namespaces", "v1", ""}, nsPath, nameStyle, true, func() (Folder, error) {
+        return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPath), nil
 	})
 
 	groupItems := []*ResourceGroupItem{namespacesItem}

@@ -41,7 +41,6 @@ func init() {
 		return NewSecretKeysFolder(deps, basePath, ns, name)
 	})
 	RegisterChild(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, func(deps Deps, ns, name string, basePath []string) Folder {
-		key := composeKey(deps, basePath)
-		return NewNamespacedResourcesFolder(deps, name, basePath, key)
+		return NewNamespacedResourcesFolder(deps, name, basePath)
 	})
 }

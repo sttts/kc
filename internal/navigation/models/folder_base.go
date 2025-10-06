@@ -1,7 +1,6 @@
 package models
 
 import (
-	"strings"
 	"sync"
 
 	table "github.com/sttts/kc/internal/table"
@@ -17,10 +16,8 @@ type PopulateFunc func(*BaseFolder) ([]table.Row, error)
 type BaseFolder struct {
 	Deps Deps
 
-	columns []table.Column
-	path    []string
-	key     string
-
+	columns  []table.Column
+	path     []string
 	populate PopulateFunc
 
 	once sync.Once
@@ -36,12 +33,11 @@ type BaseFolder struct {
 // NewBaseFolder constructs a BaseFolder with the provided dependencies,
 // columns, path, key, and populate function. Callers may later adjust these
 // values via the setter helpers if needed.
-func NewBaseFolder(deps Deps, cols []table.Column, path []string, key string, populate PopulateFunc) *BaseFolder {
+func NewBaseFolder(deps Deps, cols []table.Column, path []string, populate PopulateFunc) *BaseFolder {
 	return &BaseFolder{
 		Deps:     deps,
 		columns:  append([]table.Column(nil), cols...),
 		path:     append([]string(nil), path...),
-		key:      key,
 		populate: populate,
 	}
 }
@@ -72,9 +68,6 @@ func (b *BaseFolder) Columns() []table.Column { return append([]table.Column(nil
 
 // Path returns a copy of the breadcrumb path segments.
 func (b *BaseFolder) Path() []string { return append([]string(nil), b.path...) }
-
-// Key returns the stable key for the folder.
-func (b *BaseFolder) Key() string { return b.key }
 
 // ItemByID returns the cached navigation item by ID when available.
 func (b *BaseFolder) ItemByID(id string) (Item, bool) {
@@ -205,17 +198,6 @@ func (b *BaseFolder) ensure() {
 		b.list = table.NewSliceList(nil)
 	}
 	b.dirty = false
-}
-
-func composeKey(deps Deps, path []string) string {
-	rel := strings.Join(path, "/")
-	if rel == "" {
-		return deps.CtxName
-	}
-	if deps.CtxName == "" {
-		return rel
-	}
-	return deps.CtxName + "/" + rel
 }
 
 func (b *BaseFolder) markDirty() {

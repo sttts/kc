@@ -25,7 +25,6 @@ func WithBack(f models.Folder, hasBack bool) models.Folder {
 
 func (b *backFolder) Columns() []table.Column { return b.inner.Columns() }
 func (b *backFolder) Path() []string          { return b.inner.Path() }
-func (b *backFolder) Key() string             { return b.inner.Key() }
 
 func (b *backFolder) ItemByID(id string) (models.Item, bool) {
 	if !b.hasBack {

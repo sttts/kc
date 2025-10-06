@@ -23,8 +23,8 @@ type ObjectsFolder struct {
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
-func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string, key string) *ObjectsFolder {
-	base := NewBaseFolder(deps, nil, path, key, nil)
+func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string) *ObjectsFolder {
+	base := NewBaseFolder(deps, nil, path, nil)
 	base.SetColumns([]table.Column{{Title: " Name"}})
 	return &ObjectsFolder{
 		BaseFolder: base,

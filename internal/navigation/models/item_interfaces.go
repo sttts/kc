@@ -26,7 +26,6 @@ type Folder interface {
 	table.List
 	Columns() []table.Column
 	Path() []string
-	Key() string
 	ItemByID(string) (Item, bool)
 }
 
@@ -53,10 +52,17 @@ type KeyFolder interface {
 	Parent() (schema.GroupVersionResource, string, string)
 }
 
+// Back identifies the synthetic ".." entry.
+type Back interface {
+	Item
+	IsBack() bool
+}
+
 // BackItem renders the synthetic ".." row.
 type BackItem struct{}
 
 var _ Item = BackItem{}
+var _ Back = BackItem{}
 
 func (BackItem) Columns() (string, []string, []*lipgloss.Style, bool) {
 	style := GreenStyle()
@@ -65,6 +71,7 @@ func (BackItem) Columns() (string, []string, []*lipgloss.Style, bool) {
 
 func (BackItem) Details() string { return "Back" }
 func (BackItem) Path() []string  { return nil }
+func (BackItem) IsBack() bool    { return true }
 
 // GreenStyle mirrors the navigation helper.
 func GreenStyle() *lipgloss.Style {

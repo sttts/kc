@@ -11,9 +11,9 @@ type NamespacedObjectsFolder struct {
 }
 
 // NewNamespacedObjectsFolder constructs a namespaced objects folder.
-func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string, key string) *NamespacedObjectsFolder {
+func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string) *NamespacedObjectsFolder {
 	folder := &NamespacedObjectsFolder{
-		ObjectsFolder: NewObjectsFolder(deps, gvr, namespace, path, key),
+		ObjectsFolder: NewObjectsFolder(deps, gvr, namespace, path),
 	}
 	folder.BaseFolder.SetPopulate(folder.populate)
 	return folder

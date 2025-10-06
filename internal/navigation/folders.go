@@ -11,7 +11,6 @@ import (
 // SliceFolder is a basic Folder backed by a table.SliceList and static columns.
 type SliceFolder struct {
 	path []string
-	key  string
 	cols []table.Column
 	list *table.SliceList
 	// optional object-list metadata for YAML/F3
@@ -28,7 +27,7 @@ var _ models.Folder = (*SliceFolder)(nil)
 
 // NewSliceFolder builds a testing folder from rows and columns. The title is
 // converted into path segments ("/" -> root, "a/b" -> ["a","b"], etc.).
-func NewSliceFolder(title, key string, cols []table.Column, rows []table.Row) *SliceFolder {
+func NewSliceFolder(title string, cols []table.Column, rows []table.Row) *SliceFolder {
 	var path []string
 	if title != "" && title != "/" {
 		parts := strings.Split(title, "/")
@@ -38,14 +37,13 @@ func NewSliceFolder(title, key string, cols []table.Column, rows []table.Row) *S
 			}
 		}
 	}
-	return &SliceFolder{path: path, key: key, cols: cols, list: table.NewSliceList(rows)}
+	return &SliceFolder{path: path, cols: cols, list: table.NewSliceList(rows)}
 }
 
 // Folder interface implementation -------------------------------------------------
 
 func (f *SliceFolder) Columns() []table.Column { return f.cols }
 func (f *SliceFolder) Path() []string          { return append([]string(nil), f.path...) }
-func (f *SliceFolder) Key() string             { return f.key }
 
 // ObjectListMeta returns GVR/namespace when this folder represents a concrete
 // object listing. ok=false if not applicable.

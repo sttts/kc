@@ -17,9 +17,8 @@ type ConfigMapKeysFolder struct {
 // NewConfigMapKeysFolder constructs the ConfigMap data keys folder.
 func NewConfigMapKeysFolder(deps Deps, parentPath []string, namespace, name string) *ConfigMapKeysFolder {
 	path := append(append([]string{}, parentPath...), "data")
-	key := composeKey(deps, path)
 	cols := []table.Column{{Title: " Name"}}
-	base := NewBaseFolder(deps, cols, path, key, nil)
+	base := NewBaseFolder(deps, cols, path, nil)
 	folder := &ConfigMapKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
 	base.SetPopulate(folder.populate)
 	return folder

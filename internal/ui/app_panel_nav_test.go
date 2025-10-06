@@ -10,7 +10,7 @@ import (
 
 // helper to make a simple folder
 func mkFolder(title, key string) models.Folder {
-	return nav.NewSliceFolder(title, key, []table.Column{{Title: " Name"}}, nil)
+	return nav.NewSliceFolder(title, []table.Column{{Title: " Name"}}, nil)
 }
 
 func TestIndependentPanelNavigation(t *testing.T) {

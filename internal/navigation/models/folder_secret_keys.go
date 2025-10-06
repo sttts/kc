@@ -17,9 +17,8 @@ type SecretKeysFolder struct {
 // NewSecretKeysFolder constructs the Secret data keys folder.
 func NewSecretKeysFolder(deps Deps, parentPath []string, namespace, name string) *SecretKeysFolder {
 	path := append(append([]string{}, parentPath...), "data")
-	key := composeKey(deps, path)
 	cols := []table.Column{{Title: " Name"}}
-	base := NewBaseFolder(deps, cols, path, key, nil)
+	base := NewBaseFolder(deps, cols, path, nil)
 	folder := &SecretKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
 	base.SetPopulate(folder.populate)
 	return folder

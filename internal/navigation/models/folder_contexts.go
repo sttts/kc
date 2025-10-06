@@ -14,9 +14,8 @@ type ContextsFolder struct {
 // NewContextsFolder constructs the contexts folder with default single-column layout.
 func NewContextsFolder(deps Deps) *ContextsFolder {
 	path := []string{"contexts"}
-	key := composeKey(deps, path)
 	cols := []table.Column{{Title: " Name"}}
-	base := NewBaseFolder(deps, cols, path, key, nil)
+	base := NewBaseFolder(deps, cols, path, nil)
 	folder := &ContextsFolder{BaseFolder: base}
 	base.SetPopulate(folder.populate)
 	return folder

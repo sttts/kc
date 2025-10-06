@@ -1,8 +1,6 @@
 package navigation
 
 import (
-	"strings"
-
 	"github.com/sttts/kc/internal/navigation/models"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -22,18 +20,15 @@ func NewContextRootFolder(deps models.Deps, basePath []string) models.Folder {
 }
 
 func NewNamespacedGroupsFolder(deps models.Deps, namespace string, basePath []string) models.Folder {
-	key := composeKey(deps, basePath)
-	return models.NewNamespacedResourcesFolder(deps, namespace, basePath, key)
+	return models.NewNamespacedResourcesFolder(deps, namespace, basePath)
 }
 
 func NewNamespacedObjectsFolder(deps models.Deps, gvr schema.GroupVersionResource, namespace string, basePath []string) models.Folder {
-	key := composeKey(deps, basePath)
-	return models.NewNamespacedObjectsFolder(deps, gvr, namespace, basePath, key)
+	return models.NewNamespacedObjectsFolder(deps, gvr, namespace, basePath)
 }
 
 func NewClusterObjectsFolder(deps models.Deps, gvr schema.GroupVersionResource, basePath []string) models.Folder {
-	key := composeKey(deps, basePath)
-	return models.NewClusterObjectsFolder(deps, gvr, basePath, key)
+	return models.NewClusterObjectsFolder(deps, gvr, basePath)
 }
 
 func NewPodContainersFolder(deps models.Deps, namespace, pod string, basePath []string) models.Folder {
@@ -50,15 +45,4 @@ func NewSecretKeysFolder(deps models.Deps, namespace, name string, basePath []st
 
 func NewContextsFolder(deps models.Deps, basePath []string) models.Folder {
 	return models.NewContextsFolder(deps)
-}
-
-func composeKey(deps models.Deps, path []string) string {
-	if len(path) == 0 {
-		return deps.CtxName
-	}
-	rel := strings.Join(path, "/")
-	if deps.CtxName == "" {
-		return rel
-	}
-	return deps.CtxName + "/" + rel
 }

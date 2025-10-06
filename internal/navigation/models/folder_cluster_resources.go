@@ -13,8 +13,8 @@ type ClusterResourcesFolder struct {
 }
 
 // NewClusterResourcesFolder creates a cluster-scoped resources folder.
-func NewClusterResourcesFolder(deps Deps, path []string, key string) *ClusterResourcesFolder {
-	base := NewBaseFolder(deps, nil, path, key, nil)
+func NewClusterResourcesFolder(deps Deps, path []string) *ClusterResourcesFolder {
+	base := NewBaseFolder(deps, nil, path, nil)
 	folder := &ClusterResourcesFolder{ResourcesFolder: NewResourcesFolder(base)}
 	base.SetPopulate(folder.populate)
 	return folder
@@ -55,8 +55,7 @@ func (f *ClusterResourcesFolder) resourceGroupItems(opts ViewOptions) ([]*Resour
 		basePath := append(append([]string{}, f.Path()...), entry.info.Resource)
 		gvr := entry.gvr
 		item := NewResourceGroupItem(f.Deps, gvr, "", id, cells, basePath, nameStyle, true, func() (Folder, error) {
-			key := composeKey(f.Deps, basePath)
-			return NewClusterObjectsFolder(f.Deps, gvr, basePath, key), nil
+			return NewClusterObjectsFolder(f.Deps, gvr, basePath), nil
 		})
 		items = append(items, item)
 	}
