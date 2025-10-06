@@ -59,7 +59,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 
 	// Asc by name
-	f1 := NewNamespacedObjectsFolder(makeDeps("name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
+	f1 := models.NewNamespacedObjectsFolder(makeDeps("name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len() >= 3 })
 	rows := f1.Lines(0, 3)
 	got := []string{}
@@ -90,7 +90,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Desc by name
-	f2 := NewNamespacedObjectsFolder(makeDeps("-name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
+	f2 := models.NewNamespacedObjectsFolder(makeDeps("-name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
 	rows = f2.Lines(0, f2.Len())
 	got = normFirstCellsNS(rows)
@@ -100,7 +100,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Asc by creation
-	f3 := NewNamespacedObjectsFolder(makeDeps("creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
+	f3 := models.NewNamespacedObjectsFolder(makeDeps("creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len() >= 3 })
 	rows = f3.Lines(0, f3.Len())
 	got = normFirstCellsNS(rows)
@@ -110,7 +110,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Desc by creation
-	f4 := NewNamespacedObjectsFolder(makeDeps("-creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
+	f4 := models.NewNamespacedObjectsFolder(makeDeps("-creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len() >= 3 })
 	rows = f4.Lines(0, f4.Len())
 	got = normFirstCellsNS(rows)

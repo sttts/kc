@@ -56,7 +56,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	gvrNS := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 
 	// Order by name ascending
-	f1 := NewClusterObjectsFolder(makeDeps("name"), gvrNS, []string{"namespaces"})
+	f1 := models.NewClusterObjectsFolder(makeDeps("name"), gvrNS, []string{"namespaces"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len() >= 3 })
 	rows := f1.Lines(0, 3)
 	got := normFirstCells(rows)
@@ -80,7 +80,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Order by -name
-	f2 := NewClusterObjectsFolder(makeDeps("-name"), gvrNS, []string{"namespaces"})
+	f2 := models.NewClusterObjectsFolder(makeDeps("-name"), gvrNS, []string{"namespaces"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
 	rows = f2.Lines(0, f2.Len())
 	got = normFirstCells(rows)
@@ -90,7 +90,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Order by creation
-	f3 := NewClusterObjectsFolder(makeDeps("creation"), gvrNS, []string{"namespaces"})
+	f3 := models.NewClusterObjectsFolder(makeDeps("creation"), gvrNS, []string{"namespaces"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len() >= 3 })
 	rows = f3.Lines(0, f3.Len())
 	got = normFirstCells(rows)
@@ -100,7 +100,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Order by -creation
-	f4 := NewClusterObjectsFolder(makeDeps("-creation"), gvrNS, []string{"namespaces"})
+	f4 := models.NewClusterObjectsFolder(makeDeps("-creation"), gvrNS, []string{"namespaces"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len() >= 3 })
 	rows = f4.Lines(0, f4.Len())
 	got = normFirstCells(rows)

@@ -72,7 +72,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
 	// 1) Root
-	root := NewRootFolder(deps)
+	root := models.NewRootFolder(deps)
 	// Wait until namespaces are visible
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return root.Len() > 0 })
 	rows := root.Lines(0, root.Len())
@@ -89,7 +89,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 
 	// 2) Enter /namespaces
-	nsFolder := NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+	nsFolder := models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len() > 0 })
 	rows = nsFolder.Lines(0, nsFolder.Len())
 	foundTestns := false
@@ -105,7 +105,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 
 	// 2b) Context root behaves like cluster root for this context
-	ctxRoot := NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
+	ctxRoot := models.NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
 	if got := strings.Join(ctxRoot.Path(), "/"); got != "contexts/"+deps.CtxName {
 		t.Fatalf("context root path: got %q", got)
 	}
@@ -132,7 +132,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 
 	// 3) Enter groups for testns
-	grp := NewNamespacedGroupsFolder(deps, "testns", []string{"namespaces", "testns"})
+	grp := models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return grp.Len() > 0 })
 	rows = grp.Lines(0, grp.Len())
 	hasCM, hasSec := false, false
@@ -153,7 +153,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 
 	// 4) Enter objects: configmaps
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
-	objs := NewNamespacedObjectsFolder(deps, gvrCM, "testns", []string{"namespaces", "testns", gvrCM.Resource})
+	objs := models.NewNamespacedObjectsFolder(deps, gvrCM, "testns", []string{"namespaces", "testns", gvrCM.Resource})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len() > 0 })
 	rows = objs.Lines(0, objs.Len())
 	foundCM1 := false
@@ -169,7 +169,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 
 	// 5) Enter cm1 keys
-	keys := NewConfigMapKeysFolder(deps, "testns", "cm1", []string{"namespaces", "testns", "configmaps", "cm1", "data"})
+	keys := models.NewConfigMapKeysFolder(deps, []string{"namespaces", "testns", "configmaps", "cm1"}, "testns", "cm1")
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len() >= 2 })
 	rows = keys.Lines(0, keys.Len())
 	hasA, hasB := false, false
@@ -190,7 +190,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 
 	// 6) Cluster-scoped objects: nodes
 	gvrNodes := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}
-	nodes := NewClusterObjectsFolder(deps, gvrNodes, []string{"nodes"})
+	nodes := models.NewClusterObjectsFolder(deps, gvrNodes, []string{"nodes"})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nodes.Len() > 0 })
 	rows = nodes.Lines(0, nodes.Len())
 	foundN1 := false
@@ -240,7 +240,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
 	// Context root
-	ctxRoot := NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
+	ctxRoot := models.NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return ctxRoot.Len() > 0 })
 	// Enter /namespaces
 	var nsFolder models.Folder
@@ -364,13 +364,13 @@ func TestStartupSelectionRestore(t *testing.T) {
 	go cl.Start(ctx)
 	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
-	root := NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
+	root := models.NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
 	nav := NewNavigator(root)
 	// Simulate app startup sequence
 	nav.SetSelectionID("namespaces")
-	nav.Push(NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}))
+	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}))
 	nav.SetSelectionID("testns")
-	nav.Push(NewNamespacedGroupsFolder(deps, "testns", []string{"namespaces", "testns"}))
+	nav.Push(models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"}))
 
 	// Back to namespaces, selection should be "testns"
 	if cur := nav.Back(); cur == nil || pathString(cur) != "namespaces" {
@@ -416,13 +416,13 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 	go cl.Start(ctx)
 	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
-	root := NewRootFolder(deps)
+	root := models.NewRootFolder(deps)
 	nav := NewNavigator(root)
 	// Simulate app startup sequence
 	nav.SetSelectionID("namespaces")
-	nav.Push(NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}))
+	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}))
 	nav.SetSelectionID("testns")
-	nav.Push(NewNamespacedGroupsFolder(deps, "testns", []string{"namespaces", "testns"}))
+	nav.Push(models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"}))
 
 	// Back to namespaces
 	if cur := nav.Back(); cur == nil || pathString(cur) != "namespaces" {
@@ -472,13 +472,13 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	go cl.Start(ctx)
 	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
-	root := NewRootFolder(deps)
+	root := models.NewRootFolder(deps)
 	nav := NewNavigator(root)
 	// Into namespaces -> testns -> groups
 	nav.SetSelectionID("namespaces")
-	nav.Push(NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}))
+	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}))
 	nav.SetSelectionID("testns")
-	nav.Push(NewNamespacedGroupsFolder(deps, "testns", []string{"namespaces", "testns"}))
+	nav.Push(models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"}))
 	// Find configmaps group and enter objects
 	var objs models.Folder
 	var groupID string

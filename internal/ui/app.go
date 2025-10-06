@@ -1779,7 +1779,7 @@ func (a *App) goToNamespace(ns string) {
 			return nil, err
 		}
 		ndeps := navmodels.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() navmodels.ViewOptions { return a.leftViewOptions() }}
-		return navui.NewContextRootFolder(ndeps, basePath), nil
+		return navmodels.NewContextRootFolder(ndeps, basePath), nil
 	}
 	depsRight.EnterContext = func(name string, basePath []string) (navmodels.Folder, error) {
 		var target *kubeconfig.Context
@@ -1798,29 +1798,29 @@ func (a *App) goToNamespace(ns string) {
 			return nil, err
 		}
 		ndeps := navmodels.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, ViewOptions: func() navmodels.ViewOptions { return a.rightViewOptions() }}
-		return navui.NewContextRootFolder(ndeps, basePath), nil
+		return navmodels.NewContextRootFolder(ndeps, basePath), nil
 	}
-	rootLeft := navui.NewRootFolder(depsLeft)
-	rootRight := navui.NewRootFolder(depsRight)
+	rootLeft := navmodels.NewRootFolder(depsLeft)
+	rootRight := navmodels.NewRootFolder(depsRight)
 	a.leftNav = navui.NewNavigator(rootLeft)
 	a.rightNav = navui.NewNavigator(rootRight)
 	if a.namespaceExists(ns) {
 		// Left panel: remember selection when entering
 		a.leftNav.SetSelectionID("namespaces")
-		leftNS := navui.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+		leftNS := navmodels.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
 		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = leftNS.Len(); return nil }))
 		a.leftNav.Push(leftNS)
 		a.leftNav.SetSelectionID(ns)
-		leftGroups := navui.NewNamespacedGroupsFolder(depsLeft, ns, []string{"namespaces", ns})
+		leftGroups := navmodels.NewNamespacedResourcesFolder(depsLeft, ns, []string{"namespaces", ns})
 		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = leftGroups.Len(); return nil }))
 		a.leftNav.Push(leftGroups)
 		// Right panel: same
 		a.rightNav.SetSelectionID("namespaces")
-		rightNS := navui.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+		rightNS := navmodels.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
 		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = rightNS.Len(); return nil }))
 		a.rightNav.Push(rightNS)
 		a.rightNav.SetSelectionID(ns)
-		rightGroups := navui.NewNamespacedGroupsFolder(depsRight, ns, []string{"namespaces", ns})
+		rightGroups := navmodels.NewNamespacedResourcesFolder(depsRight, ns, []string{"namespaces", ns})
 		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = rightGroups.Len(); return nil }))
 		a.rightNav.Push(rightGroups)
 	}
@@ -1880,7 +1880,7 @@ func (a *App) handleFolderNav(back bool, selID string, next navmodels.Folder) {
 			},
 			ViewOptions: vo,
 		}
-		return navui.NewNavigator(navui.NewRootFolder(deps))
+		return navui.NewNavigator(navmodels.NewRootFolder(deps))
 	}
 	var nav *navui.Navigator
 	var panelSet func(navmodels.Folder, bool)

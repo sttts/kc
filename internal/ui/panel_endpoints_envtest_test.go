@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
-	nav "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/navigation/models"
 	kctesting "github.com/sttts/kc/internal/testing"
 	corev1 "k8s.io/api/core/v1"
@@ -48,7 +47,7 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	go cl.Start(ctx)
 	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env"}
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpoints"}
-	folder := nav.NewNamespacedObjectsFolder(deps, gvr, "kube-system", []string{"namespaces", "kube-system", gvr.Resource})
+	folder := navmodels.NewNamespacedObjectsFolder(deps, gvr, "kube-system", []string{"namespaces", "kube-system", gvr.Resource})
 
 	// Wait until at least one row appears
 	kctesting.Eventually(t, 5_000_000_000, 50_000_000, func() bool { return folder.Len() > 0 })
