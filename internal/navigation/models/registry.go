@@ -29,3 +29,19 @@ func ChildFor(gvr schema.GroupVersionResource) (ChildConstructor, bool) {
 	childMu.RUnlock()
 	return ctor, ok
 }
+
+func init() {
+	RegisterChild(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}, func(deps Deps, ns, name string, basePath []string) Folder {
+		return NewPodContainersFolder(deps, basePath, ns, name)
+	})
+	RegisterChild(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}, func(deps Deps, ns, name string, basePath []string) Folder {
+		return NewConfigMapKeysFolder(deps, basePath, ns, name)
+	})
+	RegisterChild(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}, func(deps Deps, ns, name string, basePath []string) Folder {
+		return NewSecretKeysFolder(deps, basePath, ns, name)
+	})
+	RegisterChild(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, func(deps Deps, ns, name string, basePath []string) Folder {
+		key := composeKey(deps, basePath)
+		return NewNamespacedResourcesFolder(deps, name, basePath, key)
+	})
+}
