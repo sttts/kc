@@ -151,9 +151,9 @@ func (a *App) favSet() map[string]bool {
 	}
 	return fav
 }
-func (a *App) leftViewOptions() navui.ViewOptions {
+func (a *App) leftViewOptions() navmodels.ViewOptions {
 	show, order := a.leftPanel.ResourceViewOptions()
-	return navui.ViewOptions{
+	return navmodels.ViewOptions{
 		ShowNonEmptyOnly: show,
 		Order:            order,
 		Favorites:        a.favSet(),
@@ -162,9 +162,9 @@ func (a *App) leftViewOptions() navui.ViewOptions {
 		PeekInterval:     a.cfg.Resources.PeekInterval.Duration,
 	}
 }
-func (a *App) rightViewOptions() navui.ViewOptions {
+func (a *App) rightViewOptions() navmodels.ViewOptions {
 	show, order := a.rightPanel.ResourceViewOptions()
-	return navui.ViewOptions{
+	return navmodels.ViewOptions{
 		ShowNonEmptyOnly: show,
 		Order:            order,
 		Favorites:        a.favSet(),
@@ -1739,7 +1739,7 @@ func (a *App) goToNamespace(ns string) {
 		ns = "default"
 	}
 	// Build separate deps for left and right so each panel can have independent view options
-	depsLeft := navui.Deps{
+	depsLeft := navmodels.Deps{
 		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
 		ListContexts: func() []string {
 			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
@@ -1748,9 +1748,9 @@ func (a *App) goToNamespace(ns string) {
 			}
 			return out
 		},
-		ViewOptions: func() navui.ViewOptions { return a.leftViewOptions() },
+		ViewOptions: func() navmodels.ViewOptions { return a.leftViewOptions() },
 	}
-	depsRight := navui.Deps{
+	depsRight := navmodels.Deps{
 		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
 		ListContexts: func() []string {
 			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
@@ -1759,7 +1759,7 @@ func (a *App) goToNamespace(ns string) {
 			}
 			return out
 		},
-		ViewOptions: func() navui.ViewOptions { return a.rightViewOptions() },
+		ViewOptions: func() navmodels.ViewOptions { return a.rightViewOptions() },
 	}
 	// set EnterContext after deps to avoid forward reference
 	depsLeft.EnterContext = func(name string, basePath []string) (navmodels.Folder, error) {
@@ -1778,7 +1778,7 @@ func (a *App) goToNamespace(ns string) {
 		if err != nil {
 			return nil, err
 		}
-		ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() navui.ViewOptions { return a.leftViewOptions() }}
+		ndeps := navmodels.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() navmodels.ViewOptions { return a.leftViewOptions() }}
 		return navui.NewContextRootFolder(ndeps, basePath), nil
 	}
 	depsRight.EnterContext = func(name string, basePath []string) (navmodels.Folder, error) {
@@ -1797,7 +1797,7 @@ func (a *App) goToNamespace(ns string) {
 		if err != nil {
 			return nil, err
 		}
-		ndeps := navui.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, ViewOptions: func() navui.ViewOptions { return a.rightViewOptions() }}
+		ndeps := navmodels.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, ViewOptions: func() navmodels.ViewOptions { return a.rightViewOptions() }}
 		return navui.NewContextRootFolder(ndeps, basePath), nil
 	}
 	rootLeft := navui.NewRootFolder(depsLeft)
@@ -1864,13 +1864,13 @@ func (a *App) handleFolderNav(back bool, selID string, next navmodels.Folder) {
 	// Use navigator for current active panel
 	ensure := func() *navui.Navigator {
 		// Build deps bound to the current active panel
-		vo := func() navui.ViewOptions {
+		vo := func() navmodels.ViewOptions {
 			if a.activePanel == 0 {
 				return a.leftViewOptions()
 			}
 			return a.rightViewOptions()
 		}
-		deps := navui.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
+		deps := navmodels.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
 			ListContexts: func() []string {
 				out := make([]string, 0, len(a.kubeMgr.GetContexts()))
 				for _, c := range a.kubeMgr.GetContexts() {

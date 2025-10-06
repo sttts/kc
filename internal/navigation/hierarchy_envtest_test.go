@@ -69,7 +69,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 	go cl.Start(ctx)
 
-	deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
 	// 1) Root
 	root := NewRootFolder(deps)
@@ -237,7 +237,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 		t.Fatalf("kccluster: %v", err)
 	}
 	go cl.Start(ctx)
-	deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
 	// Context root
 	ctxRoot := NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
@@ -362,7 +362,7 @@ func TestStartupSelectionRestore(t *testing.T) {
 		t.Fatalf("kccluster: %v", err)
 	}
 	go cl.Start(ctx)
-	deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
 	root := NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
 	nav := NewNavigator(root)
@@ -414,7 +414,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 		t.Fatalf("kccluster: %v", err)
 	}
 	go cl.Start(ctx)
-	deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
 	root := NewRootFolder(deps)
 	nav := NewNavigator(root)
@@ -470,7 +470,7 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 		t.Fatalf("kccluster: %v", err)
 	}
 	go cl.Start(ctx)
-	deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
 
 	root := NewRootFolder(deps)
 	nav := NewNavigator(root)
