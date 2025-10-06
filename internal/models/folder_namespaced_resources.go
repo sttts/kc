@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"strings"
 
 	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,16 +26,16 @@ func NewNamespacedResourcesFolder(deps Deps, namespace string, path []string) *N
 }
 
 func (f *NamespacedResourcesFolder) populate(*BaseFolder) ([]table.Row, error) {
-	opts := resolveViewOptions(f.Deps)
-	items, err := f.resourceGroupItems(opts)
+	items, err := f.resourceGroupItems()
 	if err != nil {
 		return nil, err
 	}
-	rows := f.ResourcesFolder.finalize(items, opts)
+	rows := f.ResourcesFolder.finalize(items)
 	return rows, nil
 }
 
-func (f *NamespacedResourcesFolder) resourceGroupItems(opts ViewOptions) ([]*ResourceGroupItem, error) {
+func (f *NamespacedResourcesFolder) resourceGroupItems() ([]*ResourceGroupItem, error) {
+	cfg := f.Deps.Config()
 	infos, err := f.Deps.Cl.GetResourceInfos()
 	if err != nil {
 		return nil, err
@@ -50,7 +51,7 @@ func (f *NamespacedResourcesFolder) resourceGroupItems(opts ViewOptions) ([]*Res
 		gvr := schema.GroupVersionResource{Group: info.GVK.Group, Version: info.GVK.Version, Resource: info.Resource}
 		entries = append(entries, resourceEntry{info: info, gvr: gvr})
 	}
-	sortResourceEntries(entries, opts.Order, opts.Favorites)
+	sortResourceEntries(entries, strings.ToLower(string(cfg.Resources.Order)), favoritesMap(cfg.Resources.Favorites))
 	items := make([]*ResourceGroupItem, 0, len(entries))
 	nameStyle := WhiteStyle()
 	for _, entry := range entries {

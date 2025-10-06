@@ -21,8 +21,10 @@ func NewRootFolder(deps Deps) *RootFolder {
 }
 
 func (f *RootFolder) populate(*BaseFolder) ([]table.Row, error) {
+	cfg := f.Deps.Config()
+	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
+
 	rows := make([]table.Row, 0, 64)
-	opts := resolveViewOptions(f.Deps)
 	nameStyle := WhiteStyle()
 
 	if f.Deps.ListContexts != nil {
@@ -30,7 +32,7 @@ func (f *RootFolder) populate(*BaseFolder) ([]table.Row, error) {
 		item := NewContextListItem("contexts", []string{"/contexts", "", ""}, itemPath, GreenStyle(), f.Deps.ListContexts, func() (Folder, error) {
 			return NewContextsFolder(f.Deps), nil
 		})
-		if !(opts.ShowNonEmptyOnly && item.Empty()) {
+		if !(showNonEmpty && item.Empty()) {
 			item.Cells[2] = fmt.Sprintf("%d", item.Count())
 			rows = append(rows, item)
 		}
@@ -43,12 +45,12 @@ func (f *RootFolder) populate(*BaseFolder) ([]table.Row, error) {
 	})
 
 	groupItems := []*ResourceGroupItem{namespacesItem}
-	clusterItems, err := f.resourceGroupItems(opts)
+	clusterItems, err := f.ClusterResourcesFolder.resourceGroupItems()
 	if err != nil {
 		return nil, err
 	}
 	groupItems = append(groupItems, clusterItems...)
-	rows = append(rows, f.ResourcesFolder.finalize(groupItems, opts)...)
+	rows = append(rows, f.ResourcesFolder.finalize(groupItems)...)
 
 	return rows, nil
 }

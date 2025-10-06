@@ -3,10 +3,12 @@ package ui
 import (
 	"context"
 	"testing"
+	"time"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
 	kctesting "github.com/sttts/kc/internal/testing"
+	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -45,12 +47,17 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 		t.Fatalf("cluster: %v", err)
 	}
 	go cl.Start(ctx)
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env"}
+	cfg := appconfig.Default()
+	cfg.Resources.ShowNonEmptyOnly = false
+	cfg.Resources.Columns = "normal"
+	cfg.Objects.Order = "name"
+	cfg.Objects.Columns = "normal"
+	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env", Config: cfg}
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpoints"}
 	folder := models.NewNamespacedObjectsFolder(deps, gvr, "kube-system", []string{"namespaces", "kube-system", gvr.Resource})
 
 	// Wait until at least one row appears
-	kctesting.Eventually(t, 5_000_000_000, 50_000_000, func() bool { return folder.Len() > 0 })
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return folder.Len() > 0 })
 
 	// Panel should pick up server columns on SetFolder
 	p := NewPanel("")

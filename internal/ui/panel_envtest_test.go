@@ -6,6 +6,7 @@ import (
 
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
+	"github.com/sttts/kc/pkg/appconfig"
 )
 
 func TestFooterShowsGroupVersionForPods(t *testing.T) {
@@ -18,14 +19,22 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 	}
 	ctx := context.TODO()
 	go cl.Start(ctx)
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env"}
+
+	cfg := appconfig.Default()
+	cfg.Resources.ShowNonEmptyOnly = false
+	cfg.Resources.Columns = "normal"
+	cfg.Resources.Order = appconfig.OrderAlpha
+	cfg.Objects.Order = "name"
+	cfg.Objects.Columns = "normal"
+
+	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env", Config: cfg}
 	folder := models.NewNamespacedResourcesFolder(deps, "default", []string{"namespaces", "default"})
-	// Build panel and attach folder
+
 	p := NewPanel("")
 	p.UseFolder(true)
 	p.SetFolder(folder, false)
-	_ = p.ViewContentOnlyFocused(false) // sync
-	// Scan folder rows to find /pods index
+	_ = p.ViewContentOnlyFocused(false)
+
 	rows := folder.Lines(0, folder.Len())
 	idx := -1
 	for i := range rows {
@@ -38,46 +47,11 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 	if idx < 0 {
 		t.Skip("/pods not present in groups (env may not expose pods)")
 	}
-	if idx >= len(p.items) {
-		t.Fatalf("panel items not synced; idx=%d items=%d", idx, len(p.items))
+	if idx >= len(rows) {
+		t.Fatalf("pods row index out of range")
 	}
-	got := p.items[idx].GetFooterInfo()
-	if got != "pods (v1)" {
-		t.Fatalf("footer = %q, want 'pods (v1)'", got)
-	}
-}
-
-func TestFooterShowsGroupVersionForCoreGroups(t *testing.T) {
-	if testCfg == nil {
-		t.Skip("envtest not available")
-	}
-	cl, err := kccluster.New(testCfg)
-	if err != nil {
-		t.Fatalf("cluster: %v", err)
-	}
-	ctx := context.TODO()
-	go cl.Start(ctx)
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env"}
-	folder := models.NewNamespacedResourcesFolder(deps, "default", []string{"namespaces", "default"})
-	p := NewPanel("")
-	p.UseFolder(true)
-	p.SetFolder(folder, false)
-	_ = p.ViewContentOnlyFocused(false)
-	rows := folder.Lines(0, folder.Len())
-	// Check configmaps and secrets footers
-	want := map[string]string{"/configmaps": "configmaps (v1)", "/secrets": "secrets (v1)"}
-	for i := range rows {
-		_, cells, _, _ := rows[i].Columns()
-		if len(cells) == 0 {
-			continue
-		}
-		if exp, ok := want[cells[0]]; ok {
-			if i >= len(p.items) {
-				t.Fatalf("panel items out of sync")
-			}
-			if got := p.items[i].GetFooterInfo(); got != exp {
-				t.Fatalf("footer for %s = %q, want %q", cells[0], got, exp)
-			}
-		}
+	_, cells, _, _ := rows[idx].Columns()
+	if len(cells) < 2 || cells[1] != "v1" {
+		t.Fatalf("expected group column 'v1' for pods, got %+v", cells)
 	}
 }

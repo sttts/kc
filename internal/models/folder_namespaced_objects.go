@@ -20,5 +20,5 @@ func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, name
 }
 
 func (f *NamespacedObjectsFolder) populate(*BaseFolder) ([]table.Row, error) {
-	return f.ObjectsFolder.populateRows(resolveViewOptions(f.Deps))
+	return f.ObjectsFolder.populateRows()
 }

@@ -43,19 +43,28 @@ func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, b
 	return o.gvr, o.namespace, true
 }
 
-func (o *ObjectsFolder) populateRows(opts ViewOptions) ([]table.Row, error) {
+func (o *ObjectsFolder) populateRows() ([]table.Row, error) {
+	cfg := o.Deps.Config()
+	columnsMode := strings.ToLower(cfg.Objects.Columns)
+	if columnsMode != "wide" {
+		columnsMode = "normal"
+	}
+	order := cfg.Objects.Order
+	if order == "" {
+		order = "name"
+	}
 	if rl, err := o.Deps.Cl.ListRowsByGVR(o.Deps.Ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
-		return o.rowsFromRowList(rl, opts), nil
+		return o.rowsFromRowList(rl, columnsMode, order), nil
 	}
 	list, err := o.Deps.Cl.ListByGVR(o.Deps.Ctx, o.gvr, o.namespace)
 	if err != nil {
 		return nil, err
 	}
-	return o.rowsFromList(list, opts), nil
+	return o.rowsFromList(list, order), nil
 }
 
-func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, opts ViewOptions) []table.Row {
-	vis := visibleColumns(rl.Columns, opts.Columns)
+func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, order string) []table.Row {
+	vis := visibleColumns(rl.Columns, columnsMode)
 	cols := make([]table.Column, len(vis)+1)
 	for i := range vis {
 		c := rl.Columns[vis[i]]
@@ -64,7 +73,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, opts ViewOptions
 	cols[len(cols)-1] = table.Column{Title: "Age"}
 	o.SetColumns(cols)
 
-	idxs := orderRowIndices(rl.Items, opts.ObjectsOrder)
+	idxs := orderRowIndices(rl.Items, order)
 	rows := make([]table.Row, 0, len(idxs))
 	nameStyle := WhiteStyle()
 	gvStr := o.gvr.GroupVersion().String()
@@ -98,7 +107,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, opts ViewOptions
 	return rows
 }
 
-func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, opts ViewOptions) []table.Row {
+func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order string) []table.Row {
 	names := make([]string, 0, len(list.Items))
 	for i := range list.Items {
 		names = append(names, list.Items[i].GetName())
@@ -202,21 +211,35 @@ func buildCells(cells []interface{}, vis []int, hasChild bool) []string {
 	return out
 }
 
+// rowName extracts the name from a row item, falling back to metadata/name when missing.
 func rowName(rr *tablecache.Row) string {
+	if rr == nil {
+		return ""
+	}
 	if rr.Name != "" {
 		return rr.Name
 	}
-	if len(rr.Cells) > 0 {
+	if rr.Cells != nil && len(rr.Cells) > 0 {
 		if s, ok := rr.Cells[0].(string); ok {
 			return strings.TrimPrefix(s, "/")
 		}
 	}
-	return rr.ObjectMeta.Name
+	return ""
 }
 
 func objectDetails(namespace, name, kind, gv string) string {
 	if namespace != "" {
-		return fmt.Sprintf("%s (%s %s)", types.NamespacedName{Namespace: namespace, Name: name}, kind, gv)
+		return fmt.Sprintf("%s/%s (%s)", namespace, name, gv)
 	}
-	return fmt.Sprintf("%s (%s %s)", name, kind, gv)
+	return fmt.Sprintf("%s (%s)", name, gv)
+}
+
+func objectViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name string) ViewContentFunc {
+	return func() (string, string, string, string, string, error) {
+		obj, err := deps.Cl.GetObject(deps.Ctx, gvr, namespace, name)
+		if err != nil {
+			return "", "", "", "", "", err
+		}
+		return renderObjectYAML(gvr, namespace, name, obj)
+	}
 }

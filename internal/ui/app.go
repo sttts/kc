@@ -82,6 +82,8 @@ type App struct {
 	// Logger that emits toasts on errors with rate limiting
 	toastLogger *ToastLogger
 	pendingCmds []tea.Cmd
+	leftConfig  *appconfig.Config
+	rightConfig *appconfig.Config
 }
 
 // Invariant: a.cfg is always non-nil. NewApp initializes it with defaults and
@@ -118,6 +120,8 @@ func (a *App) Init() tea.Cmd {
 		cfg = appconfig.Default()
 	}
 	a.cfg = cfg
+	a.leftConfig = cloneConfig(cfg)
+	a.rightConfig = cloneConfig(cfg)
 	return tea.Batch(
 		a.leftPanel.Init(),
 		a.rightPanel.Init(),
@@ -139,39 +143,35 @@ func (a *App) enqueueCmd(cmd tea.Cmd) {
 	a.pendingCmds = append(a.pendingCmds, cmd)
 }
 
-// viewOptions returns a snapshot of current resource view options for folders.
-func (a *App) favSet() map[string]bool {
-	fav := map[string]bool{}
-	if a.cfg != nil {
-		for _, r := range a.cfg.Resources.Favorites {
-			if r != "" {
-				fav[strings.ToLower(r)] = true
-			}
+func cloneConfig(cfg *appconfig.Config) *appconfig.Config {
+	if cfg == nil {
+		return appconfig.Default()
+	}
+	clone := *cfg
+	clone.Resources.Favorites = append([]string(nil), cfg.Resources.Favorites...)
+	return &clone
+}
+
+func (a *App) ensurePanelConfig(panel *Panel) *appconfig.Config {
+	if panel == a.leftPanel {
+		if a.leftConfig == nil {
+			a.leftConfig = cloneConfig(a.cfg)
 		}
+		return a.leftConfig
 	}
-	return fav
+	if a.rightConfig == nil {
+		a.rightConfig = cloneConfig(a.cfg)
+	}
+	return a.rightConfig
 }
-func (a *App) leftViewOptions() models.ViewOptions {
-	show, order := a.leftPanel.ResourceViewOptions()
-	return models.ViewOptions{
-		ShowNonEmptyOnly: show,
-		Order:            order,
-		Favorites:        a.favSet(),
-		Columns:          a.leftPanel.ColumnsMode(),
-		ObjectsOrder:     a.leftPanel.ObjectOrder(),
-		PeekInterval:     a.cfg.Resources.PeekInterval.Duration,
-	}
-}
-func (a *App) rightViewOptions() models.ViewOptions {
-	show, order := a.rightPanel.ResourceViewOptions()
-	return models.ViewOptions{
-		ShowNonEmptyOnly: show,
-		Order:            order,
-		Favorites:        a.favSet(),
-		Columns:          a.rightPanel.ColumnsMode(),
-		ObjectsOrder:     a.rightPanel.ObjectOrder(),
-		PeekInterval:     a.cfg.Resources.PeekInterval.Duration,
-	}
+
+func (a *App) syncPanelConfig(panel *Panel) {
+	cfg := a.ensurePanelConfig(panel)
+	cfg.Resources.ShowNonEmptyOnly = panel.resShowNonEmpty
+	cfg.Resources.Order = appconfig.ResourcesViewOrder(panel.resOrder)
+	cfg.Resources.Columns = panel.columnsMode
+	cfg.Objects.Order = panel.objOrder
+	cfg.Objects.Columns = panel.columnsMode
 }
 
 // Update handles messages and updates the application state
@@ -243,8 +243,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Apply to active panel only; do not persist
 				if a.activePanel == 0 {
 					a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+					a.syncPanelConfig(a.leftPanel)
 				} else {
 					a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+					a.syncPanelConfig(a.rightPanel)
 				}
 				// Refresh only the active panel's folder
 				if a.activePanel == 0 && a.leftNav != nil {
@@ -294,6 +296,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.leftPanel.SetTableMode(m.TableMode)
 				a.leftPanel.SetColumnsMode(m.Columns)
 				a.leftPanel.SetObjectOrder(m.ObjectsOrder)
+				a.syncPanelConfig(a.leftPanel)
 				if a.leftNav != nil {
 					if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
 						rf.Refresh()
@@ -304,6 +307,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.rightPanel.SetTableMode(m.TableMode)
 				a.rightPanel.SetColumnsMode(m.Columns)
 				a.rightPanel.SetObjectOrder(m.ObjectsOrder)
+				a.syncPanelConfig(a.rightPanel)
 				if a.rightNav != nil {
 					if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
 						rf.Refresh()
@@ -503,8 +507,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.activePanel == 0 {
 					if a.leftPanel.ColumnsMode() == "wide" {
 						a.leftPanel.SetColumnsMode("normal")
+						a.syncPanelConfig(a.leftPanel)
 					} else {
 						a.leftPanel.SetColumnsMode("wide")
+						a.syncPanelConfig(a.leftPanel)
 					}
 					if a.leftNav != nil {
 						if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
@@ -515,8 +521,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					if a.rightPanel.ColumnsMode() == "wide" {
 						a.rightPanel.SetColumnsMode("normal")
+						a.syncPanelConfig(a.rightPanel)
 					} else {
 						a.rightPanel.SetColumnsMode("wide")
+						a.syncPanelConfig(a.rightPanel)
 					}
 					if a.rightNav != nil {
 						if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
@@ -972,7 +980,7 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
 }
 
 // refreshFoldersAfterViewChange reapplies the current folders to panels so that
-// folder population re-reads the latest ViewOptions.
+// folder population re-reads the latest panel config.
 func (a *App) refreshFoldersAfterViewChange() {
 	if a.leftNav != nil {
 		cur := a.leftNav.Current()
@@ -1717,6 +1725,8 @@ func (a *App) initData() error {
 		a.rightPanel.SetColumnsMode(a.cfg.Objects.Columns)
 		a.leftPanel.SetObjectOrder(a.cfg.Objects.Order)
 		a.rightPanel.SetObjectOrder(a.cfg.Objects.Order)
+		a.syncPanelConfig(a.leftPanel)
+		a.syncPanelConfig(a.rightPanel)
 	}
 	// Preview: Use folder-backed rendering starting at root (not contexts listing)
 	{
@@ -1738,7 +1748,9 @@ func (a *App) goToNamespace(ns string) {
 	if ns == "" {
 		ns = "default"
 	}
-	// Build separate deps for left and right so each panel can have independent view options
+	// Build separate deps for left and right so each panel can have independent options
+	a.syncPanelConfig(a.leftPanel)
+	a.syncPanelConfig(a.rightPanel)
 	depsLeft := models.Deps{
 		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
 		ListContexts: func() []string {
@@ -1748,7 +1760,7 @@ func (a *App) goToNamespace(ns string) {
 			}
 			return out
 		},
-		ViewOptions: func() models.ViewOptions { return a.leftViewOptions() },
+		Config: a.leftConfig,
 	}
 	depsRight := models.Deps{
 		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
@@ -1759,7 +1771,7 @@ func (a *App) goToNamespace(ns string) {
 			}
 			return out
 		},
-		ViewOptions: func() models.ViewOptions { return a.rightViewOptions() },
+		Config: a.rightConfig,
 	}
 	// set EnterContext after deps to avoid forward reference
 	depsLeft.EnterContext = func(name string, basePath []string) (models.Folder, error) {
@@ -1778,7 +1790,7 @@ func (a *App) goToNamespace(ns string) {
 		if err != nil {
 			return nil, err
 		}
-		ndeps := models.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, ViewOptions: func() models.ViewOptions { return a.leftViewOptions() }}
+		ndeps := models.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, Config: a.leftConfig}
 		return models.NewContextRootFolder(ndeps, basePath), nil
 	}
 	depsRight.EnterContext = func(name string, basePath []string) (models.Folder, error) {
@@ -1797,7 +1809,7 @@ func (a *App) goToNamespace(ns string) {
 		if err != nil {
 			return nil, err
 		}
-		ndeps := models.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, ViewOptions: func() models.ViewOptions { return a.rightViewOptions() }}
+		ndeps := models.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, Config: a.rightConfig}
 		return models.NewContextRootFolder(ndeps, basePath), nil
 	}
 	rootLeft := models.NewRootFolder(depsLeft)
@@ -1861,24 +1873,31 @@ func (a *App) currentNav() *navui.Navigator {
 }
 
 func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
-	// Use navigator for current active panel
-	ensure := func() *navui.Navigator {
-		// Build deps bound to the current active panel
-		vo := func() models.ViewOptions {
-			if a.activePanel == 0 {
-				return a.leftViewOptions()
-			}
-			return a.rightViewOptions()
+	if a.activePanel == 0 {
+		a.syncPanelConfig(a.leftPanel)
+	} else {
+		a.syncPanelConfig(a.rightPanel)
+	}
+	listContexts := func() []string {
+		out := make([]string, 0, len(a.kubeMgr.GetContexts()))
+		for _, c := range a.kubeMgr.GetContexts() {
+			out = append(out, c.Name)
 		}
-		deps := models.Deps{Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
-			ListContexts: func() []string {
-				out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-				for _, c := range a.kubeMgr.GetContexts() {
-					out = append(out, c.Name)
-				}
-				return out
-			},
-			ViewOptions: vo,
+		return out
+	}
+	ensure := func() *navui.Navigator {
+		panel := a.leftPanel
+		cfg := a.ensurePanelConfig(panel)
+		if a.activePanel == 1 {
+			panel = a.rightPanel
+			cfg = a.ensurePanelConfig(panel)
+		}
+		deps := models.Deps{
+			Cl:           a.cl,
+			Ctx:          a.ctx,
+			CtxName:      a.currentCtx.Name,
+			ListContexts: listContexts,
+			Config:       cfg,
 		}
 		return navui.NewNavigator(models.NewRootFolder(deps))
 	}

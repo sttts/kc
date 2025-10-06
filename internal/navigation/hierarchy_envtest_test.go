@@ -9,6 +9,7 @@ import (
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
 	kctesting "github.com/sttts/kc/internal/testing"
+	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -26,6 +27,20 @@ func pathString(f models.Folder) string {
 		return "/"
 	}
 	return strings.Join(path, "/")
+}
+
+func hierarchyConfig() *appconfig.Config {
+	cfg := appconfig.Default()
+	cfg.Resources.ShowNonEmptyOnly = false
+	cfg.Resources.Order = appconfig.OrderAlpha
+	cfg.Resources.Columns = "normal"
+	cfg.Objects.Order = "name"
+	cfg.Objects.Columns = "normal"
+	return cfg
+}
+
+func hierarchyDeps(cl *kccluster.Cluster, ctx context.Context, name string) models.Deps {
+	return models.Deps{Cl: cl, Ctx: ctx, CtxName: name, Config: hierarchyConfig()}
 }
 
 func TestHierarchyEnvtest(t *testing.T) {
@@ -69,7 +84,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 	go cl.Start(ctx)
 
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	// 1) Root
 	root := models.NewRootFolder(deps)
@@ -105,7 +120,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 
 	// 2b) Context root behaves like cluster root for this context
-	ctxRoot := models.NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
+	ctxRoot := models.NewContextRootFolder(hierarchyDeps(cl, ctx, deps.CtxName), []string{"contexts", deps.CtxName})
 	if got := strings.Join(ctxRoot.Path(), "/"); got != "contexts/"+deps.CtxName {
 		t.Fatalf("context root path: got %q", got)
 	}
@@ -237,7 +252,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 		t.Fatalf("kccluster: %v", err)
 	}
 	go cl.Start(ctx)
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	// Context root
 	ctxRoot := models.NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
@@ -362,7 +377,7 @@ func TestStartupSelectionRestore(t *testing.T) {
 		t.Fatalf("kccluster: %v", err)
 	}
 	go cl.Start(ctx)
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	root := models.NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
 	nav := NewNavigator(root)
@@ -414,7 +429,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 		t.Fatalf("kccluster: %v", err)
 	}
 	go cl.Start(ctx)
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	root := models.NewRootFolder(deps)
 	nav := NewNavigator(root)
@@ -470,7 +485,7 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 		t.Fatalf("kccluster: %v", err)
 	}
 	go cl.Start(ctx)
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	root := models.NewRootFolder(deps)
 	nav := NewNavigator(root)

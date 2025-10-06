@@ -180,7 +180,7 @@ BaseFolder
 └─ SecretKeysFolder            // virtual folder for Secret data keys
 ```
 
-- `ResourcesFolder` wires the `Countable` interface, async informer startup, throttled peeks using `resources.peekInterval`, and ViewOptions filtering. Children only describe which `ResourceGroupItem`s to build.
+- `ResourcesFolder` wires the `Countable` interface, async informer startup, and throttled peeks using `resources.peekInterval`, reading behaviour directly from the injected app config (`Deps.Config`). Children only describe which `ResourceGroupItem`s to build.
 - `ObjectsFolder` centralises server-side Table usage, fallback `GetByGVR` listing, and `ObjectListMeta` bookkeeping so viewers consistently know the active GVR + namespace.
 - `RootFolder` and `ContextRootFolder` embed `ClusterResourcesFolder`; their only differences are breadcrumb titles and keys.
 - Synthetic folders (containers / config-map keys / secret keys) embed `BaseFolder` directly because they only need lazy population.

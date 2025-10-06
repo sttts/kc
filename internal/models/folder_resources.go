@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
@@ -21,9 +22,17 @@ func NewResourcesFolder(base *BaseFolder) *ResourcesFolder {
 	return &ResourcesFolder{BaseFolder: base}
 }
 
-func (f *ResourcesFolder) finalize(items []*ResourceGroupItem, opts ViewOptions) []table.Row {
+const defaultPeekInterval = 30 * time.Second
+
+func (f *ResourcesFolder) finalize(items []*ResourceGroupItem) []table.Row {
 	if len(items) == 0 {
 		return nil
+	}
+	cfg := f.Deps.Config()
+	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
+	peekInterval := cfg.Resources.PeekInterval.Duration
+	if peekInterval <= 0 {
+		peekInterval = defaultPeekInterval
 	}
 	rows := make([]table.Row, 0, len(items))
 	for _, item := range items {
@@ -36,7 +45,7 @@ func (f *ResourcesFolder) finalize(items []*ResourceGroupItem, opts ViewOptions)
 		item.ComputeCountAsync(func() {
 			f.BaseFolder.markDirty()
 		})
-		if opts.ShowNonEmptyOnly && item.EmptyWithin(opts.PeekInterval) {
+		if showNonEmpty && item.EmptyWithin(peekInterval) {
 			continue
 		}
 		if count, ok := item.TryCount(); ok {
@@ -109,6 +118,20 @@ func sortResourceEntries(entries []resourceEntry, order string, fav map[string]b
 	default:
 		sort.Slice(entries, func(i, j int) bool { return entries[i].info.Resource < entries[j].info.Resource })
 	}
+}
+
+func favoritesMap(list []string) map[string]bool {
+	if len(list) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(list))
+	for _, item := range list {
+		if item == "" {
+			continue
+		}
+		set[strings.ToLower(item)] = true
+	}
+	return set
 }
 
 type resourceEntry struct {

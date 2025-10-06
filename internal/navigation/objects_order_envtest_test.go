@@ -10,6 +10,7 @@ import (
 	"github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
 	kctesting "github.com/sttts/kc/internal/testing"
+	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -51,7 +52,13 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 
 	// Deps with objects order toggles
 	makeDeps := func(order string) models.Deps {
-		return models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest", ViewOptions: func() models.ViewOptions { return models.ViewOptions{Columns: "normal", ObjectsOrder: order} }}
+		cfg := appconfig.Default()
+		cfg.Resources.ShowNonEmptyOnly = false
+		cfg.Resources.Columns = "normal"
+		cfg.Resources.Order = appconfig.OrderAlpha
+		cfg.Objects.Order = order
+		cfg.Objects.Columns = "normal"
+		return models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest", Config: cfg}
 	}
 	gvrNS := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 

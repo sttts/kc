@@ -9,6 +9,7 @@ import (
 	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
 	kctesting "github.com/sttts/kc/internal/testing"
+	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -46,7 +47,14 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	}
 	go cl.Start(ctx)
 
-	deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest"}
+	panelCfg := appconfig.Default()
+	panelCfg.Resources.ShowNonEmptyOnly = false
+	panelCfg.Resources.Order = appconfig.OrderAlpha
+	panelCfg.Resources.Columns = "normal"
+	panelCfg.Objects.Order = "name"
+	panelCfg.Objects.Columns = "normal"
+
+	deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest", Config: panelCfg}
 
 	root := NewRootFolder(deps)
 	waitFolder(t, root)

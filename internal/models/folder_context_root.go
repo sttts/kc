@@ -20,9 +20,7 @@ func NewContextRootFolder(deps Deps, path []string) *ContextRootFolder {
 }
 
 func (f *ContextRootFolder) populate(*BaseFolder) ([]table.Row, error) {
-	opts := resolveViewOptions(f.Deps)
 	nameStyle := WhiteStyle()
-	rows := make([]table.Row, 0, 64)
 
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 	nsPath := append(append([]string{}, f.Path()...), "namespaces")
@@ -31,12 +29,12 @@ func (f *ContextRootFolder) populate(*BaseFolder) ([]table.Row, error) {
 	})
 
 	groupItems := []*ResourceGroupItem{namespacesItem}
-	clusterItems, err := f.resourceGroupItems(opts)
+	clusterItems, err := f.ClusterResourcesFolder.resourceGroupItems()
 	if err != nil {
 		return nil, err
 	}
 	groupItems = append(groupItems, clusterItems...)
-	rows = append(rows, f.ResourcesFolder.finalize(groupItems, opts)...)
 
+	rows := f.ResourcesFolder.finalize(groupItems)
 	return rows, nil
 }
