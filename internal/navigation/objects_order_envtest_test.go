@@ -127,7 +127,10 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 func normFirstCells(rows []table.Row) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		_, cells, _, _ := r.Columns()
+		id, cells, _, _ := r.Columns()
+		if id == "__back__" {
+			continue
+		}
 		if len(cells) > 0 {
 			v := cells[0]
 			if strings.HasPrefix(v, "/") {
