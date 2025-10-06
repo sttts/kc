@@ -35,12 +35,12 @@ func (c *ContextItem) ViewContent() (string, string, string, string, string, err
 // ContextListItem lists contexts and is enterable only.
 type ContextListItem struct {
 	*RowItem
-	enter    func() (Folder, error)
-	contexts func() []string
+	enter func() (Folder, error)
+	count int
 }
 
-func NewContextListItem(id string, cells []string, path []string, style *lipgloss.Style, contextsFn func() []string, enter func() (Folder, error)) *ContextListItem {
-	return &ContextListItem{RowItem: NewRowItem(id, cells, path, style), enter: enter, contexts: contextsFn}
+func NewContextListItem(id string, cells []string, path []string, style *lipgloss.Style, count int, enter func() (Folder, error)) *ContextListItem {
+	return &ContextListItem{RowItem: NewRowItem(id, cells, path, style), enter: enter, count: count}
 }
 
 func (c *ContextListItem) Enter() (Folder, error) {
@@ -51,15 +51,9 @@ func (c *ContextListItem) Enter() (Folder, error) {
 }
 
 func (c *ContextListItem) Count() int {
-	if c.contexts == nil {
-		return 0
-	}
-	return len(c.contexts())
+	return c.count
 }
 
 func (c *ContextListItem) Empty() bool {
-	if c.contexts == nil {
-		return true
-	}
-	return len(c.contexts()) == 0
+	return c.count == 0
 }

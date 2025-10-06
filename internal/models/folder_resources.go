@@ -26,7 +26,7 @@ func (f *ResourcesFolder) finalize(items []*ResourceGroupItem) []table.Row {
 	if len(items) == 0 {
 		return nil
 	}
-	cfg := f.Deps.Config()
+	cfg := f.Deps.AppConfig
 	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
 	peekInterval := cfg.Resources.PeekInterval.Duration
 	rows := make([]table.Row, 0, len(items))

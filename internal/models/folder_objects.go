@@ -12,7 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	utilduration "k8s.io/apimachinery/pkg/util/duration"
 )
 
@@ -45,7 +44,7 @@ func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, b
 }
 
 func (o *ObjectsFolder) populateRows() ([]table.Row, error) {
-	cfg := o.Deps.Config()
+	cfg := o.Deps.AppConfig
 	columnsMode := cfg.Objects.Columns
 	order := cfg.Objects.Order
 	if rl, err := o.Deps.Cl.ListRowsByGVR(o.Deps.Ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
@@ -227,14 +226,4 @@ func objectDetails(namespace, name, kind, gv string) string {
 		return fmt.Sprintf("%s/%s (%s)", namespace, name, gv)
 	}
 	return fmt.Sprintf("%s (%s)", name, gv)
-}
-
-func objectViewContent(deps Deps, gvr schema.GroupVersionResource, namespace, name string) ViewContentFunc {
-	return func() (string, string, string, string, string, error) {
-		obj, err := deps.Cl.GetObject(deps.Ctx, gvr, namespace, name)
-		if err != nil {
-			return "", "", "", "", "", err
-		}
-		return renderObjectYAML(gvr, namespace, name, obj)
-	}
 }

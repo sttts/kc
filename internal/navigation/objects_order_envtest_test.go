@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
@@ -58,7 +59,13 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 		cfg.Resources.Order = appconfig.OrderAlpha
 		cfg.Objects.Order = order
 		cfg.Objects.Columns = "normal"
-		return models.Deps{Cl: cl, Ctx: ctx, CtxName: "envtest", Config: cfg}
+		return models.Deps{
+			Cl:         cl,
+			Ctx:        ctx,
+			CtxName:    "envtest",
+			KubeConfig: clientcmdapi.Config{CurrentContext: "envtest", Contexts: map[string]*clientcmdapi.Context{"envtest": &clientcmdapi.Context{}}},
+			AppConfig:  cfg,
+		}
 	}
 	gvrNS := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 

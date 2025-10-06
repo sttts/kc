@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
@@ -54,9 +55,15 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	panelCfg.Objects.Order = "name"
 	panelCfg.Objects.Columns = "normal"
 
-	deps := Deps{Cl: cl, Ctx: ctx, CtxName: "envtest", Config: panelCfg}
+	deps := Deps{
+		Cl:         cl,
+		Ctx:        ctx,
+		CtxName:    "envtest",
+		KubeConfig: clientcmdapi.Config{CurrentContext: "envtest", Contexts: map[string]*clientcmdapi.Context{"envtest": &clientcmdapi.Context{}}},
+		AppConfig:  panelCfg,
+	}
 
-	root := NewRootFolder(deps)
+	root := NewRootFolder(deps, nil)
 	waitFolder(t, root)
 	assertRows(t, "root", root, map[string][]string{
 		"namespaces": {"/namespaces", "v1"},

@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -52,7 +53,13 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	cfg.Resources.Columns = "normal"
 	cfg.Objects.Order = "name"
 	cfg.Objects.Columns = "normal"
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env", Config: cfg}
+	deps := models.Deps{
+		Cl:         cl,
+		Ctx:        ctx,
+		CtxName:    "env",
+		KubeConfig: clientcmdapi.Config{CurrentContext: "env", Contexts: map[string]*clientcmdapi.Context{"env": &clientcmdapi.Context{}}},
+		AppConfig:  cfg,
+	}
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "endpoints"}
 	folder := models.NewNamespacedObjectsFolder(deps, gvr, "kube-system", []string{"namespaces", "kube-system", gvr.Resource})
 

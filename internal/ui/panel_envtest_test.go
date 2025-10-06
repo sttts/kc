@@ -7,6 +7,7 @@ import (
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/pkg/appconfig"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 func TestFooterShowsGroupVersionForPods(t *testing.T) {
@@ -27,7 +28,13 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 	cfg.Objects.Order = "name"
 	cfg.Objects.Columns = "normal"
 
-	deps := models.Deps{Cl: cl, Ctx: ctx, CtxName: "env", Config: cfg}
+	deps := models.Deps{
+		Cl:         cl,
+		Ctx:        ctx,
+		CtxName:    "env",
+		KubeConfig: clientcmdapi.Config{CurrentContext: "env", Contexts: map[string]*clientcmdapi.Context{"env": &clientcmdapi.Context{}}},
+		AppConfig:  cfg,
+	}
 	folder := models.NewNamespacedResourcesFolder(deps, "default", []string{"namespaces", "default"})
 
 	p := NewPanel("")

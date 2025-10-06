@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
@@ -40,7 +41,17 @@ func hierarchyConfig() *appconfig.Config {
 }
 
 func hierarchyDeps(cl *kccluster.Cluster, ctx context.Context, name string) models.Deps {
-	return models.Deps{Cl: cl, Ctx: ctx, CtxName: name, Config: hierarchyConfig()}
+	contexts := map[string]*clientcmdapi.Context{}
+	if name != "" {
+		contexts[name] = &clientcmdapi.Context{}
+	}
+	return models.Deps{
+		Cl:         cl,
+		Ctx:        ctx,
+		CtxName:    name,
+		KubeConfig: clientcmdapi.Config{CurrentContext: name, Contexts: contexts},
+		AppConfig:  hierarchyConfig(),
+	}
 }
 
 func TestHierarchyEnvtest(t *testing.T) {
@@ -87,7 +98,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
 	// 1) Root
-	root := models.NewRootFolder(deps)
+	root := models.NewRootFolder(deps, nil)
 	// Wait until namespaces are visible
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return root.Len() > 0 })
 	rows := root.Lines(0, root.Len())
@@ -431,7 +442,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 	go cl.Start(ctx)
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
-	root := models.NewRootFolder(deps)
+	root := models.NewRootFolder(deps, nil)
 	nav := NewNavigator(root)
 	// Simulate app startup sequence
 	nav.SetSelectionID("namespaces")
@@ -487,7 +498,7 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	go cl.Start(ctx)
 	deps := hierarchyDeps(cl, ctx, "envtest")
 
-	root := models.NewRootFolder(deps)
+	root := models.NewRootFolder(deps, nil)
 	nav := NewNavigator(root)
 	// Into namespaces -> testns -> groups
 	nav.SetSelectionID("namespaces")

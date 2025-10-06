@@ -30,7 +30,7 @@ func (f *ClusterResourcesFolder) populate(*BaseFolder) ([]table.Row, error) {
 }
 
 func (f *ClusterResourcesFolder) resourceGroupItems() ([]*ResourceGroupItem, error) {
-	cfg := f.Deps.Config()
+	cfg := f.Deps.AppConfig
 	infos, err := f.Deps.Cl.GetResourceInfos()
 	if err != nil {
 		return nil, err

@@ -224,12 +224,12 @@ Notes:
   - `Cl *internal/cluster.Cluster` (controller‑runtime client + cache + RESTMapper)
   - `Ctx context.Context`
   - `CtxName string` (for keys/titles)
-  - `ListContexts func() []string` (optional; used for contexts listing)
-  - `EnterContext func(name string, basePath []string) (Folder, error)` (optional; builds a context‑scoped root)
+  - `KubeConfig clientcmdapi.Config` (contexts map for listings; `CurrentContext` marks the active entry)
+  - `AppConfig *appconfig.Config` (validated application settings)
 - Constructors (UI‑agnostic) live in `internal/navigation/folders/` (same Go package) and carry base path segments:
-  - `NewRootFolder(deps)`
+  - `NewRootFolder(deps, enterContext func(name string, basePath []string) (Folder, error))`
   - `NewContextRootFolder(deps, basePath []string)`
-  - `NewContextsFolder(deps, basePath []string)`
+  - `NewContextsFolder(deps, enterContext func(name string, basePath []string) (Folder, error))`
   - `NewNamespacedResourcesFolder(deps, ns, basePath []string)`
   - `NewNamespacedObjectsFolder(deps, gvr, ns, basePath []string)`
   - `NewClusterObjectsFolder(deps, gvr, basePath []string)`

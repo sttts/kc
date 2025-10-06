@@ -95,15 +95,13 @@ func (r *ResourceGroupItem) Count() int {
 }
 
 func (r *ResourceGroupItem) Empty() bool {
-	return r.EmptyWithin(defaultPeekInterval)
+	cfg := r.deps.AppConfig
+	return r.EmptyWithin(cfg.Resources.PeekInterval.Duration)
 }
 
 func (r *ResourceGroupItem) EmptyWithin(interval time.Duration) bool {
 	if !r.watchable {
 		return true
-	}
-	if interval <= 0 {
-		interval = defaultPeekInterval
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()

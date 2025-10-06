@@ -23,6 +23,7 @@ import (
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
@@ -172,6 +173,61 @@ func (a *App) syncPanelConfig(panel *Panel) {
 	cfg.Resources.Columns = panel.columnsMode
 	cfg.Objects.Order = panel.objOrder
 	cfg.Objects.Columns = panel.columnsMode
+}
+
+func (a *App) aggregatedKubeConfig(current string) clientcmdapi.Config {
+	contexts := make(map[string]*clientcmdapi.Context)
+	if a.kubeMgr != nil {
+		for _, ctx := range a.kubeMgr.GetContexts() {
+			if ctx == nil {
+				continue
+			}
+			contexts[ctx.Name] = &clientcmdapi.Context{
+				Cluster:   ctx.Cluster,
+				AuthInfo:  ctx.User,
+				Namespace: ctx.Namespace,
+			}
+		}
+	}
+	return clientcmdapi.Config{
+		CurrentContext: current,
+		Contexts:       contexts,
+	}
+}
+
+func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, current string) models.Deps {
+	if cfg == nil {
+		cfg = a.cfg
+	}
+	return models.Deps{
+		Cl:         cl,
+		Ctx:        a.ctx,
+		CtxName:    current,
+		KubeConfig: a.aggregatedKubeConfig(current),
+		AppConfig:  cfg,
+	}
+}
+
+func (a *App) makeEnterContextFunc(cfg *appconfig.Config) func(string, []string) (models.Folder, error) {
+	return func(name string, basePath []string) (models.Folder, error) {
+		if a.kubeMgr == nil {
+			return nil, fmt.Errorf("no kubeconfig manager available")
+		}
+		target := a.kubeMgr.GetContextByName(name)
+		if target == nil {
+			return nil, fmt.Errorf("context %q not found", name)
+		}
+		if target.Kubeconfig == nil {
+			return nil, fmt.Errorf("context %q has no kubeconfig", name)
+		}
+		key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
+		cl, err := a.clPool.Get(a.ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		deps := a.makeDeps(cl, cfg, name)
+		return models.NewContextRootFolder(deps, basePath), nil
+	}
 }
 
 // Update handles messages and updates the application state
@@ -1748,91 +1804,43 @@ func (a *App) goToNamespace(ns string) {
 	if ns == "" {
 		ns = "default"
 	}
-	// Build separate deps for left and right so each panel can have independent options
+	leftCfg := a.ensurePanelConfig(a.leftPanel)
+	rightCfg := a.ensurePanelConfig(a.rightPanel)
 	a.syncPanelConfig(a.leftPanel)
 	a.syncPanelConfig(a.rightPanel)
-	depsLeft := models.Deps{
-		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
-		ListContexts: func() []string {
-			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-			for _, c := range a.kubeMgr.GetContexts() {
-				out = append(out, c.Name)
-			}
-			return out
-		},
-		Config: a.leftConfig,
+	currentName := ""
+	if a.currentCtx != nil {
+		currentName = a.currentCtx.Name
 	}
-	depsRight := models.Deps{
-		Cl: a.cl, Ctx: a.ctx, CtxName: a.currentCtx.Name,
-		ListContexts: func() []string {
-			out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-			for _, c := range a.kubeMgr.GetContexts() {
-				out = append(out, c.Name)
-			}
-			return out
-		},
-		Config: a.rightConfig,
-	}
-	// set EnterContext after deps to avoid forward reference
-	depsLeft.EnterContext = func(name string, basePath []string) (models.Folder, error) {
-		var target *kubeconfig.Context
-		for _, c := range a.kubeMgr.GetContexts() {
-			if c.Name == name {
-				target = c
-				break
-			}
-		}
-		if target == nil {
-			return nil, fmt.Errorf("context %q not found", name)
-		}
-		key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
-		cl, err := a.clPool.Get(a.ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		ndeps := models.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsLeft.ListContexts, Config: a.leftConfig}
-		return models.NewContextRootFolder(ndeps, basePath), nil
-	}
-	depsRight.EnterContext = func(name string, basePath []string) (models.Folder, error) {
-		var target *kubeconfig.Context
-		for _, c := range a.kubeMgr.GetContexts() {
-			if c.Name == name {
-				target = c
-				break
-			}
-		}
-		if target == nil {
-			return nil, fmt.Errorf("context %q not found", name)
-		}
-		key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
-		cl, err := a.clPool.Get(a.ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		ndeps := models.Deps{Cl: cl, Ctx: a.ctx, CtxName: target.Name, ListContexts: depsRight.ListContexts, Config: a.rightConfig}
-		return models.NewContextRootFolder(ndeps, basePath), nil
-	}
-	rootLeft := models.NewRootFolder(depsLeft)
-	rootRight := models.NewRootFolder(depsRight)
+	depsLeft := a.makeDeps(a.cl, leftCfg, currentName)
+	depsRight := a.makeDeps(a.cl, rightCfg, currentName)
+	enterLeft := a.makeEnterContextFunc(leftCfg)
+	enterRight := a.makeEnterContextFunc(rightCfg)
+	rootLeft := models.NewRootFolder(depsLeft, enterLeft)
+	rootRight := models.NewRootFolder(depsRight, enterRight)
 	a.leftNav = navui.NewNavigator(rootLeft)
 	a.rightNav = navui.NewNavigator(rootRight)
 	if a.namespaceExists(ns) {
 		// Left panel: remember selection when entering
 		a.leftNav.SetSelectionID("namespaces")
-		leftNS := models.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+		leftNSPath := append(append([]string{}, rootLeft.Path()...), "namespaces")
+		leftNS := models.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, leftNSPath)
 		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = leftNS.Len(); return nil }))
 		a.leftNav.Push(leftNS)
 		a.leftNav.SetSelectionID(ns)
-		leftGroups := models.NewNamespacedResourcesFolder(depsLeft, ns, []string{"namespaces", ns})
+		leftGroupsPath := append(append([]string{}, leftNSPath...), ns)
+		leftGroups := models.NewNamespacedResourcesFolder(depsLeft, ns, leftGroupsPath)
 		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = leftGroups.Len(); return nil }))
 		a.leftNav.Push(leftGroups)
 		// Right panel: same
 		a.rightNav.SetSelectionID("namespaces")
-		rightNS := models.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+		rightNSPath := append(append([]string{}, rootRight.Path()...), "namespaces")
+		rightNS := models.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, rightNSPath)
 		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = rightNS.Len(); return nil }))
 		a.rightNav.Push(rightNS)
 		a.rightNav.SetSelectionID(ns)
-		rightGroups := models.NewNamespacedResourcesFolder(depsRight, ns, []string{"namespaces", ns})
+		rightGroupsPath := append(append([]string{}, rightNSPath...), ns)
+		rightGroups := models.NewNamespacedResourcesFolder(depsRight, ns, rightGroupsPath)
 		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = rightGroups.Len(); return nil }))
 		a.rightNav.Push(rightGroups)
 	}
@@ -1873,52 +1881,36 @@ func (a *App) currentNav() *navui.Navigator {
 }
 
 func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
-	if a.activePanel == 0 {
-		a.syncPanelConfig(a.leftPanel)
-	} else {
-		a.syncPanelConfig(a.rightPanel)
-	}
-	listContexts := func() []string {
-		out := make([]string, 0, len(a.kubeMgr.GetContexts()))
-		for _, c := range a.kubeMgr.GetContexts() {
-			out = append(out, c.Name)
-		}
-		return out
-	}
-	ensure := func() *navui.Navigator {
-		panel := a.leftPanel
-		cfg := a.ensurePanelConfig(panel)
-		if a.activePanel == 1 {
-			panel = a.rightPanel
-			cfg = a.ensurePanelConfig(panel)
-		}
-		deps := models.Deps{
-			Cl:           a.cl,
-			Ctx:          a.ctx,
-			CtxName:      a.currentCtx.Name,
-			ListContexts: listContexts,
-			Config:       cfg,
-		}
-		return navui.NewNavigator(models.NewRootFolder(deps))
+	currentName := ""
+	if a.currentCtx != nil {
+		currentName = a.currentCtx.Name
 	}
 	var nav *navui.Navigator
 	var panelSet func(models.Folder, bool)
 	var panelSelectByID func(string)
 	var panelReset func()
 	if a.activePanel == 0 {
+		cfg := a.ensurePanelConfig(a.leftPanel)
+		a.syncPanelConfig(a.leftPanel)
 		if a.leftNav == nil {
-			a.leftNav = ensure()
+			deps := a.makeDeps(a.cl, cfg, currentName)
+			enter := a.makeEnterContextFunc(cfg)
+			a.leftNav = navui.NewNavigator(models.NewRootFolder(deps, enter))
 		}
 		nav = a.leftNav
-		panelSet = a.leftPanel.SetFolder
+		panelSet = func(folder models.Folder, hasBack bool) { a.leftPanel.SetFolder(folder, hasBack) }
 		panelSelectByID = a.leftPanel.SelectByRowID
 		panelReset = func() { a.leftPanel.ResetSelectionTop() }
 	} else {
+		cfg := a.ensurePanelConfig(a.rightPanel)
+		a.syncPanelConfig(a.rightPanel)
 		if a.rightNav == nil {
-			a.rightNav = ensure()
+			deps := a.makeDeps(a.cl, cfg, currentName)
+			enter := a.makeEnterContextFunc(cfg)
+			a.rightNav = navui.NewNavigator(models.NewRootFolder(deps, enter))
 		}
 		nav = a.rightNav
-		panelSet = a.rightPanel.SetFolder
+		panelSet = func(folder models.Folder, hasBack bool) { a.rightPanel.SetFolder(folder, hasBack) }
 		panelSelectByID = a.rightPanel.SelectByRowID
 		panelReset = func() { a.rightPanel.ResetSelectionTop() }
 	}
@@ -1927,11 +1919,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	} else if next != nil {
 		// Pre-warm the next folder in background to trigger informer/lister start.
 		// This shows a spinner if it takes longer than the delay and avoids UI freeze.
-		if a.activePanel == 0 {
-			a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
-		} else {
-			a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
-		}
+		a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
 		nav.SetSelectionID(selID)
 		nav.Push(next)
 	}
