@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
+	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -22,8 +22,6 @@ func NewResourcesFolder(base *BaseFolder) *ResourcesFolder {
 	return &ResourcesFolder{BaseFolder: base}
 }
 
-const defaultPeekInterval = 30 * time.Second
-
 func (f *ResourcesFolder) finalize(items []*ResourceGroupItem) []table.Row {
 	if len(items) == 0 {
 		return nil
@@ -31,9 +29,6 @@ func (f *ResourcesFolder) finalize(items []*ResourceGroupItem) []table.Row {
 	cfg := f.Deps.Config()
 	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
 	peekInterval := cfg.Resources.PeekInterval.Duration
-	if peekInterval <= 0 {
-		peekInterval = defaultPeekInterval
-	}
 	rows := make([]table.Row, 0, len(items))
 	for _, item := range items {
 		if item == nil {
@@ -91,9 +86,9 @@ func reuseResourceGroupItem(base *BaseFolder, fresh *ResourceGroupItem) *Resourc
 	return nil
 }
 
-func sortResourceEntries(entries []resourceEntry, order string, fav map[string]bool) {
+func sortResourceEntries(entries []resourceEntry, order appconfig.ResourcesViewOrder, fav map[string]bool) {
 	switch order {
-	case "group":
+	case appconfig.OrderGroup:
 		sort.Slice(entries, func(i, j int) bool {
 			gi, gj := entries[i].info.GVK.Group, entries[j].info.GVK.Group
 			if gi == gj {
@@ -101,7 +96,7 @@ func sortResourceEntries(entries []resourceEntry, order string, fav map[string]b
 			}
 			return gi < gj
 		})
-	case "favorites":
+	case appconfig.OrderFavorites:
 		isFav := func(res string) bool {
 			if fav == nil {
 				return false

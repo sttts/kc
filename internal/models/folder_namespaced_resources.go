@@ -2,7 +2,6 @@ package models
 
 import (
 	"fmt"
-	"strings"
 
 	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -51,7 +50,7 @@ func (f *NamespacedResourcesFolder) resourceGroupItems() ([]*ResourceGroupItem, 
 		gvr := schema.GroupVersionResource{Group: info.GVK.Group, Version: info.GVK.Version, Resource: info.Resource}
 		entries = append(entries, resourceEntry{info: info, gvr: gvr})
 	}
-	sortResourceEntries(entries, strings.ToLower(string(cfg.Resources.Order)), favoritesMap(cfg.Resources.Favorites))
+	sortResourceEntries(entries, cfg.Resources.Order, favoritesMap(cfg.Resources.Favorites))
 	items := make([]*ResourceGroupItem, 0, len(entries))
 	nameStyle := WhiteStyle()
 	for _, entry := range entries {

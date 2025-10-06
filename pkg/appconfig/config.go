@@ -16,6 +16,18 @@ type ViewerConfig struct {
 	Theme string `json:"theme"`
 }
 
+const (
+	ColumnsModeNormal = "normal"
+	ColumnsModeWide   = "wide"
+)
+
+const (
+	ObjectsOrderName         = "name"
+	ObjectsOrderNameDesc     = "-name"
+	ObjectsOrderCreation     = "creation"
+	ObjectsOrderCreationDesc = "-creation"
+)
+
 type HorizontalConfig struct {
 	Step int `json:"step"`
 }
@@ -59,15 +71,13 @@ const (
 type ResourcesViewConfig struct {
 	// ShowNonEmptyOnly toggles filtering of resource groups to those with >0 objects.
 	ShowNonEmptyOnly bool `json:"showNonEmptyOnly"`
-	// Order controls ordering: alphabetic by resource, grouped by API group, or favorites-first.
+	// Order controls ordering of groups. Valid values are "alpha", "group", "favorites".
 	Order ResourcesViewOrder `json:"order"`
-	// Favorites lists resource plural names to prioritize when Order=="favorites".
+	// Favorites lists resource plural names to prioritize when OrderFavorites is active.
 	Favorites []string `json:"favorites"`
-	// Columns controls which server-side table columns are shown: normal (priority 0) or wide (all).
-	// Values: "normal" | "wide"
+	// Columns controls which server-side table columns are shown. Valid values are "normal" and "wide".
 	Columns string `json:"columns"`
-	// ObjectsOrder controls ordering within object lists:
-	// name, -name, creation, -creation
+	// ObjectsOrder controls ordering within object lists when drilling into resources. Valid values are "name", "-name", "creation", "-creation".
 	ObjectsOrder string `json:"objectsOrder"`
 	// PeekInterval throttles how often empty-resource peeks hit the API (default 30s).
 	PeekInterval metav1.Duration `json:"peekInterval"`
@@ -84,9 +94,9 @@ type Config struct {
 
 // ObjectsConfig controls object-list specific options.
 type ObjectsConfig struct {
-	// Order controls ordering within object lists: name, -name, creation, -creation
+	// Order controls ordering within object lists. Valid values conform to ObjectsOrder* constants (Name, NameDesc, Creation, CreationDesc).
 	Order string `json:"order"`
-	// Columns controls which server-side table columns are shown: normal (priority 0) or wide (all)
+	// Columns controls which columns are shown. Valid values are ColumnsModeNormal and ColumnsModeWide.
 	Columns string `json:"columns"`
 }
 
@@ -113,7 +123,7 @@ func Default() *Config {
 		Resources: ResourcesViewConfig{
 			ShowNonEmptyOnly: true,
 			Order:            OrderAlpha,
-			Columns:          "normal",
+			Columns:          ColumnsModeNormal,
 			PeekInterval:     metav1.Duration{Duration: 30 * time.Second},
 			// Seed favorites with a sensible default set similar to `kubectl get all`.
 			Favorites: []string{
@@ -122,7 +132,7 @@ func Default() *Config {
 				"ingresses", "networkpolicies", "persistentvolumeclaims",
 			},
 		},
-		Objects: ObjectsConfig{Order: "name", Columns: "normal"},
+		Objects: ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
 	}
 }
 
@@ -174,16 +184,30 @@ func Load() (*Config, error) {
 		if cfg.Resources.Favorites == nil {
 			cfg.Resources.Favorites = Default().Resources.Favorites
 		}
-		if strings.ToLower(cfg.Resources.Columns) != "wide" {
-			cfg.Resources.Columns = "normal"
+		if strings.EqualFold(cfg.Resources.Columns, ColumnsModeWide) {
+			cfg.Resources.Columns = ColumnsModeWide
+		} else {
+			cfg.Resources.Columns = ColumnsModeNormal
 		}
 		if cfg.Resources.PeekInterval.Duration <= 0 {
 			cfg.Resources.PeekInterval = metav1.Duration{Duration: 30 * time.Second}
 		}
-		switch strings.ToLower(cfg.Objects.Order) {
-		case "name", "-name", "creation", "-creation":
+		switch {
+		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderName):
+			cfg.Objects.Order = ObjectsOrderName
+		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderNameDesc):
+			cfg.Objects.Order = ObjectsOrderNameDesc
+		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreation):
+			cfg.Objects.Order = ObjectsOrderCreation
+		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreationDesc):
+			cfg.Objects.Order = ObjectsOrderCreationDesc
 		default:
-			cfg.Objects.Order = "name"
+			cfg.Objects.Order = ObjectsOrderName
+		}
+		if strings.EqualFold(cfg.Objects.Columns, ColumnsModeWide) {
+			cfg.Objects.Columns = ColumnsModeWide
+		} else {
+			cfg.Objects.Columns = ColumnsModeNormal
 		}
 		return cfg, nil
 	}
@@ -276,16 +300,30 @@ func Load() (*Config, error) {
 	if cfg.Resources.Favorites == nil {
 		cfg.Resources.Favorites = Default().Resources.Favorites
 	}
-	if strings.ToLower(cfg.Resources.Columns) != "wide" {
-		cfg.Resources.Columns = "normal"
+	if strings.EqualFold(cfg.Resources.Columns, ColumnsModeWide) {
+		cfg.Resources.Columns = ColumnsModeWide
+	} else {
+		cfg.Resources.Columns = ColumnsModeNormal
 	}
 	if cfg.Resources.PeekInterval.Duration <= 0 {
 		cfg.Resources.PeekInterval = metav1.Duration{Duration: 30 * time.Second}
 	}
-	switch strings.ToLower(cfg.Objects.Order) {
-	case "name", "-name", "creation", "-creation":
+	switch {
+	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderName):
+		cfg.Objects.Order = ObjectsOrderName
+	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderNameDesc):
+		cfg.Objects.Order = ObjectsOrderNameDesc
+	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreation):
+		cfg.Objects.Order = ObjectsOrderCreation
+	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderCreationDesc):
+		cfg.Objects.Order = ObjectsOrderCreationDesc
 	default:
-		cfg.Objects.Order = "name"
+		cfg.Objects.Order = ObjectsOrderName
+	}
+	if strings.EqualFold(cfg.Objects.Columns, ColumnsModeWide) {
+		cfg.Objects.Columns = ColumnsModeWide
+	} else {
+		cfg.Objects.Columns = ColumnsModeNormal
 	}
 	return cfg, nil
 }
@@ -308,16 +346,30 @@ func Save(cfg *Config) error {
 	default:
 		out.Resources.Order = OrderFavorites
 	}
-	if strings.ToLower(out.Resources.Columns) != "wide" {
-		out.Resources.Columns = "normal"
+	if strings.EqualFold(out.Resources.Columns, ColumnsModeWide) {
+		out.Resources.Columns = ColumnsModeWide
+	} else {
+		out.Resources.Columns = ColumnsModeNormal
 	}
 	if out.Resources.PeekInterval.Duration <= 0 {
 		out.Resources.PeekInterval = metav1.Duration{Duration: 30 * time.Second}
 	}
-	switch strings.ToLower(out.Objects.Order) {
-	case "name", "-name", "creation", "-creation":
+	switch {
+	case strings.EqualFold(out.Objects.Order, ObjectsOrderName):
+		out.Objects.Order = ObjectsOrderName
+	case strings.EqualFold(out.Objects.Order, ObjectsOrderNameDesc):
+		out.Objects.Order = ObjectsOrderNameDesc
+	case strings.EqualFold(out.Objects.Order, ObjectsOrderCreation):
+		out.Objects.Order = ObjectsOrderCreation
+	case strings.EqualFold(out.Objects.Order, ObjectsOrderCreationDesc):
+		out.Objects.Order = ObjectsOrderCreationDesc
 	default:
-		out.Objects.Order = "name"
+		out.Objects.Order = ObjectsOrderName
+	}
+	if strings.EqualFold(out.Objects.Columns, ColumnsModeWide) {
+		out.Objects.Columns = ColumnsModeWide
+	} else {
+		out.Objects.Columns = ColumnsModeNormal
 	}
 	data, err := yaml.Marshal(&out)
 	if err != nil {

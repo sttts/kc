@@ -8,6 +8,7 @@ import (
 
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/internal/tablecache"
+	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -45,14 +46,8 @@ func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, b
 
 func (o *ObjectsFolder) populateRows() ([]table.Row, error) {
 	cfg := o.Deps.Config()
-	columnsMode := strings.ToLower(cfg.Objects.Columns)
-	if columnsMode != "wide" {
-		columnsMode = "normal"
-	}
+	columnsMode := cfg.Objects.Columns
 	order := cfg.Objects.Order
-	if order == "" {
-		order = "name"
-	}
 	if rl, err := o.Deps.Cl.ListRowsByGVR(o.Deps.Ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
 		return o.rowsFromRowList(rl, columnsMode, order), nil
 	}
@@ -156,7 +151,7 @@ func (o *ObjectsFolder) childConstructor() (ChildConstructor, bool) {
 func visibleColumns(cols []metav1.TableColumnDefinition, mode string) []int {
 	vis := make([]int, 0, len(cols))
 	for i, c := range cols {
-		if mode == "wide" || c.Priority == 0 {
+		if mode == appconfig.ColumnsModeWide || c.Priority == 0 {
 			vis = append(vis, i)
 		}
 	}
@@ -180,14 +175,14 @@ func orderRowIndices(items []tablecache.Row, order string) []int {
 		}
 		return strings.ToLower(n)
 	}
-	switch strings.ToLower(order) {
-	case "-name":
+	switch order {
+	case appconfig.ObjectsOrderNameDesc:
 		sort.Slice(idxs, func(i, j int) bool { return nameOf(&items[idxs[i]]) > nameOf(&items[idxs[j]]) })
-	case "creation":
+	case appconfig.ObjectsOrderCreation:
 		sort.Slice(idxs, func(i, j int) bool {
 			return items[idxs[i]].ObjectMeta.CreationTimestamp.Time.Before(items[idxs[j]].ObjectMeta.CreationTimestamp.Time)
 		})
-	case "-creation":
+	case appconfig.ObjectsOrderCreationDesc:
 		sort.Slice(idxs, func(i, j int) bool {
 			return items[idxs[i]].ObjectMeta.CreationTimestamp.Time.After(items[idxs[j]].ObjectMeta.CreationTimestamp.Time)
 		})
