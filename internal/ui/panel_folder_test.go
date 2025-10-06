@@ -86,7 +86,7 @@ func TestEnterFromNamespacesIntoGroups(t *testing.T) {
 func TestSelectionRestoredOnBack(t *testing.T) {
 	p := NewPanel("")
 	// Build a root folder with enterable namespaces row
-	groups := mkTestFolder("groups", "pods")
+	groups := mkTestFolder([]string{"groups"}, "pods")
 	rows := []table.Row{
 		models.NewSimpleItem("contexts", []string{"contexts"}, []string{"contexts"}, models.WhiteStyle()),
 		modeltesting.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (models.Folder, error) { return groups, nil }, models.WhiteStyle()),
@@ -163,7 +163,7 @@ func TestSelectionRestoredOnBack(t *testing.T) {
 func TestSelectionRestoreWithinContexts(t *testing.T) {
 	p := NewPanel("")
 	// Build folders: root -> contexts -> ctxA namespaces
-	ctxANamespaces := mkTestFolder("namespaces", "default", "kube-system")
+	ctxANamespaces := mkTestFolder([]string{"namespaces"}, "default", "kube-system")
 	// contexts folder: ctxA enterable to its namespaces, plus another context
 	ctxsRows := []table.Row{
 		modeltesting.NewEnterableItem("ctxA", []string{"ctxA"}, []string{"contexts", "ctxA"}, func() (models.Folder, error) { return ctxANamespaces, nil }, models.WhiteStyle()),
@@ -278,7 +278,7 @@ func TestSelectionRestoreWithinContexts(t *testing.T) {
 func TestSelectionRestoreNamespacesToGroupsAndBack(t *testing.T) {
 	p := NewPanel("")
 	// Build folders: root(namespaces) -> groups
-	groups := mkTestFolder("groups", "pods", "configmaps")
+	groups := mkTestFolder([]string{"groups"}, "pods", "configmaps")
 	nsRow := modeltesting.NewEnterableItem("default", []string{"default"}, []string{"namespaces", "default"}, func() (models.Folder, error) { return groups, nil }, models.WhiteStyle())
 	nsFolder := modeltesting.NewSliceFolder("namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
 	root := modeltesting.NewSliceFolder("/", []table.Column{{Title: " Name"}}, []table.Row{modeltesting.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (models.Folder, error) { return nsFolder, nil }, models.WhiteStyle())})
