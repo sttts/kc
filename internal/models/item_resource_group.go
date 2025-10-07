@@ -31,6 +31,12 @@ type ResourceGroupItem struct {
 	emptyKnown bool
 	countOnce  sync.Once
 	lastPeek   time.Time
+	onChange   func()
+
+	publishedCount      int
+	publishedCountKnown bool
+	publishedEmpty      bool
+	publishedEmptyKnown bool
 }
 
 func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, namespace, id string, cells []string, path []string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
@@ -60,9 +66,7 @@ func (r *ResourceGroupItem) ComputeCountAsync(onUpdate func()) {
 	r.countOnce.Do(func() {
 		go func() {
 			_ = r.Count()
-			if onUpdate != nil {
-				onUpdate()
-			}
+			r.notifyIfChanged(onUpdate)
 		}()
 	})
 }
@@ -101,9 +105,10 @@ func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 		return true
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.emptyKnown && !r.lastPeek.IsZero() && time.Since(r.lastPeek) < interval {
-		return r.empty
+		val := r.empty
+		r.mu.Unlock()
+		return val
 	}
 	crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
 	empty, ok := r.peekEmptyLocked()
@@ -115,9 +120,18 @@ func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 			r.count = 0
 			r.countKnown = true
 		}
-		return r.empty
+		changed := r.recordPublishedLocked()
+		onChange := r.onChange
+		val := r.empty
+		r.mu.Unlock()
+		if changed && onChange != nil {
+			onChange()
+		}
+		return val
 	}
-	return r.empty
+	val := r.empty
+	r.mu.Unlock()
+	return val
 }
 
 func (r *ResourceGroupItem) TryCount() (int, bool) {
@@ -252,4 +266,44 @@ func (r *ResourceGroupItem) setCountCell(value string) {
 		return
 	}
 	r.RowItem.SimpleRow.SetColumn(2, value, nil)
+}
+
+func (r *ResourceGroupItem) SetOnChange(fn func()) {
+	r.mu.Lock()
+	r.onChange = fn
+	r.mu.Unlock()
+}
+
+func (r *ResourceGroupItem) notifyIfChanged(onUpdate func()) {
+	r.mu.Lock()
+	changed := r.recordPublishedLocked()
+	onChange := r.onChange
+	r.mu.Unlock()
+	if changed {
+		if onChange != nil {
+			onChange()
+		}
+		if onUpdate != nil {
+			onUpdate()
+		}
+	}
+}
+
+func (r *ResourceGroupItem) recordPublishedLocked() bool {
+	changed := false
+	if r.countKnown {
+		if !r.publishedCountKnown || r.count != r.publishedCount {
+			r.publishedCountKnown = true
+			r.publishedCount = r.count
+			changed = true
+		}
+	}
+	if r.emptyKnown {
+		if !r.publishedEmptyKnown || r.empty != r.publishedEmpty {
+			r.publishedEmptyKnown = true
+			r.publishedEmpty = r.empty
+			changed = true
+		}
+	}
+	return changed
 }

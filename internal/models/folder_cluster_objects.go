@@ -19,6 +19,6 @@ func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource, path []
 	return folder
 }
 
-func (f *ClusterObjectsFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *ClusterObjectsFolder) populate() ([]table.Row, error) {
 	return f.ObjectsFolder.populateRows()
 }

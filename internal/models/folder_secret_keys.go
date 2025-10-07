@@ -18,7 +18,7 @@ type SecretKeysFolder struct {
 func NewSecretKeysFolder(deps Deps, parentPath []string, namespace, name string) *SecretKeysFolder {
 	path := append(append([]string{}, parentPath...), "data")
 	cols := []table.Column{{Title: " Name"}}
-	base := NewBaseFolder(deps, cols, path, nil)
+	base := NewBaseFolder(deps, cols, path)
 	folder := &SecretKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
 	base.SetPopulate(folder.populate)
 	return folder
@@ -28,7 +28,7 @@ func (f *SecretKeysFolder) Parent() (schema.GroupVersionResource, string, string
 	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}, f.Namespace, f.Name
 }
 
-func (f *SecretKeysFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *SecretKeysFolder) populate() ([]table.Row, error) {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
 	obj, err := f.Deps.Cl.GetByGVR(f.Deps.Ctx, gvr, f.Namespace, f.Name)
 	if err != nil {

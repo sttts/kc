@@ -19,7 +19,7 @@ func NewContextRootFolder(deps Deps, path []string) *ContextRootFolder {
 	return folder
 }
 
-func (f *ContextRootFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *ContextRootFolder) populate() ([]table.Row, error) {
 	nameStyle := WhiteStyle()
 
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}

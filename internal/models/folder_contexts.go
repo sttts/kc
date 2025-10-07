@@ -17,13 +17,13 @@ type ContextsFolder struct {
 func NewContextsFolder(deps Deps, enter func(name string, basePath []string) (Folder, error)) *ContextsFolder {
 	path := []string{"contexts"}
 	cols := []table.Column{{Title: " Name"}}
-	base := NewBaseFolder(deps, cols, path, nil)
+	base := NewBaseFolder(deps, cols, path)
 	folder := &ContextsFolder{BaseFolder: base, enter: enter}
 	base.SetPopulate(folder.populate)
 	return folder
 }
 
-func (f *ContextsFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *ContextsFolder) populate() ([]table.Row, error) {
 	rows := make([]table.Row, 0, 16)
 	cfg := f.Deps.KubeConfig
 	if len(cfg.Contexts) == 0 {

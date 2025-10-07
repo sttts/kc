@@ -21,7 +21,7 @@ func NewRootFolder(deps Deps, enterContext func(name string, basePath []string) 
 	return root
 }
 
-func (f *RootFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *RootFolder) populate() ([]table.Row, error) {
 	cfg := f.Deps.AppConfig
 	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
 

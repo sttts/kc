@@ -20,13 +20,13 @@ type PodContainersFolder struct {
 func NewPodContainersFolder(deps Deps, parentPath []string, namespace, pod string) *PodContainersFolder {
 	path := append([]string{}, parentPath...)
 	cols := []table.Column{{Title: " Name"}}
-	base := NewBaseFolder(deps, cols, path, nil)
+	base := NewBaseFolder(deps, cols, path)
 	folder := &PodContainersFolder{BaseFolder: base, Namespace: namespace, Pod: pod}
 	base.SetPopulate(folder.populate)
 	return folder
 }
 
-func (f *PodContainersFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *PodContainersFolder) populate() ([]table.Row, error) {
 	podObj, err := f.fetchPod()
 	if err != nil {
 		return nil, err
@@ -92,13 +92,13 @@ type PodContainerListFolder struct {
 }
 
 func NewPodContainerListFolder(deps Deps, path []string, namespace, pod string, kind containerKind) *PodContainerListFolder {
-	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path, nil)
+	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path)
 	folder := &PodContainerListFolder{BaseFolder: base, Namespace: namespace, Pod: pod, Kind: kind}
 	base.SetPopulate(folder.populate)
 	return folder
 }
 
-func (f *PodContainerListFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *PodContainerListFolder) populate() ([]table.Row, error) {
 	podObj, err := f.fetchPod()
 	if err != nil {
 		return nil, err
@@ -168,13 +168,13 @@ type PodContainerLogsFolder struct {
 }
 
 func NewPodContainerLogsFolder(deps Deps, path []string, namespace, pod, container string) *PodContainerLogsFolder {
-	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path, nil)
+	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path)
 	folder := &PodContainerLogsFolder{BaseFolder: base, Namespace: namespace, Pod: pod, Container: container}
 	base.SetPopulate(folder.populate)
 	return folder
 }
 
-func (f *PodContainerLogsFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *PodContainerLogsFolder) populate() ([]table.Row, error) {
 	rows := make([]table.Row, 0, 1)
 	item := NewContainerLogItem("latest", []string{"/logs"}, append(append([]string{}, f.Path()...), "latest"), containerLogsViewContent(f.Deps, f.Namespace, f.Pod, f.Container, 200))
 	rows = append(rows, item)

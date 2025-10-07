@@ -15,7 +15,7 @@ type NamespacedResourcesFolder struct {
 
 // NewNamespacedResourcesFolder creates a namespace-scoped resources folder.
 func NewNamespacedResourcesFolder(deps Deps, namespace string, path []string) *NamespacedResourcesFolder {
-	base := NewBaseFolder(deps, nil, path, nil)
+	base := NewBaseFolder(deps, nil, path)
 	folder := &NamespacedResourcesFolder{
 		ResourcesFolder: NewResourcesFolder(base),
 		Namespace:       namespace,
@@ -24,7 +24,7 @@ func NewNamespacedResourcesFolder(deps Deps, namespace string, path []string) *N
 	return folder
 }
 
-func (f *NamespacedResourcesFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *NamespacedResourcesFolder) populate() ([]table.Row, error) {
 	specs, err := f.resourceGroupSpecs()
 	if err != nil {
 		return nil, err

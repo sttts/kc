@@ -18,7 +18,7 @@ type ConfigMapKeysFolder struct {
 func NewConfigMapKeysFolder(deps Deps, parentPath []string, namespace, name string) *ConfigMapKeysFolder {
 	path := append(append([]string{}, parentPath...), "data")
 	cols := []table.Column{{Title: " Name"}}
-	base := NewBaseFolder(deps, cols, path, nil)
+	base := NewBaseFolder(deps, cols, path)
 	folder := &ConfigMapKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
 	base.SetPopulate(folder.populate)
 	return folder
@@ -28,7 +28,7 @@ func (f *ConfigMapKeysFolder) Parent() (schema.GroupVersionResource, string, str
 	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}, f.Namespace, f.Name
 }
 
-func (f *ConfigMapKeysFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *ConfigMapKeysFolder) populate() ([]table.Row, error) {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 	obj, err := f.Deps.Cl.GetByGVR(f.Deps.Ctx, gvr, f.Namespace, f.Name)
 	if err != nil {

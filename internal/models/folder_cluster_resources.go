@@ -14,13 +14,13 @@ type ClusterResourcesFolder struct {
 
 // NewClusterResourcesFolder creates a cluster-scoped resources folder.
 func NewClusterResourcesFolder(deps Deps, path []string) *ClusterResourcesFolder {
-	base := NewBaseFolder(deps, nil, path, nil)
+	base := NewBaseFolder(deps, nil, path)
 	folder := &ClusterResourcesFolder{ResourcesFolder: NewResourcesFolder(base)}
 	base.SetPopulate(folder.populate)
 	return folder
 }
 
-func (f *ClusterResourcesFolder) populate(*BaseFolder) ([]table.Row, error) {
+func (f *ClusterResourcesFolder) populate() ([]table.Row, error) {
 	specs, err := f.resourceGroupSpecs()
 	if err != nil {
 		return nil, err
