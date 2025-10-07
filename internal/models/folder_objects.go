@@ -11,6 +11,7 @@ import (
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/internal/tablecache"
 	"github.com/sttts/kc/pkg/appconfig"
+	meta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -270,28 +271,10 @@ func newLiveObjectRowSourceWithHooks(populate func() ([]table.Row, error), onDir
 }
 
 func startInformerForObjectsFolder(owner *ObjectsFolder, onEvent func()) {
-	if owner == nil || owner.Deps.Cl == nil || onEvent == nil {
+	if owner == nil {
 		return
 	}
-	ctx := owner.Deps.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	gvk, err := owner.Deps.Cl.RESTMapper().KindFor(owner.gvr)
-	if err != nil {
-		return
-	}
-	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(gvk)
-	informer, err := owner.Deps.Cl.GetCache().GetInformer(ctx, obj)
-	if err != nil {
-		return
-	}
-	_, _ = informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-		AddFunc:    func(any) { onEvent() },
-		UpdateFunc: func(any, any) { onEvent() },
-		DeleteFunc: func(any) { onEvent() },
-	})
+	startInformerForResource(owner.Deps, owner.gvr, owner.namespace, "", onEvent)
 }
 
 func (s *liveObjectRowSource) ensureLocked() {
@@ -432,5 +415,74 @@ func (s *liveObjectRowSource) MarkDirty() {
 	s.mu.Unlock()
 	if s.onFolderDirty != nil {
 		s.onFolderDirty()
+	}
+}
+
+func newLiveKeyRowSource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, populate func() ([]table.Row, error), onDirty func()) *liveObjectRowSource {
+	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
+		startInformerForResource(deps, gvr, namespace, name, cb)
+	})
+}
+
+func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, onEvent func()) {
+	if onEvent == nil || deps.Cl == nil {
+		return
+	}
+	ctx := deps.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	gvk, err := deps.Cl.RESTMapper().KindFor(gvr)
+	if err != nil {
+		return
+	}
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(gvk)
+	informer, err := deps.Cl.GetCache().GetInformer(ctx, obj)
+	if err != nil {
+		return
+	}
+	matches := func(evt interface{}) bool {
+		accessor, ok := accessorForEvent(evt)
+		if !ok {
+			return false
+		}
+		if namespace != "" && accessor.GetNamespace() != namespace {
+			return false
+		}
+		if name != "" && accessor.GetName() != name {
+			return false
+		}
+		return true
+	}
+	_, _ = informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if matches(obj) {
+				onEvent()
+			}
+		},
+		UpdateFunc: func(_, newObj interface{}) {
+			if matches(newObj) {
+				onEvent()
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			if matches(obj) {
+				onEvent()
+			}
+		},
+	})
+}
+
+func accessorForEvent(obj interface{}) (metav1.Object, bool) {
+	switch o := obj.(type) {
+	case toolscache.DeletedFinalStateUnknown:
+		return accessorForEvent(o.Obj)
+	default:
+		accessor, err := meta.Accessor(o)
+		if err != nil {
+			return nil, false
+		}
+		return accessor, true
 	}
 }

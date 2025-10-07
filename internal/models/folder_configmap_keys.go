@@ -20,7 +20,9 @@ func NewConfigMapKeysFolder(deps Deps, parentPath []string, namespace, name stri
 	cols := []table.Column{{Title: " Name"}}
 	base := NewBaseFolder(deps, cols, path)
 	folder := &ConfigMapKeysFolder{BaseFolder: base, Namespace: namespace, Name: name}
-	base.SetPopulate(folder.populate)
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
+	rows := newLiveKeyRowSource(deps, gvr, namespace, name, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
+	base.SetRowSource(rows)
 	return folder
 }
 
@@ -28,7 +30,7 @@ func (f *ConfigMapKeysFolder) Parent() (schema.GroupVersionResource, string, str
 	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}, f.Namespace, f.Name
 }
 
-func (f *ConfigMapKeysFolder) populate() ([]table.Row, error) {
+func (f *ConfigMapKeysFolder) buildRows() ([]table.Row, error) {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 	obj, err := f.Deps.Cl.GetByGVR(f.Deps.Ctx, gvr, f.Namespace, f.Name)
 	if err != nil {
