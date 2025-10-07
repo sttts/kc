@@ -22,11 +22,12 @@ func NewPodContainersFolder(deps Deps, parentPath []string, namespace, pod strin
 	cols := []table.Column{{Title: " Name"}}
 	base := NewBaseFolder(deps, cols, path)
 	folder := &PodContainersFolder{BaseFolder: base, Namespace: namespace, Pod: pod}
-	base.SetPopulate(folder.populate)
+	rows := newPodSectionRowSource(deps, namespace, pod, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
+	base.SetRowSource(rows)
 	return folder
 }
 
-func (f *PodContainersFolder) populate() ([]table.Row, error) {
+func (f *PodContainersFolder) buildRows() ([]table.Row, error) {
 	podObj, err := f.fetchPod()
 	if err != nil {
 		return nil, err
@@ -94,11 +95,12 @@ type PodContainerListFolder struct {
 func NewPodContainerListFolder(deps Deps, path []string, namespace, pod string, kind containerKind) *PodContainerListFolder {
 	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path)
 	folder := &PodContainerListFolder{BaseFolder: base, Namespace: namespace, Pod: pod, Kind: kind}
-	base.SetPopulate(folder.populate)
+	rows := newPodContainerRowSource(deps, namespace, pod, kind, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
+	base.SetRowSource(rows)
 	return folder
 }
 
-func (f *PodContainerListFolder) populate() ([]table.Row, error) {
+func (f *PodContainerListFolder) buildRows() ([]table.Row, error) {
 	podObj, err := f.fetchPod()
 	if err != nil {
 		return nil, err
@@ -170,13 +172,35 @@ type PodContainerLogsFolder struct {
 func NewPodContainerLogsFolder(deps Deps, path []string, namespace, pod, container string) *PodContainerLogsFolder {
 	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path)
 	folder := &PodContainerLogsFolder{BaseFolder: base, Namespace: namespace, Pod: pod, Container: container}
-	base.SetPopulate(folder.populate)
+	rows := newPodContainerLogRowSource(deps, namespace, pod, container, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
+	base.SetRowSource(rows)
 	return folder
 }
 
-func (f *PodContainerLogsFolder) populate() ([]table.Row, error) {
+func (f *PodContainerLogsFolder) buildRows() ([]table.Row, error) {
 	rows := make([]table.Row, 0, 1)
 	item := NewContainerLogItem("latest", []string{"/logs"}, append(append([]string{}, f.Path()...), "latest"), containerLogsViewContent(f.Deps, f.Namespace, f.Pod, f.Container, 200))
 	rows = append(rows, item)
 	return rows, nil
+}
+
+func newPodSectionRowSource(deps Deps, namespace, pod string, populate func() ([]table.Row, error), onDirty func()) rowSource {
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
+		startInformerForResource(deps, gvr, namespace, pod, cb)
+	})
+}
+
+func newPodContainerRowSource(deps Deps, namespace, pod string, kind containerKind, populate func() ([]table.Row, error), onDirty func()) rowSource {
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
+		startInformerForResource(deps, gvr, namespace, pod, cb)
+	})
+}
+
+func newPodContainerLogRowSource(deps Deps, namespace, pod, container string, populate func() ([]table.Row, error), onDirty func()) rowSource {
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
+		startInformerForResource(deps, gvr, namespace, pod, cb)
+	})
 }
