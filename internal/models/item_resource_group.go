@@ -130,9 +130,6 @@ func (r *ResourceGroupItem) TryCount() (int, bool) {
 }
 
 func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
-	if r.deps.Cl == nil {
-		return 0, false
-	}
 	ctx := r.deps.Ctx
 	gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
 	if err != nil {
@@ -182,16 +179,13 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 	if r.namespace != "" {
 		opts = append(opts, crclient.InNamespace(r.namespace))
 	}
-	if err := r.deps.Cl.GetClient().List(ctx, ul, opts...); err != nil {
+	if err := r.deps.Cl.GetCache().List(ctx, ul, opts...); err != nil {
 		return 0, false
 	}
 	return len(ul.Items), true
 }
 
 func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
-	if r.deps.Cl == nil {
-		return false, false
-	}
 	ctx := r.deps.Ctx
 	has, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
 	if err != nil {
