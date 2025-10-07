@@ -21,15 +21,15 @@ func NewClusterResourcesFolder(deps Deps, path []string) *ClusterResourcesFolder
 }
 
 func (f *ClusterResourcesFolder) populate(*BaseFolder) ([]table.Row, error) {
-	items, err := f.resourceGroupItems()
+	specs, err := f.resourceGroupSpecs()
 	if err != nil {
 		return nil, err
 	}
-	rows := f.ResourcesFolder.finalize(items)
+	rows := f.ResourcesFolder.finalize(specs)
 	return rows, nil
 }
 
-func (f *ClusterResourcesFolder) resourceGroupItems() ([]*ResourceGroupItem, error) {
+func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, error) {
 	cfg := f.Deps.AppConfig
 	infos, err := f.Deps.Cl.GetResourceInfos()
 	if err != nil {
@@ -47,17 +47,27 @@ func (f *ClusterResourcesFolder) resourceGroupItems() ([]*ResourceGroupItem, err
 		entries = append(entries, resourceEntry{info: info, gvr: gvr})
 	}
 	sortResourceEntries(entries, cfg.Resources.Order, favoritesMap(cfg.Resources.Favorites))
-	items := make([]*ResourceGroupItem, 0, len(entries))
+	specs := make([]resourceGroupSpec, 0, len(entries))
 	nameStyle := WhiteStyle()
 	for _, entry := range entries {
 		id := fmt.Sprintf("%s/%s/%s", entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
 		cells := []string{"/" + entry.info.Resource, groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version), ""}
 		basePath := append(append([]string{}, f.Path()...), entry.info.Resource)
+		cellsCopy := append([]string(nil), cells...)
+		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
-		item := NewResourceGroupItem(f.Deps, gvr, "", id, cells, basePath, nameStyle, true, func() (Folder, error) {
-			return NewClusterObjectsFolder(f.Deps, gvr, basePath), nil
+		specs = append(specs, resourceGroupSpec{
+			id:        id,
+			cells:     cellsCopy,
+			path:      pathCopy,
+			style:     nameStyle,
+			gvr:       gvr,
+			namespace: "",
+			watchable: true,
+			enter: func() (Folder, error) {
+				return NewClusterObjectsFolder(f.Deps, gvr, pathCopy), nil
+			},
 		})
-		items = append(items, item)
 	}
-	return items, nil
+	return specs, nil
 }

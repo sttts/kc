@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -22,31 +23,30 @@ func NewResourcesFolder(base *BaseFolder) *ResourcesFolder {
 	return &ResourcesFolder{BaseFolder: base}
 }
 
-func (f *ResourcesFolder) finalize(items []*ResourceGroupItem) []table.Row {
-	if len(items) == 0 {
+func (f *ResourcesFolder) finalize(specs []resourceGroupSpec) []table.Row {
+	if len(specs) == 0 {
 		return nil
 	}
 	cfg := f.Deps.AppConfig
 	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
 	peekInterval := cfg.Resources.PeekInterval.Duration
-	rows := make([]table.Row, 0, len(items))
-	for _, item := range items {
+	rows := make([]table.Row, 0, len(specs))
+	for _, spec := range specs {
+		item, created := f.ensureResourceGroupItem(spec)
 		if item == nil {
 			continue
 		}
-		if existing := reuseResourceGroupItem(f.BaseFolder, item); existing != nil {
-			item = existing
-		}
+		item.applySpec(spec, f.Deps, created)
 		item.ComputeCountAsync(func() {
 			f.BaseFolder.markDirty()
 		})
-		if showNonEmpty && item.EmptyWithin(peekInterval) {
+		if showNonEmpty && item.emptyWithin(peekInterval) {
 			continue
 		}
 		if count, ok := item.TryCount(); ok {
-			item.Cells[2] = fmt.Sprintf("%d", count)
+			item.setCountCell(fmt.Sprintf("%d", count))
 		} else {
-			item.Cells[2] = ""
+			item.setCountCell("")
 		}
 		rows = append(rows, item)
 	}
@@ -67,23 +67,6 @@ func verbsInclude(verbs []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func reuseResourceGroupItem(base *BaseFolder, fresh *ResourceGroupItem) *ResourceGroupItem {
-	if base == nil || fresh == nil || base.items == nil {
-		return nil
-	}
-	id := fresh.ID()
-	if id == "" {
-		return nil
-	}
-	if existing, ok := base.items[id]; ok {
-		if cur, ok := existing.(*ResourceGroupItem); ok {
-			cur.CopyFrom(fresh)
-			return cur
-		}
-	}
-	return nil
 }
 
 func sortResourceEntries(entries []resourceEntry, order appconfig.ResourcesViewOrder, fav map[string]bool) {
@@ -135,3 +118,26 @@ type resourceEntry struct {
 }
 
 type ResourceInfo = kccluster.ResourceInfo
+
+type resourceGroupSpec struct {
+	id        string
+	cells     []string
+	path      []string
+	style     *lipgloss.Style
+	gvr       schema.GroupVersionResource
+	namespace string
+	watchable bool
+	enter     func() (Folder, error)
+}
+
+func (f *ResourcesFolder) ensureResourceGroupItem(spec resourceGroupSpec) (*ResourceGroupItem, bool) {
+	if f.BaseFolder != nil && f.BaseFolder.items != nil {
+		if existing, ok := f.BaseFolder.items[spec.id]; ok {
+			if cur, ok := existing.(*ResourceGroupItem); ok {
+				return cur, false
+			}
+		}
+	}
+	item := NewResourceGroupItem(f.Deps, spec.gvr, spec.namespace, spec.id, spec.cells, spec.path, spec.style, spec.watchable, spec.enter)
+	return item, true
+}

@@ -25,15 +25,15 @@ func NewNamespacedResourcesFolder(deps Deps, namespace string, path []string) *N
 }
 
 func (f *NamespacedResourcesFolder) populate(*BaseFolder) ([]table.Row, error) {
-	items, err := f.resourceGroupItems()
+	specs, err := f.resourceGroupSpecs()
 	if err != nil {
 		return nil, err
 	}
-	rows := f.ResourcesFolder.finalize(items)
+	rows := f.ResourcesFolder.finalize(specs)
 	return rows, nil
 }
 
-func (f *NamespacedResourcesFolder) resourceGroupItems() ([]*ResourceGroupItem, error) {
+func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, error) {
 	cfg := f.Deps.AppConfig
 	infos, err := f.Deps.Cl.GetResourceInfos()
 	if err != nil {
@@ -51,18 +51,28 @@ func (f *NamespacedResourcesFolder) resourceGroupItems() ([]*ResourceGroupItem, 
 		entries = append(entries, resourceEntry{info: info, gvr: gvr})
 	}
 	sortResourceEntries(entries, cfg.Resources.Order, favoritesMap(cfg.Resources.Favorites))
-	items := make([]*ResourceGroupItem, 0, len(entries))
+	specs := make([]resourceGroupSpec, 0, len(entries))
 	nameStyle := WhiteStyle()
 	for _, entry := range entries {
 		id := fmt.Sprintf("%s/%s/%s/%s", f.Namespace, entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
 		cells := []string{"/" + entry.info.Resource, groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version), ""}
 		basePath := append(append([]string{}, f.Path()...), entry.info.Resource)
+		cellsCopy := append([]string(nil), cells...)
+		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
 		ns := f.Namespace
-		item := NewResourceGroupItem(f.Deps, gvr, ns, id, cells, basePath, nameStyle, true, func() (Folder, error) {
-			return NewNamespacedObjectsFolder(f.Deps, gvr, ns, basePath), nil
+		specs = append(specs, resourceGroupSpec{
+			id:        id,
+			cells:     cellsCopy,
+			path:      pathCopy,
+			style:     nameStyle,
+			gvr:       gvr,
+			namespace: ns,
+			watchable: true,
+			enter: func() (Folder, error) {
+				return NewNamespacedObjectsFolder(f.Deps, gvr, ns, pathCopy), nil
+			},
 		})
-		items = append(items, item)
 	}
-	return items, nil
+	return specs, nil
 }

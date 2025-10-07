@@ -24,12 +24,21 @@ func (f *ContextRootFolder) populate(*BaseFolder) ([]table.Row, error) {
 
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 	nsPath := append(append([]string{}, f.Path()...), "namespaces")
-	namespacesItem := NewResourceGroupItem(f.Deps, gvrNamespaces, "", "namespaces", []string{"/namespaces", "v1", ""}, nsPath, nameStyle, true, func() (Folder, error) {
-		return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPath), nil
-	})
+	nsPathCopy := append([]string(nil), nsPath...)
+	namespacesSpec := resourceGroupSpec{
+		id:        "namespaces",
+		cells:     []string{"/namespaces", "v1", ""},
+		path:      nsPathCopy,
+		style:     nameStyle,
+		gvr:       gvrNamespaces,
+		watchable: true,
+		enter: func() (Folder, error) {
+			return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPathCopy), nil
+		},
+	}
 
-	groupItems := []*ResourceGroupItem{namespacesItem}
-	clusterItems, err := f.ClusterResourcesFolder.resourceGroupItems()
+	groupItems := []resourceGroupSpec{namespacesSpec}
+	clusterItems, err := f.ClusterResourcesFolder.resourceGroupSpecs()
 	if err != nil {
 		return nil, err
 	}

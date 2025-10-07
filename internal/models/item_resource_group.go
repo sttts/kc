@@ -96,10 +96,10 @@ func (r *ResourceGroupItem) Count() int {
 
 func (r *ResourceGroupItem) Empty() bool {
 	cfg := r.deps.AppConfig
-	return r.EmptyWithin(cfg.Resources.PeekInterval.Duration)
+	return r.emptyWithin(cfg.Resources.PeekInterval.Duration)
 }
 
-func (r *ResourceGroupItem) EmptyWithin(interval time.Duration) bool {
+func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 	if !r.watchable {
 		return true
 	}
@@ -239,4 +239,36 @@ func (r *ResourceGroupItem) CopyFrom(other *ResourceGroupItem) {
 	r.gvr = other.gvr
 	r.namespace = other.namespace
 	r.watchable = other.watchable
+}
+
+func (r *ResourceGroupItem) applySpec(spec resourceGroupSpec, deps Deps, created bool) {
+	if r == nil {
+		return
+	}
+	if r.RowItem == nil {
+		r.RowItem = NewRowItem(spec.id, spec.cells, spec.path, spec.style)
+	} else {
+		r.RowItem.reset(spec.id, spec.cells, spec.path, spec.style)
+	}
+	r.enter = spec.enter
+	r.deps = deps
+	r.gvr = spec.gvr
+	r.namespace = spec.namespace
+	switch {
+	case created:
+		r.watchable = spec.watchable
+	case !r.watchable:
+		// preserve previous disabled state
+	case !spec.watchable:
+		r.watchable = false
+	default:
+		r.watchable = spec.watchable
+	}
+}
+
+func (r *ResourceGroupItem) setCountCell(value string) {
+	if r == nil || r.RowItem == nil {
+		return
+	}
+	r.RowItem.SimpleRow.SetColumn(2, value, nil)
 }

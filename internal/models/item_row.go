@@ -46,3 +46,20 @@ func (r *RowItem) copyFrom(other *RowItem) {
 	r.details = other.details
 	r.path = append([]string(nil), other.path...)
 }
+
+func (r *RowItem) reset(id string, cells []string, path []string, style *lipgloss.Style) {
+	if r == nil {
+		return
+	}
+	if style == nil {
+		style = GreenStyle()
+	}
+	r.SimpleRow.ID = id
+	r.SimpleRow.Cells = make([]string, len(cells))
+	copy(r.SimpleRow.Cells, cells)
+	r.SimpleRow.Styles = make([]*lipgloss.Style, len(cells))
+	for i := range r.SimpleRow.Styles {
+		r.SimpleRow.Styles[i] = style
+	}
+	r.path = append([]string(nil), path...)
+}
