@@ -29,7 +29,6 @@ func (f *ResourcesFolder) finalize(specs []resourceGroupSpec) []table.Row {
 	}
 	cfg := f.Deps.AppConfig
 	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
-	peekInterval := cfg.Resources.PeekInterval.Duration
 	rows := make([]table.Row, 0, len(specs))
 	for _, spec := range specs {
 		item, created := f.ensureResourceGroupItem(spec)
@@ -40,7 +39,7 @@ func (f *ResourcesFolder) finalize(specs []resourceGroupSpec) []table.Row {
 		item.ComputeCountAsync(func() {
 			f.BaseFolder.markDirty()
 		})
-		if showNonEmpty && item.emptyWithin(peekInterval) {
+		if showNonEmpty && item.Empty() {
 			continue
 		}
 		if count, ok := item.TryCount(); ok {

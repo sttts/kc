@@ -1,7 +1,6 @@
 package models
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -77,10 +76,8 @@ func (r *ResourceGroupItem) Count() int {
 	if r.countKnown {
 		return r.count
 	}
-	if r.deps.Ctx != nil {
-		logger := crlog.FromContext(r.deps.Ctx)
-		logger.Info("initializing informer for resource count", "gvr", r.gvr.String(), "namespace", r.namespace)
-	}
+	logger := crlog.FromContext(r.deps.Ctx)
+	logger.Info("initializing informer for resource count", "gvr", r.gvr.String(), "namespace", r.namespace)
 	count, ok := r.countFromInformerLocked()
 	if ok {
 		r.count = count
@@ -108,9 +105,7 @@ func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 	if r.emptyKnown && !r.lastPeek.IsZero() && time.Since(r.lastPeek) < interval {
 		return r.empty
 	}
-	if r.deps.Ctx != nil {
-		crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
-	}
+	crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
 	empty, ok := r.peekEmptyLocked()
 	r.lastPeek = time.Now()
 	if ok {
@@ -139,9 +134,6 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 		return 0, false
 	}
 	ctx := r.deps.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
 	if err != nil {
 		return 0, false
@@ -151,9 +143,7 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 	informer, err := r.deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(true))
 	if err != nil {
 		if apierrors.IsMethodNotSupported(err) {
-			if r.deps.Ctx != nil {
-				crlog.FromContext(r.deps.Ctx).Info("resource watch not supported; skipping informer", "gvr", r.gvr.String(), "namespace", r.namespace)
-			}
+			crlog.FromContext(r.deps.Ctx).Info("resource watch not supported; skipping informer", "gvr", r.gvr.String(), "namespace", r.namespace)
 			r.watchable = false
 			return 0, true
 		}
@@ -203,9 +193,6 @@ func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 		return false, false
 	}
 	ctx := r.deps.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	has, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
 	if err != nil {
 		return false, false
