@@ -239,44 +239,58 @@ func objectDetails(namespace, name, kind, gv string) string {
 // liveObjectRowSource adapts an ObjectsFolder to the rowSource interface while
 // keeping rows synced with informer events for the target GVR.
 type liveObjectRowSource struct {
-	owner *ObjectsFolder
-
-	mu    sync.Mutex
-	rows  []table.Row
-	index map[string]int
-	items map[string]Item
-	dirty bool
-	once  sync.Once
+	populate      func() ([]table.Row, error)
+	onFolderDirty func()
+	mu            sync.Mutex
+	rows          []table.Row
+	index         map[string]int
+	items         map[string]Item
+	dirty         bool
+	once          sync.Once
 }
 
 func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
-	src := &liveObjectRowSource{owner: owner, dirty: true}
-	src.startInformer()
+	return newLiveObjectRowSourceWithHooks(
+		func() ([]table.Row, error) { return owner.populateRows() },
+		func() { owner.BaseFolder.markDirtyFromSource() },
+		func(cb func()) { startInformerForObjectsFolder(owner, cb) },
+	)
+}
+
+func newLiveObjectRowSourceWithHooks(populate func() ([]table.Row, error), onDirty func(), startInformer func(func())) *liveObjectRowSource {
+	src := &liveObjectRowSource{
+		populate:      populate,
+		onFolderDirty: onDirty,
+		dirty:         true,
+	}
+	if startInformer != nil {
+		startInformer(src.MarkDirty)
+	}
 	return src
 }
 
-func (s *liveObjectRowSource) startInformer() {
-	if s.owner == nil || s.owner.Deps.Cl == nil {
+func startInformerForObjectsFolder(owner *ObjectsFolder, onEvent func()) {
+	if owner == nil || owner.Deps.Cl == nil || onEvent == nil {
 		return
 	}
-	ctx := s.owner.Deps.Ctx
+	ctx := owner.Deps.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	gvk, err := s.owner.Deps.Cl.RESTMapper().KindFor(s.owner.gvr)
+	gvk, err := owner.Deps.Cl.RESTMapper().KindFor(owner.gvr)
 	if err != nil {
 		return
 	}
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
-	informer, err := s.owner.Deps.Cl.GetCache().GetInformer(ctx, obj)
+	informer, err := owner.Deps.Cl.GetCache().GetInformer(ctx, obj)
 	if err != nil {
 		return
 	}
-	informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-		AddFunc:    func(any) { s.MarkDirty() },
-		UpdateFunc: func(any, any) { s.MarkDirty() },
-		DeleteFunc: func(any) { s.MarkDirty() },
+	_, _ = informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
+		AddFunc:    func(any) { onEvent() },
+		UpdateFunc: func(any, any) { onEvent() },
+		DeleteFunc: func(any) { onEvent() },
 	})
 }
 
@@ -285,7 +299,7 @@ func (s *liveObjectRowSource) ensureLocked() {
 	if !s.dirty {
 		return
 	}
-	rows, err := s.owner.populateRows()
+	rows, err := s.populate()
 	if err != nil {
 		// keep dirty so we retry next time
 		s.dirty = true
@@ -416,7 +430,7 @@ func (s *liveObjectRowSource) MarkDirty() {
 	s.mu.Lock()
 	s.dirty = true
 	s.mu.Unlock()
-	if s.owner != nil {
-		s.owner.BaseFolder.markDirtyFromSource()
+	if s.onFolderDirty != nil {
+		s.onFolderDirty()
 	}
 }
