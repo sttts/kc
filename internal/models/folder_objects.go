@@ -1,9 +1,11 @@
 package models
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	table "github.com/sttts/kc/internal/table"
@@ -13,13 +15,15 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilduration "k8s.io/apimachinery/pkg/util/duration"
+	toolscache "k8s.io/client-go/tools/cache"
 )
 
 // ObjectsFolder provides shared scaffolding for object list folders.
 type ObjectsFolder struct {
 	*BaseFolder
 	gvr       schema.GroupVersionResource
-	namespace string // empty means cluster scope
+	namespace string
+	rows      *liveObjectRowSource
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
@@ -31,18 +35,10 @@ func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace stri
 		gvr:        gvr,
 		namespace:  namespace,
 	}
-	base.SetPopulate(folder.populateRows)
+	rows := newLiveObjectRowSource(folder)
+	folder.rows = rows
+	base.SetRowSource(rows)
 	return folder
-}
-
-// GVR exposes the folder's group-version-resource identifier.
-func (o *ObjectsFolder) GVR() schema.GroupVersionResource { return o.gvr }
-
-// Namespace returns the namespace when the folder is namespaced, or an empty string when cluster scoped.
-func (o *ObjectsFolder) Namespace() string { return o.namespace }
-
-func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, bool) {
-	return o.gvr, o.namespace, true
 }
 
 func (o *ObjectsFolder) populateRows() ([]table.Row, error) {
@@ -57,6 +53,16 @@ func (o *ObjectsFolder) populateRows() ([]table.Row, error) {
 		return nil, err
 	}
 	return o.rowsFromList(list, order), nil
+}
+
+// GVR exposes the folder's group-version-resource identifier.
+func (o *ObjectsFolder) GVR() schema.GroupVersionResource { return o.gvr }
+
+// Namespace returns the namespace when the folder is namespaced, or an empty string when cluster scoped.
+func (o *ObjectsFolder) Namespace() string { return o.namespace }
+
+func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, bool) {
+	return o.gvr, o.namespace, true
 }
 
 func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, order string) []table.Row {
@@ -228,4 +234,189 @@ func objectDetails(namespace, name, kind, gv string) string {
 		return fmt.Sprintf("%s/%s (%s)", namespace, name, gv)
 	}
 	return fmt.Sprintf("%s (%s)", name, gv)
+}
+
+// liveObjectRowSource adapts an ObjectsFolder to the rowSource interface while
+// keeping rows synced with informer events for the target GVR.
+type liveObjectRowSource struct {
+	owner *ObjectsFolder
+
+	mu    sync.Mutex
+	rows  []table.Row
+	index map[string]int
+	items map[string]Item
+	dirty bool
+	once  sync.Once
+}
+
+func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
+	src := &liveObjectRowSource{owner: owner, dirty: true}
+	src.startInformer()
+	return src
+}
+
+func (s *liveObjectRowSource) startInformer() {
+	if s.owner == nil || s.owner.Deps.Cl == nil {
+		return
+	}
+	ctx := s.owner.Deps.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	gvk, err := s.owner.Deps.Cl.RESTMapper().KindFor(s.owner.gvr)
+	if err != nil {
+		return
+	}
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(gvk)
+	informer, err := s.owner.Deps.Cl.GetCache().GetInformer(ctx, obj)
+	if err != nil {
+		return
+	}
+	informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
+		AddFunc:    func(any) { s.MarkDirty() },
+		UpdateFunc: func(any, any) { s.MarkDirty() },
+		DeleteFunc: func(any) { s.MarkDirty() },
+	})
+}
+
+func (s *liveObjectRowSource) ensureLocked() {
+	s.once.Do(func() { s.dirty = true })
+	if !s.dirty {
+		return
+	}
+	rows, err := s.owner.populateRows()
+	if err != nil {
+		// keep dirty so we retry next time
+		s.dirty = true
+		return
+	}
+	s.rows = rows
+	s.rebuildIndexLocked()
+	s.dirty = false
+}
+
+func (s *liveObjectRowSource) rebuildIndexLocked() {
+	s.index = make(map[string]int, len(s.rows))
+	s.items = make(map[string]Item, len(s.rows))
+	for i, row := range s.rows {
+		if row == nil {
+			continue
+		}
+		id, _, _, ok := row.Columns()
+		if !ok {
+			continue
+		}
+		s.index[id] = i
+		if item, ok := row.(Item); ok {
+			s.items[id] = item
+		}
+	}
+}
+
+func (s *liveObjectRowSource) Lines(top, num int) []table.Row {
+	if num <= 0 {
+		return nil
+	}
+	s.mu.Lock()
+	s.ensureLocked()
+	rows := s.rows
+	s.mu.Unlock()
+	if len(rows) == 0 || top >= len(rows) {
+		return nil
+	}
+	if top < 0 {
+		top = 0
+	}
+	end := top + num
+	if end > len(rows) {
+		end = len(rows)
+	}
+	return rows[top:end]
+}
+
+func (s *liveObjectRowSource) Above(id string, n int) []table.Row {
+	if n <= 0 {
+		return nil
+	}
+	s.mu.Lock()
+	s.ensureLocked()
+	idx, ok := s.index[id]
+	if !ok {
+		s.mu.Unlock()
+		return nil
+	}
+	start := idx - n
+	if start < 0 {
+		start = 0
+	}
+	rows := append([]table.Row(nil), s.rows[start:idx]...)
+	s.mu.Unlock()
+	if len(rows) == 0 {
+		return nil
+	}
+	return rows
+}
+
+func (s *liveObjectRowSource) Below(id string, n int) []table.Row {
+	if n <= 0 {
+		return nil
+	}
+	s.mu.Lock()
+	s.ensureLocked()
+	idx, ok := s.index[id]
+	if !ok {
+		s.mu.Unlock()
+		return nil
+	}
+	start := idx + 1
+	if start >= len(s.rows) {
+		s.mu.Unlock()
+		return nil
+	}
+	end := start + n
+	if end > len(s.rows) {
+		end = len(s.rows)
+	}
+	rows := append([]table.Row(nil), s.rows[start:end]...)
+	s.mu.Unlock()
+	return rows
+}
+
+func (s *liveObjectRowSource) Len() int {
+	s.mu.Lock()
+	s.ensureLocked()
+	ln := len(s.rows)
+	s.mu.Unlock()
+	return ln
+}
+
+func (s *liveObjectRowSource) Find(id string) (int, table.Row, bool) {
+	s.mu.Lock()
+	s.ensureLocked()
+	idx, ok := s.index[id]
+	if !ok || idx < 0 || idx >= len(s.rows) {
+		s.mu.Unlock()
+		return -1, nil, false
+	}
+	row := s.rows[idx]
+	s.mu.Unlock()
+	return idx, row, true
+}
+
+func (s *liveObjectRowSource) ItemByID(id string) (Item, bool) {
+	s.mu.Lock()
+	s.ensureLocked()
+	it, ok := s.items[id]
+	s.mu.Unlock()
+	return it, ok
+}
+
+func (s *liveObjectRowSource) MarkDirty() {
+	s.mu.Lock()
+	s.dirty = true
+	s.mu.Unlock()
+	if s.owner != nil {
+		s.owner.BaseFolder.markDirtyFromSource()
+	}
 }

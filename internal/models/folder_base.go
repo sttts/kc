@@ -181,6 +181,12 @@ func (b *BaseFolder) clearDirty() {
 	b.mu.Unlock()
 }
 
+func (b *BaseFolder) markDirtyFromSource() {
+	b.mu.Lock()
+	b.dirty = true
+	b.mu.Unlock()
+}
+
 func (b *BaseFolder) rowSource() rowSource {
 	b.mu.Lock()
 	src := b.source
