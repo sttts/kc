@@ -20,7 +20,9 @@ import (
 	"github.com/sttts/kc/internal/overlay"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
+	corev1 "k8s.io/api/core/v1"
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
@@ -42,6 +44,19 @@ type kubectlEditFinishedMsg struct {
 	tempConfig  string
 }
 
+type namespaceCreatedMsg struct {
+	name string
+	err  error
+}
+
+type deleteTarget struct {
+	panelIdx  int
+	gvr       schema.GroupVersionResource
+	namespace string
+	name      string
+}
+
+type resourceDeletedMsg struct {
 // App represents the main application state
 type App struct {
 	leftPanel    *Panel
@@ -118,7 +133,7 @@ func NewApp() *App {
 		cfg: appconfig.Default(),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
-	app.terminal.SetLogger(ctrllog.FromContext(app.ctx).WithName("terminal"))
+	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
 	app.toastLogger = NewToastLogger(app, 2*time.Second)
 
 	// Register modals
@@ -503,6 +518,58 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		a.refreshPanelAfterEdit(msg.panelIndex)
+		return a, nil
+	case NamespaceCreateResultMsg:
+		if msg.Close {
+			a.modalManager.Hide()
+			if a.namespaceInput != nil {
+				a.namespaceInput.Reset()
+			}
+		}
+		if msg.Confirm {
+			if a.cl == nil {
+				if a.toastLogger != nil {
+					a.enqueueCmd(a.toastLogger.Errorf("Cluster not ready for namespace creation"))
+				}
+				return a, nil
+			}
+			return a, a.createNamespaceWithName(msg.Name)
+		}
+		return a, nil
+	case namespaceCreatedMsg:
+		if msg.err != nil {
+			if a.toastLogger != nil {
+				a.enqueueCmd(a.toastLogger.Errorf("Create namespace %s failed: %v", msg.name, msg.err))
+			} else {
+				a.enqueueCmd(a.ShowToast(fmt.Sprintf("Create namespace failed: %v", msg.err), 5*time.Second))
+			}
+			return a, nil
+		}
+		a.enqueueCmd(a.ShowToast(fmt.Sprintf("Namespace %s created", msg.name), 3*time.Second))
+		a.refreshPanelAfterEdit(0)
+		a.refreshPanelAfterEdit(1)
+		return a, nil
+	case DeleteConfirmMsg:
+		if msg.Close {
+			a.modalManager.Hide()
+		}
+		target := a.pendingDelete
+		a.pendingDelete = nil
+		if target != nil && msg.Confirm {
+			return a, a.performDelete(*target)
+		}
+		return a, nil
+	case resourceDeletedMsg:
+		if msg.err != nil {
+			if a.toastLogger != nil {
+				a.enqueueCmd(a.toastLogger.Errorf("Delete %s failed: %v", kubectlResourceRef(msg.target.gvr, msg.target.name), msg.err))
+			} else {
+				a.enqueueCmd(a.ShowToast(fmt.Sprintf("Delete failed: %v", msg.err), 5*time.Second))
+			}
+			return a, nil
+		}
+		a.enqueueCmd(a.ShowToast(fmt.Sprintf("Deleted %s", kubectlResourceRef(msg.target.gvr, msg.target.name)), 3*time.Second))
+		a.refreshPanelAfterEdit(msg.target.panelIdx)
 		return a, nil
 	case EscTimeoutMsg:
 		// Escape sequence timed out
@@ -1398,6 +1465,20 @@ func (a *App) setupModals() {
 	themeSelector := NewThemeSelector(nil)
 	themeModal := NewModal("YAML Theme", themeSelector)
 	a.modalManager.Register("theme_selector", themeModal)
+
+	// Namespace creation modal (configured on open)
+	nsModel := NewNamespaceCreateModel()
+	nsModal := NewModal("Create Namespace", nsModel)
+	nsModal.SetCloseOnSingleEsc(true)
+	a.modalManager.Register("namespace_create", nsModal)
+	a.namespaceInput = nsModel
+
+	// Delete confirmation modal
+	delModel := NewDeleteConfirmModel()
+	delModal := NewModal("Confirm Delete", delModel)
+	delModal.SetCloseOnSingleEsc(true)
+	a.modalManager.Register("delete_confirm", delModal)
+	a.deleteConfirm = delModel
 }
 
 // Message handlers for function keys
@@ -1466,18 +1547,169 @@ func (a *App) editResource() tea.Cmd {
 }
 
 func (a *App) createNamespace() tea.Cmd {
-	// TODO: Implement namespace creation
+	if a.currentCtx == nil {
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("No active context for namespace creation"))
+		}
+		return nil
+	}
+	panel := a.leftPanel
+	if a.activePanel == 1 {
+		panel = a.rightPanel
+	}
+	if panel == nil {
+		return nil
+	}
+	if panel.GetCurrentPath() != "/namespaces" {
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Create namespace is only available at /namespaces"))
+		}
+		return nil
+	}
+	modal := a.modalManager.modals["namespace_create"]
+	if modal == nil {
+		return nil
+	}
+	if a.namespaceInput == nil {
+		if model, ok := modal.content.(*NamespaceCreateModel); ok {
+			a.namespaceInput = model
+		} else {
+			return nil
+		}
+	}
+	a.namespaceInput.Reset()
+	a.namespaceInput.SetDimensions(max(20, a.width-4), max(5, a.height-6))
+	modal.SetContent(a.namespaceInput)
+	modal.SetDimensions(a.width, a.height)
+	bg, _ := a.renderMainView()
+	winW := min(max(40, a.width/2), a.width-4)
+	winH := min(10, a.height-4)
+	if winW < 30 {
+		winW = 30
+	}
+	if winH < 8 {
+		winH = 8
+	}
+	modal.SetWindowed(winW, winH, bg)
+	modal.SetOnClose(func() tea.Cmd {
+		a.namespaceInput.Reset()
+		return nil
+	})
+	a.modalManager.Show("namespace_create")
 	return nil
 }
 
 func (a *App) deleteResource() tea.Cmd {
-	// TODO: Implement resource deletion
+	panelIdx := 0
+	panel := a.leftPanel
+	if a.activePanel == 1 {
+		panelIdx = 1
+		panel = a.rightPanel
+	}
+	if panel == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	item, ok := panel.SelectedNavItem(ctx)
+	cancel()
+	if !ok || item == nil {
+		return nil
+	}
+	obj, ok := item.(models.ObjectItem)
+	if !ok {
+		return nil
+	}
+	gvr := obj.GVR()
+	name := obj.Name()
+	namespace := obj.Namespace()
+	target := deleteTarget{
+		panelIdx:  panelIdx,
+		gvr:       gvr,
+		namespace: namespace,
+		name:      name,
+	}
+	a.pendingDelete = &target
+
+	modal := a.modalManager.modals["delete_confirm"]
+	if modal == nil {
+		return nil
+	}
+	if a.deleteConfirm == nil {
+		if model, ok := modal.content.(*DeleteConfirmModel); ok {
+			a.deleteConfirm = model
+		} else {
+			return nil
+		}
+	}
+	resourceLabel := kubectlResourceRef(gvr, name)
+	a.deleteConfirm.Configure(resourceLabel, namespace)
+	a.deleteConfirm.SetDimensions(max(20, a.width-4), max(5, a.height-6))
+	modal.SetContent(a.deleteConfirm)
+	modal.SetDimensions(a.width, a.height)
+	bg, _ := a.renderMainView()
+	winW := min(max(50, a.width/2), a.width-4)
+	winH := min(8, a.height-4)
+	if winW < 40 {
+		winW = 40
+	}
+	if winH < 6 {
+		winH = 6
+	}
+	modal.SetWindowed(winW, winH, bg)
+	modal.SetOnClose(func() tea.Cmd {
+		a.pendingDelete = nil
+		return nil
+	})
+	a.modalManager.Show("delete_confirm")
 	return nil
 }
 
 func (a *App) showContextMenu() tea.Cmd {
 	// TODO: Implement context menu
 	return nil
+}
+
+func (a *App) createNamespaceWithName(name string) tea.Cmd {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	return a.withBusy("Create namespace", 300*time.Millisecond, func() tea.Msg {
+		if a.cl == nil {
+			return namespaceCreatedMsg{name: name, err: fmt.Errorf("cluster not ready")}
+		}
+		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+		defer cancel()
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}
+		if err := a.cl.GetClient().Create(ctx, ns); err != nil {
+			return namespaceCreatedMsg{name: name, err: err}
+		}
+		return namespaceCreatedMsg{name: name}
+	})
+}
+
+func (a *App) performDelete(target deleteTarget) tea.Cmd {
+	return a.withBusy("Delete", 300*time.Millisecond, func() tea.Msg {
+		if a.cl == nil {
+			return resourceDeletedMsg{target: target, err: fmt.Errorf("cluster not ready")}
+		}
+		ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+		defer cancel()
+		kind, err := a.cl.RESTMapper().KindFor(target.gvr)
+		if err != nil {
+			return resourceDeletedMsg{target: target, err: err}
+		}
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(kind)
+		obj.SetName(target.name)
+		if target.namespace != "" {
+			obj.SetNamespace(target.namespace)
+		}
+		if err := a.cl.GetClient().Delete(ctx, obj); err != nil {
+			return resourceDeletedMsg{target: target, err: err}
+		}
+		return resourceDeletedMsg{target: target}
+	})
 }
 
 // Function key action methods
