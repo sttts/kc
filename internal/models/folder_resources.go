@@ -11,6 +11,7 @@ import (
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // ResourcesFolder provides shared scaffolding for resource-group folders (namespace and cluster scoped).
@@ -31,38 +32,84 @@ func NewResourcesFolder(base *BaseFolder) *ResourcesFolder {
 }
 
 func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpec) []table.Row {
+	log := crlog.FromContext(ctx).WithName("resourcesFolder")
+
 	if len(specs) == 0 {
+		changed := len(f.items) > 0 || len(f.lastSpecs) > 0
 		f.items = make(map[string]*ResourceGroupItem)
 		f.lastSpecs = make(map[string]resourceGroupSignature)
+		if changed {
+			f.BaseFolder.markDirtyFromSource()
+			log.Info("resources cleared")
+		}
 		return nil
 	}
+
 	cfg := f.Deps.AppConfig
 	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
 	rows := make([]table.Row, 0, len(specs))
 	seen := make(map[string]*ResourceGroupItem, len(specs))
 	sigs := make(map[string]resourceGroupSignature, len(specs))
+	changed := len(specs) != len(f.lastSpecs)
 	for _, spec := range specs {
 		item, created := f.ensureResourceGroupItem(spec)
 		if item == nil {
 			continue
 		}
 		item.applySpec(spec, f.Deps, created)
-		item.SetOnChange(func() { f.BaseFolder.markDirty() })
-		item.ComputeCountAsync(nil)
-		if showNonEmpty && item.Empty() {
-			continue
+		if created {
+			item.SetOnChange(func() { f.BaseFolder.markDirty() })
 		}
+		item.ComputeCountAsync(nil)
+		visible := true
+		if showNonEmpty && item.Empty() {
+			visible = false
+		}
+		sig := makeResourceGroupSignature(spec, visible)
+		sigs[spec.id] = sig
+		if !changed {
+			prev, ok := f.lastSpecs[spec.id]
+			if !ok || prev != sig {
+				changed = true
+			}
+		}
+		seen[spec.id] = item
 		if count, ok := item.TryCount(); ok {
 			item.setCountCell(fmt.Sprintf("%d", count))
 		} else {
 			item.setCountCell("")
 		}
+		if !visible {
+			continue
+		}
 		rows = append(rows, item)
-		seen[spec.id] = item
-		sigs[spec.id] = makeResourceGroupSignature(spec)
 	}
+
+	if len(rows) == 0 {
+		f.items = seen
+		f.lastSpecs = sigs
+		if changed {
+			f.BaseFolder.markDirtyFromSource()
+			log.Info("resources updated", "count", 0)
+		}
+		return nil
+	}
+
+	if !changed {
+		for id := range f.lastSpecs {
+			if _, ok := sigs[id]; !ok {
+				changed = true
+				break
+			}
+		}
+	}
+
 	f.items = seen
 	f.lastSpecs = sigs
+	if changed {
+		f.BaseFolder.markDirtyFromSource()
+		log.Info("resources updated", "count", len(rows))
+	}
 	return rows
 }
 
@@ -149,15 +196,17 @@ type resourceGroupSignature struct {
 	watchable bool
 	cellsHash string
 	pathHash  string
+	visible   bool
 }
 
-func makeResourceGroupSignature(spec resourceGroupSpec) resourceGroupSignature {
+func makeResourceGroupSignature(spec resourceGroupSpec, visible bool) resourceGroupSignature {
 	return resourceGroupSignature{
 		gvr:       spec.gvr,
 		namespace: spec.namespace,
 		watchable: spec.watchable,
 		cellsHash: joinStrings(spec.cells),
 		pathHash:  joinStrings(spec.path),
+		visible:   visible,
 	}
 }
 
