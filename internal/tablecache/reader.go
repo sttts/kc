@@ -397,7 +397,7 @@ func newRESTTableFetcher(cfg *rest.Config, scheme *runtime.Scheme) (tableFetcher
 		baseConfig: config,
 		httpClient: httpClient,
 		codec:      codec,
-		paramCodec: runtime.NewParameterCodec(scheme),
+		paramCodec: metav1.ParameterCodec,
 	}, nil
 }
 
@@ -437,7 +437,7 @@ func (f *restTableFetcher) ListTable(ctx context.Context, mapping *meta.RESTMapp
 	}
 
 	req.Param("includeObject", string(metav1.IncludeObject))
-	req.VersionedParams(&opts, f.paramCodec)
+	req.SpecificallyVersionedParams(&opts, f.paramCodec, metav1.SchemeGroupVersion)
 	req.SetHeader("Accept", tableListAcceptHeader)
 
 	table := &metav1.Table{}
@@ -458,7 +458,7 @@ func (f *restTableFetcher) WatchTable(ctx context.Context, mapping *meta.RESTMap
 	}
 
 	req.Param("includeObject", string(metav1.IncludeObject))
-	req.VersionedParams(&opts, f.paramCodec)
+	req.SpecificallyVersionedParams(&opts, f.paramCodec, metav1.SchemeGroupVersion)
 	req.SetHeader("Accept", tableWatchAcceptHeader)
 
 	return req.Watch(ctx)

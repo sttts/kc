@@ -1,9 +1,12 @@
 package tablecache
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -14,8 +17,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestReaderListTables(t *testing.T) {
 	ctx := t.Context()
@@ -97,6 +107,77 @@ func TestReaderListMissingTarget(t *testing.T) {
 
 	if err := reader.List(ctx, &RowList{}); err == nil || !strings.Contains(err.Error(), "missing table target") {
 		t.Fatalf("expected missing target error, got %v", err)
+	}
+}
+
+func TestRESTTableFetcherListUnknownGroupVersion(t *testing.T) {
+	ctx := t.Context()
+
+	scheme := runtime.NewScheme()
+	metav1.AddToGroupVersion(scheme, metav1.SchemeGroupVersion)
+	if err := metav1.AddMetaToScheme(scheme); err != nil {
+		t.Fatalf("failed to add meta types to scheme: %v", err)
+	}
+
+	requestCh := make(chan *http.Request, 1)
+	response := &metav1.Table{
+		TypeMeta: metav1.TypeMeta{APIVersion: "meta.k8s.io/v1", Kind: "Table"},
+		ListMeta: metav1.ListMeta{ResourceVersion: "123"},
+	}
+	payload, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("failed to marshal response: %v", err)
+	}
+	cfg := &rest.Config{Host: "https://example.com"}
+	cfg.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		select {
+		case requestCh <- req:
+		default:
+		}
+		resp := &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader(payload)),
+			Request:    req,
+		}
+		resp.Header.Set("Content-Type", "application/json")
+		return resp, nil
+	})
+	fetcher, err := newRESTTableFetcher(cfg, scheme)
+	if err != nil {
+		t.Fatalf("failed to construct fetcher: %v", err)
+	}
+
+	mapping := &meta.RESTMapping{
+		Resource: schema.GroupVersionResource{Group: "custom.io", Version: "v1alpha1", Resource: "widgets"},
+		GroupVersionKind: schema.GroupVersionKind{
+			Group:   "custom.io",
+			Version: "v1alpha1",
+			Kind:    "Widget",
+		},
+		Scope: meta.RESTScopeNamespace,
+	}
+
+	opts := metav1.ListOptions{LabelSelector: "env=dev"}
+	table, err := fetcher.ListTable(ctx, mapping, "default", opts)
+	if err != nil {
+		t.Fatalf("ListTable returned error: %v", err)
+	}
+	if table == nil || table.ResourceVersion != "123" {
+		t.Fatalf("expected table resourceVersion 123, got %+v", table)
+	}
+
+	select {
+	case req := <-requestCh:
+		expectedPath := "/apis/custom.io/v1alpha1/namespaces/default/widgets"
+		if req.URL.Path != expectedPath {
+			t.Fatalf("expected path %s, got %s", expectedPath, req.URL.Path)
+		}
+		if got := req.URL.Query().Get("labelSelector"); got != "env=dev" {
+			t.Fatalf("expected labelSelector env=dev, got %q", got)
+		}
+	default:
+		t.Fatal("expected request to be sent to server")
 	}
 }
 
