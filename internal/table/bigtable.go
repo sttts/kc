@@ -3,6 +3,7 @@ package table
 import (
 	"context"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
@@ -20,6 +21,8 @@ const (
 	// ModeFit constrains columns to fit the viewport width.
 	ModeFit
 )
+
+const bigTableUpdateTimeout = 250 * time.Millisecond
 
 // BigTable is a reusable Bubble Tea component that renders large, dynamic
 // tables backed by a List provider using a single lipgloss.table.
@@ -94,21 +97,21 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 	}
 
 	bt := BigTable{
-		mode:       ModeScroll,
-		w:          max(20, w),
-		h:          max(6, h),
-		cols:       append([]Column(nil), cols...),
-		list:       list,
-		desired:    desired,
-		selected:   make(map[string]struct{}),
-		top:        0,
-		cursor:     0,
-		focusedID:  "",
-		styles:     DefaultStyles(),
-		bColumn:    false,
-		xOff:       0,
-		hStep:      4,
-		focused:    true,
+		mode:      ModeScroll,
+		w:         max(20, w),
+		h:         max(6, h),
+		cols:      append([]Column(nil), cols...),
+		list:      list,
+		desired:   desired,
+		selected:  make(map[string]struct{}),
+		top:       0,
+		cursor:    0,
+		focusedID: "",
+		styles:    DefaultStyles(),
+		bColumn:   false,
+		xOff:      0,
+		hStep:     4,
+		focused:   true,
 	}
 	return bt
 }
@@ -329,7 +332,9 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 }
 
 func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
-	return m.UpdateWithContext(context.Background(), msg)
+	ctx, cancel := context.WithTimeout(context.Background(), bigTableUpdateTimeout)
+	defer cancel()
+	return m.UpdateWithContext(ctx, msg)
 }
 
 // View renders the component.

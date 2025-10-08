@@ -54,10 +54,3 @@ func New(cfg *rest.Config, opts Options) (cache.Cache, error) {
 func NewFromOptions(cfg *rest.Config, cacheOpts cache.Options) (cache.Cache, error) {
 	return New(cfg, Options{Options: cacheOpts})
 }
-
-// NewCacheFunc produces a cache.NewCacheFunc suitable for manager.Options.NewCache.
-func NewCacheFunc() cache.NewCacheFunc {
-	return func(cfg *rest.Config, opts cache.Options) (cache.Cache, error) {
-		return New(cfg, Options{Options: opts})
-	}
-}

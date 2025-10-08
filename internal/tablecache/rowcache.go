@@ -5,12 +5,9 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
 type rowCache struct {
@@ -118,45 +115,4 @@ func (c *rowCache) IndexField(ctx context.Context, obj client.Object, field stri
 		return fmt.Errorf("tablecache: indexing not supported for Row")
 	}
 	return c.Cache.IndexField(ctx, obj, field, extract)
-}
-
-// NewRowCacheFunc returns a cache.NewCacheFunc that wraps the default cache with row support.
-func NewRowCacheFunc(scheme *runtime.Scheme) cache.NewCacheFunc {
-	return func(cfg *rest.Config, opts cache.Options) (cache.Cache, error) {
-		base, err := cache.New(cfg, opts)
-		if err != nil {
-			return nil, err
-		}
-
-		sch := opts.Scheme
-		if sch == nil {
-			sch = scheme
-		}
-		if sch == nil {
-			sch = runtime.NewScheme()
-		}
-
-		httpClient := opts.HTTPClient
-		if httpClient == nil {
-			httpClient, err = rest.HTTPClientFor(cfg)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		mapper := opts.Mapper
-		if mapper == nil {
-			mapper, err = apiutil.NewDynamicRESTMapper(cfg, httpClient)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		fetcher, err := newRESTTableFetcher(cfg, sch)
-		if err != nil {
-			return nil, err
-		}
-
-		return newRowCache(base, mapper, fetcher), nil
-	}
 }
