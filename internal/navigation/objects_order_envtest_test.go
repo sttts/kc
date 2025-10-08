@@ -81,11 +81,17 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 	// Verify Age column exists
 	cols := f1.Columns()
-	if len(cols) == 0 || cols[len(cols)-1].Title != "Age" {
+	ageIdx := -1
+	for i, col := range cols {
+		if col.Title == "Age" {
+			ageIdx = i
+			break
+		}
+	}
+	if ageIdx == -1 {
 		t.Fatalf("missing Age column: %+v", cols)
 	}
 	// Age cells non-empty
-	ageIdx := len(cols) - 1
 	for _, r := range rows {
 		id, cells, _, _ := r.Columns()
 		if id == "__back__" {

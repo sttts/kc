@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/internal/tablecache"
@@ -15,7 +14,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	utilduration "k8s.io/apimachinery/pkg/util/duration"
 	toolscache "k8s.io/client-go/tools/cache"
 )
 
@@ -68,12 +66,11 @@ func (o *ObjectsFolder) ObjectListMeta() (schema.GroupVersionResource, string, b
 
 func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, order string) []table.Row {
 	vis := visibleColumns(rl.Columns, columnsMode)
-	cols := make([]table.Column, len(vis)+1)
+	cols := make([]table.Column, len(vis))
 	for i := range vis {
 		c := rl.Columns[vis[i]]
 		cols[i] = table.Column{Title: c.Name}
 	}
-	cols[len(cols)-1] = table.Column{Title: "Age"}
 	o.SetColumns(cols)
 
 	idxs := orderRowIndices(rl.Items, order)
@@ -88,11 +85,6 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		name := rowName(rr)
 		id := name
 		cells := buildCells(rr.Cells, vis, hasChild)
-		age := ""
-		if !rr.ObjectMeta.CreationTimestamp.IsZero() {
-			age = utilduration.HumanDuration(time.Since(rr.ObjectMeta.CreationTimestamp.Time))
-		}
-		cells[len(cells)-1] = age
 		basePath := append(append([]string{}, o.Path()...), name)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, o.namespace, name, nameStyle)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
@@ -201,7 +193,7 @@ func orderRowIndices(items []tablecache.Row, order string) []int {
 }
 
 func buildCells(cells []interface{}, vis []int, hasChild bool) []string {
-	out := make([]string, len(vis)+1)
+	out := make([]string, len(vis))
 	for i := range vis {
 		idx := vis[i]
 		if idx < len(cells) {
