@@ -15,20 +15,20 @@ import (
 // TextViewer is a scrollable text viewer with Chroma syntax highlighting.
 // It is format-agnostic: provide lang (lexer name), or mime/filename hints.
 type TextViewer struct {
-	title    string
-	content  []string // highlighted, ANSI-colored lines
-	raw      string   // original, uncolored content for re-highlight on resize/theme
-	width    int
-	height   int
-	offset   int // vertical scroll (top line index)
-	hOffset  int // horizontal scroll (left column index)
-    theme    string
-    // Syntax detection hints
-    lang     string // e.g., "yaml", "json", "go" (lexer name)
-    mime     string // e.g., "application/yaml"
-    filename string // e.g., "file.yaml"
+	title   string
+	content []string // highlighted, ANSI-colored lines
+	raw     string   // original, uncolored content for re-highlight on resize/theme
+	width   int
+	height  int
+	offset  int // vertical scroll (top line index)
+	hOffset int // horizontal scroll (left column index)
+	theme   string
+	// Syntax detection hints
+	lang     string         // e.g., "yaml", "json", "go" (lexer name)
+	mime     string         // e.g., "application/yaml"
+	filename string         // e.g., "file.yaml"
 	onEdit   func() tea.Cmd // invoked on F4
-    onTheme  func() tea.Cmd // invoked on F2 to open theme selector
+	onTheme  func() tea.Cmd // invoked on F2 to open theme selector
 	onClose  func() tea.Cmd // invoked on F10 to close modal
 	rawLines []string       // raw, uncolored lines for measuring widths
 }
@@ -36,19 +36,19 @@ type TextViewer struct {
 //
 
 func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
-    v := &TextViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
-    v.rawLines = strings.Split(text, "\n")
-    v.content = v.highlightWithTheme(text, theme)
-    return v
+	v := &TextViewer{title: title, raw: text, theme: theme, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
+	v.rawLines = strings.Split(text, "\n")
+	v.content = v.highlightWithTheme(text, theme)
+	return v
 }
 
 // NewTextViewer creates a syntax-highlighted viewer for arbitrary text.
 // Provide at least one of lang/mime/filename for best detection; otherwise a fallback will be used.
 func NewTextViewer(title, text, lang, mime, filename, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
-    v := &TextViewer{title: title, raw: text, theme: theme, lang: lang, mime: mime, filename: filename, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
-    v.rawLines = strings.Split(text, "\n")
-    v.content = v.highlightWithTheme(text, theme)
-    return v
+	v := &TextViewer{title: title, raw: text, theme: theme, lang: lang, mime: mime, filename: filename, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
+	v.rawLines = strings.Split(text, "\n")
+	v.content = v.highlightWithTheme(text, theme)
+	return v
 }
 
 func (v *TextViewer) Init() tea.Cmd { return nil }
@@ -103,10 +103,10 @@ func (v *TextViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if v.onEdit != nil {
 				return v, v.onEdit()
 			}
-        case "f2":
-            if v.onTheme != nil {
-                return v, v.onTheme()
-            }
+		case "f2":
+			if v.onTheme != nil {
+				return v, v.onTheme()
+			}
 		case "f10":
 			if v.onClose != nil {
 				return v, v.onClose()
@@ -136,7 +136,12 @@ func (v *TextViewer) View() string {
 
 // FooterHints implements ModalFooterHints to show extra footer actions.
 func (v *TextViewer) FooterHints() [][2]string {
-    return [][2]string{{"F2", "Theme"}, {"F10", "Close"}}
+	hints := [][2]string{{"F2", "Theme"}}
+	if v.onEdit != nil {
+		hints = append(hints, [2]string{"F4", "Edit"})
+	}
+	hints = append(hints, [2]string{"F10", "Close"})
+	return hints
 }
 
 // SetTheme updates the theme and re-highlights content.
@@ -166,13 +171,23 @@ func (v *TextViewer) RequestTheme() tea.Cmd {
 // highlightWithTheme converts YAML to ANSI-colored lines using chroma with no background so it
 // blends with the panel theme. On failure it returns the plain, uncolored lines.
 func (v *TextViewer) highlightWithTheme(text, theme string) []string {
-    // Pick lexer using hints: lang > mime > filename > analyse > fallback
-    var lexer chroma.Lexer
-    if v.lang != "" { lexer = lexers.Get(v.lang) }
-    if lexer == nil && v.mime != "" { lexer = lexers.MatchMimeType(v.mime) }
-    if lexer == nil && v.filename != "" { lexer = lexers.Match(v.filename) }
-    if lexer == nil { lexer = lexers.Analyse(text) }
-    if lexer == nil { lexer = lexers.Fallback }
+	// Pick lexer using hints: lang > mime > filename > analyse > fallback
+	var lexer chroma.Lexer
+	if v.lang != "" {
+		lexer = lexers.Get(v.lang)
+	}
+	if lexer == nil && v.mime != "" {
+		lexer = lexers.MatchMimeType(v.mime)
+	}
+	if lexer == nil && v.filename != "" {
+		lexer = lexers.Match(v.filename)
+	}
+	if lexer == nil {
+		lexer = lexers.Analyse(text)
+	}
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
 	iterator, err := lexer.Tokenise(nil, text)
 	if err != nil {
 		return strings.Split(text, "\n")

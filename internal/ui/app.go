@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -31,6 +33,14 @@ type EscTimeoutMsg struct{}
 
 // FolderTickMsg triggers periodic folder refresh (debounced to ~1s).
 type FolderTickMsg struct{}
+
+// kubectlEditFinishedMsg notifies that a kubectl edit invocation exited.
+type kubectlEditFinishedMsg struct {
+	err         error
+	panelIndex  int
+	resourceRef string
+	tempConfig  string
+}
 
 // App represents the main application state
 type App struct {
@@ -108,6 +118,7 @@ func NewApp() *App {
 		cfg: appconfig.Default(),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
+	app.terminal.SetLogger(ctrllog.FromContext(app.ctx).WithName("terminal"))
 	app.toastLogger = NewToastLogger(app, 2*time.Second)
 
 	// Register modals
@@ -478,6 +489,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
 			}
 		}
+		return a, nil
+	case kubectlEditFinishedMsg:
+		if msg.tempConfig != "" {
+			_ = os.Remove(msg.tempConfig)
+		}
+		if msg.err != nil {
+			if a.toastLogger != nil {
+				a.enqueueCmd(a.toastLogger.Errorf("kubectl edit %s failed: %v", msg.resourceRef, msg.err))
+			} else {
+				a.enqueueCmd(a.ShowToast(fmt.Sprintf("kubectl edit failed: %v", msg.err), 5*time.Second))
+			}
+			return a, nil
+		}
+		a.refreshPanelAfterEdit(msg.panelIndex)
 		return a, nil
 	case EscTimeoutMsg:
 		// Escape sequence timed out
@@ -1135,6 +1160,25 @@ func (a *App) renderFunctionKeys() string {
 		cur := p.GetCurrentItem()
 		// Defaults
 		canView, canEdit, canCreateNS, canDelete := false, false, false, false
+		var hasViewable bool
+		var hasObject bool
+		if cur != nil && cur.Item != nil && cur.Name != ".." {
+			if _, isBack := cur.Item.(models.Back); !isBack {
+				if _, ok := cur.Item.(models.ObjectItem); ok {
+					hasObject = true
+				}
+				if _, ok := cur.Item.(models.Viewable); ok {
+					hasViewable = true
+				} else {
+					type vc interface {
+						ViewContent() (string, string, string, string, string, error)
+					}
+					if _, ok := cur.Item.(vc); ok {
+						hasViewable = true
+					}
+				}
+			}
+		}
 		// Location-based rules
 		if path == "/namespaces" {
 			canCreateNS = true
@@ -1163,6 +1207,14 @@ func (a *App) renderFunctionKeys() string {
 					canDelete = true
 				}
 			}
+		}
+
+		if !hasViewable {
+			canView = false
+		}
+		if !hasObject {
+			canEdit = false
+			canDelete = false
 		}
 
 		// Helper to render enabled/disabled key
@@ -1488,7 +1540,11 @@ func (a *App) openViewerForSelection() tea.Cmd {
 	if a.cfg != nil && a.cfg.Viewer.Theme != "" {
 		theme = a.cfg.Viewer.Theme
 	}
-	viewer := NewTextViewer(title, body, lang, mime, filename, theme, func() tea.Cmd { return a.editSelection() }, nil, func() tea.Cmd {
+	var onEdit func() tea.Cmd
+	if _, ok := item.(models.ObjectItem); ok {
+		onEdit = func() tea.Cmd { return a.editSelection() }
+	}
+	viewer := NewTextViewer(title, body, lang, mime, filename, theme, onEdit, nil, func() tea.Cmd {
 		a.modalManager.Hide()
 		return nil
 	})
@@ -1566,10 +1622,171 @@ func (a *App) showThemeSelector(v *TextViewer) tea.Cmd {
 	return nil
 }
 
-// editSelection triggers kubectl edit for the selected object (stub wiring; full logic in later step).
+// editSelection triggers kubectl edit for the selected object.
 func (a *App) editSelection() tea.Cmd {
-	// Placeholder: actual kubectl edit integration will be added in the Edit task.
-	return nil
+	panel := a.leftPanel
+	panelIdx := 0
+	if a.activePanel == 1 {
+		panel = a.rightPanel
+		panelIdx = 1
+	}
+	if panel == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	item, ok := panel.SelectedNavItem(ctx)
+	cancel()
+	if !ok || item == nil {
+		return nil
+	}
+	obj, ok := item.(models.ObjectItem)
+	if !ok {
+		return nil
+	}
+
+	path := panel.GetCurrentPath()
+	return a.runKubectlEdit(panelIdx, path, obj)
+}
+
+func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectItem) tea.Cmd {
+	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
+		if a.toastLogger != nil {
+			return a.toastLogger.Errorf("kubectl edit: no active kubeconfig")
+		}
+		return a.ShowToast("kubectl edit unavailable: no active kubeconfig", 5*time.Second)
+	}
+
+	log := ctrllog.FromContext(a.ctx).WithName("kubectl_edit")
+
+	kubeconfigPath := a.currentCtx.Kubeconfig.Path
+	tempConfigPath := ""
+	if kubeconfigPath == "" {
+		if a.currentCtx.Kubeconfig.Config == nil {
+			if a.toastLogger != nil {
+				return a.toastLogger.Errorf("kubectl edit: kubeconfig has no backing file")
+			}
+			return a.ShowToast("kubectl edit failed: kubeconfig missing backing file", 5*time.Second)
+		}
+		tmpFile, err := os.CreateTemp("", "kc-kubeconfig-*.yaml")
+		if err != nil {
+			if a.toastLogger != nil {
+				return a.toastLogger.Errorf("kubectl edit: temp kubeconfig: %v", err)
+			}
+			return a.ShowToast(fmt.Sprintf("kubectl edit failed: %v", err), 5*time.Second)
+		}
+		if err := tmpFile.Close(); err != nil {
+			_ = os.Remove(tmpFile.Name())
+			if a.toastLogger != nil {
+				return a.toastLogger.Errorf("kubectl edit: temp kubeconfig close: %v", err)
+			}
+			return a.ShowToast(fmt.Sprintf("kubectl edit failed: %v", err), 5*time.Second)
+		}
+		if err := clientcmd.WriteToFile(*a.currentCtx.Kubeconfig.Config, tmpFile.Name()); err != nil {
+			_ = os.Remove(tmpFile.Name())
+			if a.toastLogger != nil {
+				return a.toastLogger.Errorf("kubectl edit: write kubeconfig: %v", err)
+			}
+			return a.ShowToast(fmt.Sprintf("kubectl edit failed: %v", err), 5*time.Second)
+		}
+		kubeconfigPath = tmpFile.Name()
+		tempConfigPath = tmpFile.Name()
+	}
+
+	contextName := a.currentCtx.Name
+	if contextName == "" {
+		if a.toastLogger != nil {
+			return a.toastLogger.Errorf("kubectl edit: context name empty")
+		}
+		return a.ShowToast("kubectl edit failed: active context missing name", 5*time.Second)
+	}
+
+	namespace := strings.TrimSpace(obj.Namespace())
+	if namespace == "" && panelPath != "" {
+		if ns, _, _, ok := parseNamespacedObjectPath(panelPath, obj.Name()); ok && ns != "" {
+			namespace = ns
+		}
+	}
+	if namespace == "" {
+		namespace = strings.TrimSpace(a.currentCtx.Namespace)
+	}
+
+	resourceRef := kubectlResourceRef(obj.GVR(), obj.Name())
+
+	commandStr := strings.Join(append([]string{"kubectl", "edit", resourceRef, "--context", contextName, "--kubeconfig", kubeconfigPath}), " ")
+	args := []string{"edit", resourceRef, "--context", contextName, "--kubeconfig", kubeconfigPath}
+	if namespace != "" {
+		args = append(args, "--namespace", namespace)
+		commandStr = commandStr + " --namespace " + namespace
+	}
+
+	log.Info("launching kubectl edit", "command", commandStr)
+	a.logCommandToTerminal(commandStr)
+
+	// Ensure the UI returns to the primary panel view before launching the editor.
+	if a.modalManager != nil {
+		for a.modalManager.IsModalVisible() {
+			a.modalManager.Hide()
+		}
+	}
+	if a.showTerminal {
+		a.showTerminal = false
+		if a.terminal != nil {
+			a.terminal.SetShowPanels(true)
+		}
+	}
+
+	cmd := exec.Command("kubectl", args...)
+	env := os.Environ()
+	if kubeconfigPath != "" {
+		env = append(env, "KUBECONFIG="+kubeconfigPath)
+	}
+	cmd.Env = env
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return kubectlEditFinishedMsg{
+			err:         err,
+			panelIndex:  panelIdx,
+			resourceRef: resourceRef,
+			tempConfig:  tempConfigPath,
+		}
+	})
+}
+
+func kubectlResourceRef(gvr schema.GroupVersionResource, name string) string {
+	resource := strings.Join([]string{gvr.Resource, gvr.Version, gvr.Group}, ".")
+	return fmt.Sprintf("%s/%s", resource, name)
+}
+
+func (a *App) logCommandToTerminal(command string) {
+	if command == "" {
+		return
+	}
+	fmt.Fprintf(os.Stdout, "\n[kc] %s\n", command)
+}
+
+func (a *App) refreshPanelAfterEdit(panelIdx int) {
+	var panel *Panel
+	var nav *navui.Navigator
+	if panelIdx == 0 {
+		panel = a.leftPanel
+		nav = a.leftNav
+	} else {
+		panel = a.rightPanel
+		nav = a.rightNav
+	}
+
+	if nav != nil {
+		if rf, ok := nav.Current().(interface{ Refresh() }); ok {
+			rf.Refresh()
+		}
+	}
+
+	if panel != nil {
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		panel.RefreshFolder(ctx)
+		cancel()
+	}
 }
 
 func parseNamespacedObjectPath(path, currentName string) (ns, res, name string, ok bool) {
