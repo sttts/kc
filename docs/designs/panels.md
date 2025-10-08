@@ -40,6 +40,13 @@
 - `ManifestWidget` reuses the existing `models.Viewable` contract to keep behavior consistent with the F3 viewer.
 - Theme updates flow from app config into widgets through `WidgetDeps`.
 
+## Input Handling
+- The app only owns truly global shortcuts (quit, fullscreen/toggle terminal, `Alt+F1/Alt+F2`, `Ctrl+1/2`). Every other key and mouse event is forwarded directly to the active panel.
+- The panel shell contains a small input router: it gives the widget first shot at each `tea.Msg`; if the widget returns “handled,” the shell stops. Otherwise the shell applies its minimal built-in navigation (selection movement, folder enter/back).
+- Widgets declare their own key and mouse behaviour. `ListWidget` consumes navigation keys, selection toggles, and scroll wheel; `DescribeWidget` might handle search/theme keys; future widgets can claim drag/drop or other mouse gestures.
+- Mouse coordinates are normalized by the panel before invoking the widget so individual widgets never worry about frame borders.
+- Cross-panel effects still surface as high-level events (`SelectionChanged`, `ModeChanged`) rather than raw keycodes, keeping both `App` and `Panel` lean.
+
 ## Lifecycle Flow
 1. App bootstraps two panels, builds a `WidgetDeps` per panel, registers widget factories for each supported mode.
 2. When a mode is first activated, the panel instantiates the widget and calls `Init`.
