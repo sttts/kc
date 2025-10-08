@@ -46,24 +46,35 @@ func (s *sliceRowSource) setPopulate(populate func(context.Context) ([]table.Row
 
 func (s *sliceRowSource) ensureLocked(ctx context.Context) {
 	s.once.Do(func() { s.dirty = true })
-	if !s.dirty {
+	for {
+		if !s.dirty {
+			return
+		}
+		populate := s.populate
+		if populate == nil {
+			s.rows = nil
+			s.index = nil
+			s.items = nil
+			s.dirty = false
+			return
+		}
+		s.dirty = false
+		s.mu.Unlock()
+		rows, err := populate(ctx)
+		s.mu.Lock()
+		if err != nil {
+			// Preserve previous snapshot if populate fails; caller may log separately.
+			s.dirty = true
+			return
+		}
+		if s.dirty {
+			// Dirty again while unlocked; refresh with the latest data.
+			continue
+		}
+		s.rows = rows
+		s.rebuildIndexLocked()
 		return
 	}
-	s.dirty = false
-	if s.populate == nil {
-		s.rows = nil
-		s.index = nil
-		s.items = nil
-		return
-	}
-	rows, err := s.populate(ctx)
-	if err != nil {
-		// Preserve previous snapshot if populate fails; caller may log separately.
-		s.dirty = true
-		return
-	}
-	s.rows = rows
-	s.rebuildIndexLocked()
 }
 
 func (s *sliceRowSource) rebuildIndexLocked() {
