@@ -20,10 +20,14 @@ type DeleteConfirmModel struct {
 	target        string
 	namespace     string
 	focus         int // 0=yes, 1=no
-	buttonRect    [2]rect
+	buttonRect    [2]buttonRect
 }
 
-type rect struct{ x, y, w, h int }
+type buttonRect struct{ x, y, w, h int }
+
+func (r buttonRect) contains(px, py int) bool {
+	return px >= r.x && px < r.x+r.w && py >= r.y && py < r.y+r.h
+}
 
 func NewDeleteConfirmModel() *DeleteConfirmModel {
 	return &DeleteConfirmModel{focus: 1}
@@ -67,21 +71,24 @@ func (m *DeleteConfirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	case tea.MouseMsg:
-		switch ev := msg.(type) {
-		case tea.MouseClickMsg, tea.MouseReleaseMsg:
-			pos := ev.Mouse()
-			for idx, r := range m.buttonRect {
-				if r.contains(pos.X, pos.Y) {
-					m.focus = idx
-					if _, ok := ev.(tea.MouseReleaseMsg); ok {
-						return m, func() tea.Msg {
-							return DeleteConfirmMsg{
-								Confirm: idx == 0,
-								Close:   true,
-							}
-						}
+		mouse := key.Mouse()
+		if mouse.Button != tea.MouseLeft {
+			return m, nil
+		}
+		for idx, r := range m.buttonRect {
+			if !r.contains(mouse.X, mouse.Y) {
+				continue
+			}
+			if _, ok := msg.(tea.MouseClickMsg); ok {
+				m.focus = idx
+				return m, nil
+			}
+			if _, ok := msg.(tea.MouseReleaseMsg); ok {
+				return m, func() tea.Msg {
+					return DeleteConfirmMsg{
+						Confirm: idx == 0,
+						Close:   true,
 					}
-					return m, nil
 				}
 			}
 		}
@@ -92,8 +99,9 @@ func (m *DeleteConfirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *DeleteConfirmModel) View() string {
 	innerWidth := max(30, m.width-4)
 	const buttonWidth = 8
+	separatorWidth := 1
 	for i := range m.buttonRect {
-		m.buttonRect[i] = rect{}
+		m.buttonRect[i] = buttonRect{}
 	}
 	bg := lipgloss.NewStyle().
 		Background(lipgloss.Color("250")).
@@ -113,14 +121,19 @@ func (m *DeleteConfirmModel) View() string {
 		Background(lipgloss.Color("250")).
 		Render(" ")
 	bodyRow := lipgloss.JoinHorizontal(lipgloss.Center, options[0], separator, options[1])
-	leftX := (innerWidth / 2) - (buttonWidth + 1)
-	if leftX < 0 {
-		leftX = 0
-	}
-	bodyY := m.height/2 + 1
-	m.buttonRect[0] = rect{x: leftX, y: bodyY, w: buttonWidth, h: 1}
-	m.buttonRect[1] = rect{x: leftX + buttonWidth + 1, y: bodyY, w: buttonWidth, h: 1}
 	bodyView := bg.Copy().Align(lipgloss.Center).Render(bodyRow)
+	rowWidth := lipgloss.Width(bodyRow)
+	leftPad := max(0, (innerWidth-rowWidth)/2)
+	bodyLine := 2 // title (0), spacer (1), buttons (2)
+	yesWidth := lipgloss.Width(options[0])
+	noWidth := lipgloss.Width(options[1])
+	m.buttonRect[0] = buttonRect{x: leftPad, y: bodyLine, w: yesWidth, h: 1}
+	m.buttonRect[1] = buttonRect{
+		x: leftPad + yesWidth + separatorWidth,
+		y: bodyLine,
+		w: noWidth,
+		h: 1,
+	}
 	spacer := bg.Copy().Render("")
 	return lipgloss.JoinVertical(lipgloss.Left, titleView, spacer, bodyView, spacer, helpView)
 }
@@ -145,10 +158,4 @@ func (m *DeleteConfirmModel) renderOption(label string, width int, focused bool)
 
 func (m *DeleteConfirmModel) FooterHints() [][2]string {
 	return [][2]string{{"Enter", "Confirm"}, {"Esc", "Cancel"}}
-}
-
-type rect struct{ x, y, w, h int }
-
-func (r rect) contains(px, py int) bool {
-	return px >= r.x && px < r.x+r.w && py >= r.y && py < r.y+r.h
 }

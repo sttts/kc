@@ -25,6 +25,8 @@ type Modal struct {
 	winHeight      int
 	background     string        // full-screen base to overlay on when windowed
 	backgroundFunc func() string // dynamic background provider
+	contentOffsetX int
+	contentOffsetY int
 }
 
 // RedrawTickMsg is emitted periodically to force a re-render while a
@@ -94,6 +96,8 @@ func (m *Modal) SetWindowed(winW, winH int, bg string) {
 	m.windowed = true
 	m.winWidth, m.winHeight = winW, winH
 	m.background = bg
+	m.contentOffsetX = 0
+	m.contentOffsetY = 0
 }
 
 // SetWindowedBackgroundProvider sets a function to produce the background
@@ -111,31 +115,31 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle modal-specific keys
 	switch msg := msg.(type) {
-    case tea.KeyMsg:
-        switch msg.String() {
-        case "esc":
-            // Double-ESC always closes, regardless of closeOnSingleEsc.
-            if m.escPressed {
-                m.escPressed = false
-                m.Hide()
-                if m.onClose != nil {
-                    cmd = m.onClose()
-                    cmds = append(cmds, cmd)
-                }
-                return m, tea.Batch(cmds...)
-            }
-            // Single ESC: close immediately only when enabled
-            if m.closeOnSingleEsc {
-                m.Hide()
-                if m.onClose != nil {
-                    cmd = m.onClose()
-                    cmds = append(cmds, cmd)
-                }
-                return m, tea.Batch(cmds...)
-            }
-            // Otherwise arm ESC sequence to allow ESC ESC close
-            m.escPressed = true
-            return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			// Double-ESC always closes, regardless of closeOnSingleEsc.
+			if m.escPressed {
+				m.escPressed = false
+				m.Hide()
+				if m.onClose != nil {
+					cmd = m.onClose()
+					cmds = append(cmds, cmd)
+				}
+				return m, tea.Batch(cmds...)
+			}
+			// Single ESC: close immediately only when enabled
+			if m.closeOnSingleEsc {
+				m.Hide()
+				if m.onClose != nil {
+					cmd = m.onClose()
+					cmds = append(cmds, cmd)
+				}
+				return m, tea.Batch(cmds...)
+			}
+			// Otherwise arm ESC sequence to allow ESC ESC close
+			m.escPressed = true
+			return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
 		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
 			if m.escPressed {
 				switch msg.String() {
@@ -160,18 +164,22 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-    case EscTimeoutMsg:
-        if m.escPressed {
-            // Timeout expired without second ESC; cancel sequence.
-            m.escPressed = false
-            // For closeOnSingleEsc=false, do nothing (wait for explicit action)
-            // For true, single ESC already closed immediately above.
-            return m, nil
-        }
+	case EscTimeoutMsg:
+		if m.escPressed {
+			// Timeout expired without second ESC; cancel sequence.
+			m.escPressed = false
+			// For closeOnSingleEsc=false, do nothing (wait for explicit action)
+			// For true, single ESC already closed immediately above.
+			return m, nil
+		}
 	}
 
 	// Update the content
-	model, cmd := m.content.Update(msg)
+	updateMsg := msg
+	if mm, ok := msg.(tea.MouseMsg); ok {
+		updateMsg = shiftMouseMsg(mm, m.contentOffsetX, m.contentOffsetY)
+	}
+	model, cmd := m.content.Update(updateMsg)
 	m.content = model
 	cmds = append(cmds, cmd)
 
@@ -189,20 +197,22 @@ func (m *Modal) View() string {
 	if !m.visible {
 		return ""
 	}
-    // Fullscreen modal styled like panel
-    // Reserve 1 line for overlay header and 1 terminal line for the function key bar outside the frame.
-    // The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
-    contentW := max(1, m.width-2)
-    contentH := max(1, m.height-3)
-    // For YAML viewers, drop left/right borders for easier copy/paste and allow full width content.
-    // Full-width content for viewers: detect via RequestTheme capability (viewers implement it)
-    _, isViewer := m.content.(interface{ RequestTheme() tea.Cmd })
-    if isViewer {
-        contentW = m.width
-        // Viewers do not draw a bottom border; give them one extra row of
-        // interior height so content reaches the footer line.
-        contentH = max(1, m.height-2)
-    }
+	// Fullscreen modal styled like panel
+	// Reserve 1 line for overlay header and 1 terminal line for the function key bar outside the frame.
+	// The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
+	contentW := max(1, m.width-2)
+	contentH := max(1, m.height-3)
+	// For YAML viewers, drop left/right borders for easier copy/paste and allow full width content.
+	// Full-width content for viewers: detect via RequestTheme capability (viewers implement it)
+	_, isViewer := m.content.(interface{ RequestTheme() tea.Cmd })
+	if isViewer {
+		contentW = m.width
+		// Viewers do not draw a bottom border; give them one extra row of
+		// interior height so content reaches the footer line.
+		contentH = max(1, m.height-2)
+	}
+	m.contentOffsetX = 0
+	m.contentOffsetY = 0
 
 	if m.windowed {
 		// Render background (use provided base or blank)
@@ -221,6 +231,31 @@ func (m *Modal) View() string {
 		winH := min(m.winHeight, m.height-1) // leave room for footer outside
 		innerW := max(1, winW-2)
 		innerH := max(1, winH-2)
+		windowOffsetX := (m.width - winW) / 2
+		if windowOffsetX < 0 {
+			windowOffsetX = 0
+		}
+		maxOffsetX := m.width - winW
+		if maxOffsetX < 0 {
+			maxOffsetX = 0
+		}
+		if windowOffsetX > maxOffsetX {
+			windowOffsetX = maxOffsetX
+		}
+		windowOffsetY := (m.height - winH) / 2
+		windowOffsetY-- // lift window to leave footer line for function keys
+		if windowOffsetY < 0 {
+			windowOffsetY = 0
+		}
+		maxOffsetY := m.height - winH
+		if maxOffsetY < 0 {
+			maxOffsetY = 0
+		}
+		if windowOffsetY > maxOffsetY {
+			windowOffsetY = maxOffsetY
+		}
+		m.contentOffsetX = windowOffsetX + 1
+		m.contentOffsetY = windowOffsetY + 1
 		if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
 			setter.SetDimensions(innerW, innerH)
 		}
@@ -231,31 +266,31 @@ func (m *Modal) View() string {
 			}
 		}
 
-        // Build window frame with requested dialog styling for settings dialogs:
-        // - Background: light grey
-        // - Foreground: black
-        // - Border: double, black
-        boxStyle := lipgloss.NewStyle().
-            Border(lipgloss.DoubleBorder()).
-            BorderForeground(lipgloss.Black).
-            BorderBackground(lipgloss.Color("250")).
-            Background(lipgloss.Color("250")).
-            Width(winW).
-            Height(winH)
+		// Build window frame with requested dialog styling for settings dialogs:
+		// - Background: light grey
+		// - Foreground: black
+		// - Border: double, black
+		boxStyle := lipgloss.NewStyle().
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(lipgloss.Black).
+			BorderBackground(lipgloss.Color("250")).
+			Background(lipgloss.Color("250")).
+			Width(winW).
+			Height(winH)
 
-        labelStyle := lipgloss.NewStyle().
-            Foreground(lipgloss.Black).
-            Background(lipgloss.Color("250")).
-            Padding(0, 1)
+		labelStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Black).
+			Background(lipgloss.Color("250")).
+			Padding(0, 1)
 		label := labelStyle.Render(m.title)
 		border := boxStyle.GetBorderStyle()
 		topBorderStyler := lipgloss.NewStyle().
 			Foreground(boxStyle.GetBorderTopForeground()).
 			Background(boxStyle.GetBorderTopBackground()).
 			Render
-        // In windowed settings dialogs we keep corners; viewers don't use windowed mode.
-        topLeft := topBorderStyler(border.TopLeft)
-        topRight := topBorderStyler(border.TopRight)
+		// In windowed settings dialogs we keep corners; viewers don't use windowed mode.
+		topLeft := topBorderStyler(border.TopLeft)
+		topRight := topBorderStyler(border.TopRight)
 		available := winW - lipgloss.Width(topLeft+topRight)
 		lw := lipgloss.Width(label)
 		var top string
@@ -269,12 +304,12 @@ func (m *Modal) View() string {
 			top = topLeft + topBorderStyler(strings.Repeat(border.Top, left)) + label + topBorderStyler(strings.Repeat(border.Top, right)) + topRight
 		}
 		// Render inner content with dialog colors (white on dark cyan)
-        inner = lipgloss.NewStyle().
-            Background(lipgloss.Color("250")).
-            Foreground(lipgloss.Black).
-            Width(innerW).
-            Height(innerH).
-            Render(inner)
+		inner = lipgloss.NewStyle().
+			Background(lipgloss.Color("250")).
+			Foreground(lipgloss.Black).
+			Width(innerW).
+			Height(innerH).
+			Render(inner)
 
 		winBottom := boxStyle.Copy().
 			BorderTop(false).
@@ -283,13 +318,13 @@ func (m *Modal) View() string {
 			Render(inner)
 		winFrame := top + "\n" + winBottom
 
-        // Compose window over background (centered)
-        composed := overlay.Composite(
-            winFrame,
-            base,
-            overlay.Center, overlay.Center,
-            0, -1, // lift by 1 to keep footer free
-        )
+		// Compose window over background (centered)
+		composed := overlay.Composite(
+			winFrame,
+			base,
+			overlay.Center, overlay.Center,
+			0, -1, // lift by 1 to keep footer free
+		)
 		bgLines := strings.Split(composed, "\n")
 		// Footer line
 		footer := ""
@@ -310,12 +345,12 @@ func (m *Modal) View() string {
 			bgLines[m.height-1] = FunctionKeyBarStyle.Width(m.width).Render(footer)
 		}
 		composed = strings.Join(bgLines, "\n")
-        // Return composed screen without forcing a global background color so
-        // the 2-line terminal retains its original styling.
-        return lipgloss.NewStyle().
-            Width(m.width).
-            Height(m.height).
-            Render(composed)
+		// Return composed screen without forcing a global background color so
+		// the 2-line terminal retains its original styling.
+		return lipgloss.NewStyle().
+			Width(m.width).
+			Height(m.height).
+			Render(composed)
 	}
 	var inner string
 	if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
@@ -345,38 +380,47 @@ func (m *Modal) View() string {
 		Background(boxStyle.GetBorderTopBackground()).
 		Render
 
-    // For viewers, do not show corner glyphs; use '-' for the entire top line.
-    // For viewers, use the horizontal border rune for the entire top line,
-    // including the ends, instead of corner glyphs.
-    topRune := border.Top
-    tl := border.TopLeft; tr := border.TopRight
-    if isViewer { tl, tr = topRune, topRune }
-    topLeft := topBorderStyler(tl)
-    topRight := topBorderStyler(tr)
-    available := m.width - lipgloss.Width(topLeft+topRight)
+	// For viewers, do not show corner glyphs; use '-' for the entire top line.
+	// For viewers, use the horizontal border rune for the entire top line,
+	// including the ends, instead of corner glyphs.
+	topRune := border.Top
+	tl := border.TopLeft
+	tr := border.TopRight
+	if isViewer {
+		tl, tr = topRune, topRune
+	}
+	topLeft := topBorderStyler(tl)
+	topRight := topBorderStyler(tr)
+	available := m.width - lipgloss.Width(topLeft+topRight)
 	lw := lipgloss.Width(label)
 	var top string
 	if lw >= available {
-        gap := strings.Repeat(string(topRune), max(0, available-lw))
-        top = topLeft + label + topBorderStyler(gap) + topRight
-    } else {
-        total := available - lw
-        left := total / 2
-        right := total - left
-        top = topLeft + topBorderStyler(strings.Repeat(string(topRune), left)) + label + topBorderStyler(strings.Repeat(string(topRune), right)) + topRight
-    }
+		gap := strings.Repeat(string(topRune), max(0, available-lw))
+		top = topLeft + label + topBorderStyler(gap) + topRight
+	} else {
+		total := available - lw
+		left := total / 2
+		right := total - left
+		top = topLeft + topBorderStyler(strings.Repeat(string(topRune), left)) + label + topBorderStyler(strings.Repeat(string(topRune), right)) + topRight
+	}
 
 	// Box content under header (no footer inside the frame)
-    bottomSty := boxStyle.Copy().
-        BorderTop(false).
-        Width(m.width).
-        // Reserve one terminal line for the footer outside the frame
-        Height(m.height - 2)
-    if isViewer {
-        // Remove vertical borders and bottom border for viewers.
-        bottomSty = bottomSty.BorderLeft(false).BorderRight(false).BorderBottom(false)
-    }
-    bottom := bottomSty.Render(inner)
+	bottomSty := boxStyle.Copy().
+		BorderTop(false).
+		Width(m.width).
+		// Reserve one terminal line for the footer outside the frame
+		Height(m.height - 2)
+	if isViewer {
+		// Remove vertical borders and bottom border for viewers.
+		bottomSty = bottomSty.BorderLeft(false).BorderRight(false).BorderBottom(false)
+	}
+	bottom := bottomSty.Render(inner)
+	if isViewer {
+		m.contentOffsetX = 0
+	} else {
+		m.contentOffsetX = 1
+	}
+	m.contentOffsetY = 1
 
 	// Replace bottom corners to T junction at the top border of bottom
 	lines := strings.Split(bottom, "\n")
@@ -397,6 +441,27 @@ func (m *Modal) View() string {
 	}
 	footerLine := FunctionKeyBarStyle.Width(m.width).Render(footer)
 	return lipgloss.JoinVertical(lipgloss.Left, frame, footerLine)
+}
+
+func shiftMouseMsg(msg tea.MouseMsg, dx, dy int) tea.MouseMsg {
+	if dx == 0 && dy == 0 {
+		return msg
+	}
+	mouse := msg.Mouse()
+	mouse.X -= dx
+	mouse.Y -= dy
+	switch msg.(type) {
+	case tea.MouseClickMsg:
+		return tea.MouseClickMsg(mouse)
+	case tea.MouseReleaseMsg:
+		return tea.MouseReleaseMsg(mouse)
+	case tea.MouseWheelMsg:
+		return tea.MouseWheelMsg(mouse)
+	case tea.MouseMotionMsg:
+		return tea.MouseMotionMsg(mouse)
+	default:
+		return msg
+	}
 }
 
 // ModalManager manages multiple modals

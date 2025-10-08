@@ -21,6 +21,7 @@ type NamespaceCreateModel struct {
 	runes         []rune
 	cursor        int
 	err           string
+	buttons       []buttonRect
 }
 
 // NewNamespaceCreateModel constructs an empty namespace creation dialog model.
@@ -36,6 +37,7 @@ func (m *NamespaceCreateModel) Reset() {
 	m.runes = m.runes[:0]
 	m.cursor = 0
 	m.err = ""
+	m.buttons = nil
 }
 
 func (m *NamespaceCreateModel) value() string { return string(m.runes) }
@@ -137,17 +139,20 @@ func (m *NamespaceCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.MouseMsg:
-		switch ev := msg.(type) {
-		case tea.MouseClickMsg, tea.MouseReleaseMsg:
-			pos := ev.Mouse()
-			// Determine button positions based on rendered layout.
-			for idx, r := range m.buttonAreas() {
-				if r.contains(pos.X, pos.Y) {
-					if _, isRelease := ev.(tea.MouseReleaseMsg); isRelease {
-						return m, m.executeButton(idx)
-					}
-					return m, nil
-				}
+		mouse := key.Mouse()
+		if mouse.Button != tea.MouseLeft {
+			return m, nil
+		}
+		for idx, r := range m.buttons {
+			if !r.contains(mouse.X, mouse.Y) {
+				continue
+			}
+			if _, ok := msg.(tea.MouseClickMsg); ok {
+				// Focus change not tracked yet; ignore.
+				return m, nil
+			}
+			if _, ok := msg.(tea.MouseReleaseMsg); ok {
+				return m, m.executeButton(idx)
 			}
 		}
 	}
@@ -176,26 +181,6 @@ func (m *NamespaceCreateModel) executeButton(idx int) tea.Cmd {
 	}
 }
 
-func (m *NamespaceCreateModel) buttonAreas() []rect {
-	innerWidth := max(30, m.width-4)
-	fieldWidth := max(24, innerWidth-6)
-	y := m.height/2 + 1
-	startX := (innerWidth - fieldWidth) / 2
-	if startX < 0 {
-		startX = 0
-	}
-	buttonWidth := fieldWidth / 2
-	createRect := rect{x: startX, y: y, w: buttonWidth, h: 1}
-	cancelRect := rect{x: startX + buttonWidth + 2, y: y, w: buttonWidth, h: 1}
-	return []rect{createRect, cancelRect}
-}
-
-type rect struct{ x, y, w, h int }
-
-func (r rect) contains(px, py int) bool {
-	return px >= r.x && px < r.x+r.w && py >= r.y && py < r.y+r.h
-}
-
 func (m *NamespaceCreateModel) View() string {
 	innerWidth := max(30, m.width-4)
 	bg := lipgloss.NewStyle().
@@ -213,12 +198,35 @@ func (m *NamespaceCreateModel) View() string {
 		Align(lipgloss.Center).
 		Render(m.renderInput(fieldWidth))
 
+	buttons := []string{
+		m.renderButton("Create"),
+		m.renderButton("Cancel"),
+	}
+	separator := lipgloss.NewStyle().Background(lipgloss.Color("250")).Render(" ")
+	buttonRow := lipgloss.JoinHorizontal(lipgloss.Center, buttons[0], separator, buttons[1])
+	buttonRowView := bg.Copy().Align(lipgloss.Center).Render(buttonRow)
+	sepWidth := lipgloss.Width(separator)
+	leftPad := max(0, (innerWidth-lipgloss.Width(buttonRow))/2)
+	buttonLine := 4 // header (0), blank (1), input (2), blank (3), buttons (4)
+	m.buttons = []buttonRect{
+		{x: leftPad, y: buttonLine, w: lipgloss.Width(buttons[0]), h: 1},
+		{x: leftPad + lipgloss.Width(buttons[0]) + sepWidth, y: buttonLine, w: lipgloss.Width(buttons[1]), h: 1},
+	}
+
 	help := bg.Copy().
 		Faint(true).
 		Align(lipgloss.Center).
 		Render("Enter: Create • Esc: Cancel")
 
-	lines := []string{header, bg.Copy().Render(""), inputField, bg.Copy().Render(""), help}
+	lines := []string{
+		header,
+		bg.Copy().Render(""),
+		inputField,
+		bg.Copy().Render(""),
+		buttonRowView,
+		bg.Copy().Render(""),
+		help,
+	}
 	if m.err != "" {
 		errLine := bg.Copy().
 			Foreground(lipgloss.Color("203")).
@@ -226,6 +234,15 @@ func (m *NamespaceCreateModel) View() string {
 		lines = append(lines, bg.Copy().Render(""), errLine)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (m *NamespaceCreateModel) renderButton(label string) string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("15")).
+		Background(lipgloss.Color("240")).
+		Padding(0, 3).
+		Align(lipgloss.Center).
+		Render(label)
 }
 
 func (m *NamespaceCreateModel) renderInput(fieldWidth int) string {

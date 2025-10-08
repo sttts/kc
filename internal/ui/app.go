@@ -57,6 +57,17 @@ type deleteTarget struct {
 }
 
 type resourceDeletedMsg struct {
+	target deleteTarget
+	err    error
+}
+
+type actionCaps struct {
+	canView     bool
+	canEdit     bool
+	canDelete   bool
+	canCreateNS bool
+}
+
 // App represents the main application state
 type App struct {
 	leftPanel    *Panel
@@ -106,10 +117,13 @@ type App struct {
 	toastText   string
 	toastUntil  time.Time
 	// Logger that emits toasts on errors with rate limiting
-	toastLogger *ToastLogger
-	pendingCmds []tea.Cmd
-	leftConfig  *appconfig.Config
-	rightConfig *appconfig.Config
+	toastLogger    *ToastLogger
+	pendingCmds    []tea.Cmd
+	leftConfig     *appconfig.Config
+	rightConfig    *appconfig.Config
+	namespaceInput *NamespaceCreateModel
+	deleteConfirm  *DeleteConfirmModel
+	pendingDelete  *deleteTarget
 }
 
 const requestTimeout = 10 * time.Second
@@ -193,6 +207,58 @@ func (a *App) ensurePanelConfig(panel *Panel) *appconfig.Config {
 		a.rightConfig = cloneConfig(a.cfg)
 	}
 	return a.rightConfig
+}
+
+func (a *App) currentActionCaps() actionCaps {
+	var caps actionCaps
+	if a == nil {
+		return caps
+	}
+	if a.showTerminal {
+		return caps
+	}
+	if a.modalManager != nil && a.modalManager.IsModalVisible() {
+		return caps
+	}
+	panel := a.leftPanel
+	if a.activePanel == 1 {
+		panel = a.rightPanel
+	}
+	if panel == nil {
+		return caps
+	}
+	if a.currentCtx != nil && panel.GetCurrentPath() == "/namespaces" {
+		caps.canCreateNS = true
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	item, ok := panel.SelectedNavItem(ctx)
+	if !ok || item == nil {
+		return caps
+	}
+	if _, isBack := item.(models.Back); isBack {
+		return caps
+	}
+
+	if _, ok := item.(models.Viewable); ok {
+		caps.canView = true
+	} else {
+		type viewContentProvider interface {
+			ViewContent() (string, string, string, string, string, error)
+		}
+		if _, ok := item.(viewContentProvider); ok {
+			caps.canView = true
+		}
+	}
+	if _, ok := item.(models.ObjectItem); ok {
+		if a.currentCtx != nil && a.currentCtx.Kubeconfig != nil {
+			caps.canEdit = true
+		}
+		if a.cl != nil {
+			caps.canDelete = true
+		}
+	}
+	return caps
 }
 
 func (a *App) syncPanelConfig(panel *Panel) {
@@ -631,6 +697,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		} else if a.escPressed {
 			// We're in an escape sequence, check for numbers
+			caps := a.currentActionCaps()
 			switch keyStr {
 			case "0":
 				a.escPressed = false
@@ -647,10 +714,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.showViewOptionsModal() // Esc 2 = F2
 			case "3":
 				a.escPressed = false
-				return a, a.viewItem() // Esc 3 = F3
+				if caps.canView {
+					return a, a.viewItem()
+				}
+				return a, nil
 			case "4":
 				a.escPressed = false
-				return a, a.editItem() // Esc 4 = F4
+				if caps.canEdit {
+					return a, a.editItem()
+				}
+				return a, nil
 			case "5":
 				a.escPressed = false
 				return a, a.copyItem() // Esc 5 = F5
@@ -659,10 +732,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.renameMoveItem() // Esc 6 = F6
 			case "7":
 				a.escPressed = false
-				return a, a.createNamespace() // Esc 7 = F7
+				if caps.canCreateNS {
+					return a, a.createNamespace()
+				}
+				return a, nil
 			case "8":
 				a.escPressed = false
-				return a, a.deleteResource() // Esc 8 = F8
+				if caps.canDelete {
+					return a, a.deleteResource()
+				}
+				return a, nil
 			case "9":
 				a.escPressed = false
 				return a, a.showContextMenu() // Esc 9 = F9
@@ -733,11 +812,30 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return a, nil
 			}
+			caps := a.currentActionCaps()
 			if msg.String() == "f3" {
-				return a, a.openViewerForSelection()
+				if caps.canView {
+					return a, a.openViewerForSelection()
+				}
+				return a, nil
 			}
 			if msg.String() == "f4" {
-				return a, a.editSelection()
+				if caps.canEdit {
+					return a, a.editSelection()
+				}
+				return a, nil
+			}
+			if msg.String() == "f7" {
+				if caps.canCreateNS {
+					return a, a.createNamespace()
+				}
+				return a, nil
+			}
+			if msg.String() == "f8" {
+				if caps.canDelete {
+					return a, a.deleteResource()
+				}
+				return a, nil
 			}
 			if a.shouldRouteToPanel(msg.String()) {
 				// Handle panel-specific keys
@@ -1001,11 +1099,8 @@ func (a *App) View() (string, *tea.Cursor) {
 // renderMainView renders the main two-panel view
 func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Calculate dimensions
-	// Reserve space for: terminal (2) + function keys (1) + optional toast (1)
+	// Reserve space for: terminal (2) + function keys (1)
 	reserved := 3
-	if a.toastActive {
-		reserved++
-	}
 	panelHeight := a.height - reserved
 	panelWidth := a.width / 2 // No separator needed
 
@@ -1061,43 +1156,6 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 
 	// Add function key bar
 	functionKeys := a.renderFunctionKeys()
-	// Optional toast line above function keys
-	toastLine := ""
-	if a.toastActive {
-		st := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.White).Bold(true)
-		// Ensure message fits the width; truncate with … if needed
-		msg := a.toastText
-		maxw := a.width
-		if lipgloss.Width(msg) > maxw {
-			if maxw > 1 {
-				msg = sliceANSIColsRaw(msg, 0, maxw-1) + "…"
-			} else {
-				msg = sliceANSIColsRaw(msg, 0, maxw)
-			}
-		}
-		toastLine = st.Width(a.width).Render(msg)
-	}
-	// spinner is added inside renderFunctionKeys at the far left; nothing to do here
-
-	if a.toastActive {
-		combinedView := lipgloss.JoinVertical(
-			lipgloss.Left,
-			panels,
-			terminalView,
-			toastLine,
-			functionKeys,
-		)
-		// Adjust cursor position
-		if terminalCursor != nil {
-			offsetY := panelHeight
-			adjustedCursor := tea.NewCursor(terminalCursor.X, terminalCursor.Y+offsetY)
-			adjustedCursor.Blink = terminalCursor.Blink
-			adjustedCursor.Color = terminalCursor.Color
-			adjustedCursor.Shape = terminalCursor.Shape
-			return combinedView, adjustedCursor
-		}
-		return combinedView, nil
-	}
 	combinedView := lipgloss.JoinVertical(
 		lipgloss.Left,
 		panels,
@@ -1213,78 +1271,29 @@ func (a *App) refreshFoldersAfterViewChange() {
 
 // renderFunctionKeys renders the function key bar
 func (a *App) renderFunctionKeys() string {
+	if a.toastActive {
+		msg := a.toastText
+		maxw := a.width
+		if lipgloss.Width(msg) > maxw {
+			if maxw > 1 {
+				msg = sliceANSIColsRaw(msg, 0, maxw-1) + "…"
+			} else {
+				msg = sliceANSIColsRaw(msg, 0, maxw)
+			}
+		}
+		toastStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color("196")).
+			Foreground(lipgloss.White).
+			Bold(true)
+		return toastStyle.Width(a.width).Render(msg)
+	}
+
 	var keys []string
 
 	if a.showTerminal {
 		keys = []string{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")}
 	} else {
-		// Determine capabilities from active panel
-		p := a.leftPanel
-		if a.activePanel == 1 {
-			p = a.rightPanel
-		}
-		path := p.GetCurrentPath()
-		cur := p.GetCurrentItem()
-		// Defaults
-		canView, canEdit, canCreateNS, canDelete := false, false, false, false
-		var hasViewable bool
-		var hasObject bool
-		if cur != nil && cur.Item != nil && cur.Name != ".." {
-			if _, isBack := cur.Item.(models.Back); !isBack {
-				if _, ok := cur.Item.(models.ObjectItem); ok {
-					hasObject = true
-				}
-				if _, ok := cur.Item.(models.Viewable); ok {
-					hasViewable = true
-				} else {
-					type vc interface {
-						ViewContent() (string, string, string, string, string, error)
-					}
-					if _, ok := cur.Item.(vc); ok {
-						hasViewable = true
-					}
-				}
-			}
-		}
-		// Location-based rules
-		if path == "/namespaces" {
-			canCreateNS = true
-			// viewing a namespace YAML is allowed when an item selected
-			if cur != nil && cur.Item != nil {
-				if oi, ok := cur.Item.(models.ObjectItem); ok {
-					if gvr := oi.GVR(); gvr.Resource == "namespaces" {
-						canView, canEdit, canDelete = true, true, true
-					}
-				}
-			}
-		} else if strings.HasPrefix(path, "/namespaces/") {
-			parts := strings.Split(path, "/")
-			if len(parts) == 3 { // /namespaces/<ns>
-				// resource folders only; F3/F4/F8 disabled
-			} else if len(parts) == 4 { // /namespaces/<ns>/<resource>
-				// viewing/editing/deleting objects is possible when an object row is selected (not "..")
-				// Allow F3 even for enterable items (e.g., ConfigMaps/Secrets) to view YAML; Enter goes into keys.
-				if cur != nil && cur.Name != ".." {
-					canView, canEdit, canDelete = true, true, true
-				}
-			} else if len(parts) >= 5 { // object or deeper
-				if cur != nil && cur.Name != ".." {
-					canView = true
-					canEdit = true
-					canDelete = true
-				}
-			}
-		}
-
-		if !hasViewable {
-			canView = false
-		}
-		if !hasObject {
-			canEdit = false
-			canDelete = false
-		}
-
-		// Helper to render enabled/disabled key
+		caps := a.currentActionCaps()
 		renderKey := func(key, label string, enabled bool) string {
 			desc := FunctionKeyDescriptionStyle
 			if !enabled {
@@ -1294,48 +1303,33 @@ func (a *App) renderFunctionKeys() string {
 		}
 
 		keys = []string{
-			renderKey("F1", "Help", true),
-			// Always label F2 as Options; it opens the appropriate dialog
-			// (Object Options or Resources Options) based on context.
+			renderKey("F1", "Help", false),
 			renderKey("F2", "Options", true),
-			renderKey("F3", "View", canView),
-			renderKey("F4", "Edit", canEdit),
+			renderKey("F3", "View", caps.canView),
+			renderKey("F4", "Edit", caps.canEdit),
 			renderKey("F5", "Copy", false),
 			renderKey("F6", "Rename/Move", false),
-			renderKey("F7", "Namespace", canCreateNS),
-			renderKey("F8", "Delete", canDelete),
-			renderKey("F9", "Menu", true),
+			renderKey("F7", "Namespace", caps.canCreateNS),
+			renderKey("F8", "Delete", caps.canDelete),
+			renderKey("F9", "Menu", false),
 			FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"),
 			FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"),
 		}
 	}
 
-	// Join keys
 	joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
-
-	// Always add "Kubernetes Commander" right-aligned
 	title := " Kubernetes Commander "
-
-	// Create a full-width container with left-aligned keys and right-aligned title
-	fullWidthStyle := FunctionKeyBarStyle.
-		Width(a.width).
-		Align(lipgloss.Left)
-
-	// Create a full-width container with left-aligned keys and right-aligned title
-	titleStyle := FunctionKeyTitleStyle.
-		Align(lipgloss.Center).
-		Width(a.width - lipgloss.Width(joined) - 1)
-
-	// Calculate the exact spacing needed to push title to the right edge
+	fullWidthStyle := FunctionKeyBarStyle.Width(a.width).Align(lipgloss.Left)
+	titleStyle := FunctionKeyTitleStyle.Align(lipgloss.Center).Width(a.width - lipgloss.Width(joined) - 1)
 	titleRendered := titleStyle.Render(title)
-
 	return fullWidthStyle.Render(joined + " " + titleRendered)
 }
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
 func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
-	// Recompute the keys exactly like renderFunctionKeys does and record spans.
-	// Build the list but capture text lengths to map x.
+	if a.toastActive {
+		return nil
+	}
 	var keys []struct {
 		label   string
 		enabled bool
@@ -1354,35 +1348,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			}},
 		}
 	} else {
-		p := a.leftPanel
-		if a.activePanel == 1 {
-			p = a.rightPanel
-		}
-		path := p.GetCurrentPath()
-		cur := p.GetCurrentItem()
-		canView, canEdit, canCreateNS, canDelete := false, false, false, false
-		if path == "/namespaces" {
-			canCreateNS = true
-			if cur != nil && cur.Item != nil {
-				if oi, ok := cur.Item.(models.ObjectItem); ok {
-					if gvr := oi.GVR(); gvr.Resource == "namespaces" {
-						canView, canEdit, canDelete = true, true, true
-					}
-				}
-			}
-		} else if strings.HasPrefix(path, "/namespaces/") {
-			parts := strings.Split(path, "/")
-			if len(parts) == 4 { /* list */
-			} else if len(parts) == 5 {
-				if cur != nil && cur.Name != ".." {
-					canView, canEdit, canDelete = true, true, true
-				}
-			} else if len(parts) >= 5 {
-				if cur != nil && cur.Name != ".." {
-					canView, canEdit, canDelete = true, true, true
-				}
-			}
-		}
+		caps := a.currentActionCaps()
 		makeLbl := func(key, label string, enabled bool) string {
 			desc := FunctionKeyDescriptionStyle
 			if !enabled {
@@ -1395,38 +1361,39 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			enabled bool
 			action  func() tea.Cmd
 		}{
-			{makeLbl("F1", "Help", true), true, a.showHelp},
+			{makeLbl("F1", "Help", false), false, a.showHelp},
 			{makeLbl("F2", "Options", true), true, a.showViewOptionsModal},
-			{makeLbl("F3", "View", canView), canView, a.openViewerForSelection},
-			{makeLbl("F4", "Edit", canEdit), canEdit, a.editSelection},
+			{makeLbl("F3", "View", caps.canView), caps.canView, a.openViewerForSelection},
+			{makeLbl("F4", "Edit", caps.canEdit), caps.canEdit, a.editSelection},
 			{makeLbl("F5", "Copy", false), false, a.copyItem},
 			{makeLbl("F6", "Rename/Move", false), false, a.renameMoveItem},
-			{makeLbl("F7", "Namespace", canCreateNS), canCreateNS, a.createNamespace},
-			{makeLbl("F8", "Delete", canDelete), canDelete, a.deleteResource},
-			{FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"), true, a.showContextMenu},
+			{makeLbl("F7", "Namespace", caps.canCreateNS), caps.canCreateNS, a.createNamespace},
+			{makeLbl("F8", "Delete", caps.canDelete), caps.canDelete, a.deleteResource},
+			{FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"), false, a.showContextMenu},
 			{FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
 			{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
 				a.showTerminal = true
 				a.terminal.SetShowPanels(false)
-				a.terminal.Focus()
-				// Suppress trailing mouse events from this click to avoid
-				// sending them to the PTY immediately after toggling.
-				a.suppressMouseUntil = time.Now().Add(150 * time.Millisecond)
 				return nil
 			}},
 		}
 	}
-	// Map x to index by accumulating rendered widths
+
+	spans := make([]int, len(keys)+1)
 	acc := 0
-	for _, k := range keys {
-		w := lipgloss.Width(k.label)
-		if x >= acc && x < acc+w {
-			if k.enabled && k.action != nil {
-				return k.action()
+	for i, k := range keys {
+		spans[i] = acc
+		acc += lipgloss.Width(k.label)
+	}
+	spans[len(keys)] = acc
+
+	for i := 0; i < len(keys); i++ {
+		if x >= spans[i] && x < spans[i+1] {
+			if keys[i].enabled && keys[i].action != nil {
+				return keys[i].action()
 			}
 			return nil
 		}
-		acc += w
 	}
 	return nil
 }
