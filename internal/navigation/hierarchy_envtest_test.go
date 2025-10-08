@@ -71,7 +71,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	ctx := context.TODO()
+	ctx := t.Context()
 	// Namespace testns
 	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
 		t.Fatalf("create ns: %v", err)
@@ -257,7 +257,7 @@ func TestContextNamespaceWalk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	ctx := context.TODO()
+	ctx := t.Context()
 	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
@@ -390,7 +390,7 @@ func TestStartupSelectionRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	ctx := context.TODO()
+	ctx := t.Context()
 	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
@@ -442,7 +442,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	ctx := context.TODO()
+	ctx := t.Context()
 	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}
@@ -495,7 +495,7 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	ctx := context.TODO()
+	ctx := t.Context()
 	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}

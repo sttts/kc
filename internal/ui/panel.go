@@ -150,7 +150,7 @@ func (p *Panel) ResourceViewOptions() (bool, string) { return p.resShowNonEmpty,
 
 // ResetSelectionTop moves the cursor to the top and resets scrolling.
 
-func (p *Panel) ResetSelectionTopWithContext(ctx context.Context) {
+func (p *Panel) ResetSelectionTop(ctx context.Context) {
 	p.selected = 0
 	p.scrollTop = 0
 	if p.useFolder && p.folder != nil && p.bt != nil {
@@ -167,14 +167,10 @@ func (p *Panel) ResetSelectionTopWithContext(ctx context.Context) {
 	}
 }
 
-func (p *Panel) ResetSelectionTop() {
-	p.ResetSelectionTopWithContext(context.Background())
-}
-
 // SetFolder enables folder-backed rendering using the new navigation package.
 // This does not alter legacy behaviors beyond rendering headers/rows from the
 // folder for preview purposes. Selection/enter logic remains unchanged.
-func (p *Panel) SetFolderWithContext(ctx context.Context, f models.Folder, hasBack bool) {
+func (p *Panel) SetFolder(ctx context.Context, f models.Folder, hasBack bool) {
 	p.folder = f
 	p.folderHasBack = hasBack
 	// Initialize or refresh BigTable from folder columns and data when enabled
@@ -206,10 +202,6 @@ func (p *Panel) SetFolderWithContext(ctx context.Context, f models.Folder, hasBa
 	}
 }
 
-func (p *Panel) SetFolder(f models.Folder, hasBack bool) {
-	p.SetFolderWithContext(context.Background(), f, hasBack)
-}
-
 // UseFolder toggles folder-backed rendering.
 func (p *Panel) UseFolder(on bool) { p.useFolder = on }
 
@@ -218,13 +210,13 @@ func (p *Panel) ClearFolder() { p.folder = nil; p.folderHasBack = false; p.useFo
 
 // syncFromFolder rebuilds table headers/rows and a minimal items slice from
 // the current folder so existing rendering paths can display it.
-func (p *Panel) syncFromFolder() {
+func (p *Panel) syncFromFolder(ctx context.Context) {
 	if !p.useFolder || p.folder == nil {
 		return
 	}
 	cols := columnsToTitles(p.folder.Columns())
-	rowCount := p.folderLen()
-	rows := p.folderLines(0, rowCount)
+	rowCount := p.folderLen(ctx)
+	rows := p.folderLines(ctx, 0, rowCount)
 	cells := rowsToCells(rows)
 	// Prepare headers and rows
 	p.tableHeaders = cols
@@ -297,7 +289,7 @@ func (p *Panel) syncFromFolder() {
 
 // SetTableMode updates the panel's table rendering mode ("scroll" or "fit").
 // It applies immediately to an existing BigTable instance.
-func (p *Panel) SetTableMode(mode string) {
+func (p *Panel) SetTableMode(ctx context.Context, mode string) {
 	m := strings.ToLower(mode)
 	switch m {
 	case "fit":
@@ -306,7 +298,7 @@ func (p *Panel) SetTableMode(mode string) {
 		p.tableMode = table.ModeScroll
 	}
 	if p.bt != nil {
-		p.bt.SetMode(p.tableMode)
+		p.bt.SetMode(ctx, p.tableMode)
 	}
 }
 
@@ -319,21 +311,21 @@ func (p *Panel) TableMode() string {
 }
 
 // SetColumnsMode updates which server-side table columns to show (normal or wide).
-func (p *Panel) SetColumnsMode(mode string) {
+func (p *Panel) SetColumnsMode(ctx context.Context, mode string) {
 	if strings.EqualFold(mode, "wide") {
 		p.columnsMode = "wide"
 	} else {
 		p.columnsMode = "normal"
 	}
 	// Rebuild BigTable headers on next refresh via folder change detection.
-	p.RefreshFolder()
+	p.RefreshFolder(ctx)
 }
 
 // ColumnsMode returns the current columns mode label.
 func (p *Panel) ColumnsMode() string { return p.columnsMode }
 
 // SetObjectOrder updates object list ordering mode.
-func (p *Panel) SetObjectOrder(order string) {
+func (p *Panel) SetObjectOrder(ctx context.Context, order string) {
 	switch strings.ToLower(order) {
 	case "name", "-name", "creation", "-creation":
 		p.objOrder = strings.ToLower(order)
@@ -341,7 +333,7 @@ func (p *Panel) SetObjectOrder(order string) {
 		p.objOrder = "name"
 	}
 	if p.folder != nil {
-		p.RefreshFolder()
+		p.RefreshFolder(ctx)
 	}
 }
 
@@ -349,16 +341,16 @@ func (p *Panel) ObjectOrder() string { return p.objOrder }
 
 // SelectByRowID moves the selection to the row with the given ID if present.
 // It matches against the folder's row IDs and adjusts for the synthetic back row.
-func (p *Panel) SelectByRowID(id string) {
+func (p *Panel) SelectByRowID(ctx context.Context, id string) {
 	if !p.useFolder || p.folder == nil || id == "" {
-		p.ResetSelectionTop()
+		p.ResetSelectionTop(ctx)
 		return
 	}
 	// Ensure items reflect current folder
-	p.syncFromFolder()
+	p.syncFromFolder(ctx)
 	// Find the absolute row index in the (wrapped) folder
-	rowCount := p.folderLen()
-	rows := p.folderLines(0, rowCount)
+	rowCount := p.folderLen(ctx)
+	rows := p.folderLines(ctx, 0, rowCount)
 	idx := -1
 	for i := range rows {
 		rid, _, _, _ := rows[i].Columns()
@@ -369,7 +361,7 @@ func (p *Panel) SelectByRowID(id string) {
 	}
 	// Fallback
 	if idx < 0 {
-		p.ResetSelectionTop()
+		p.ResetSelectionTop(ctx)
 		return
 	}
 	// Wrapped folder already includes back row at index 0; selection index equals row index
@@ -383,24 +375,24 @@ func (p *Panel) SelectByRowID(id string) {
 	p.selected = sel
 	p.adjustScroll()
 	if p.bt != nil {
-		p.bt.Select(id)
+		p.bt.Select(ctx, id)
 	}
 }
 
-func (p *Panel) selectedRowID() string {
+func (p *Panel) selectedRowID(ctx context.Context) string {
 	if !p.useFolder || p.folder == nil {
 		return ""
 	}
 	if p.bt != nil {
-		if id, ok := p.bt.CurrentID(); ok {
+		if id, ok := p.bt.CurrentID(ctx); ok {
 			return id
 		}
 	}
-	limit := p.folderLen()
+	limit := p.folderLen(ctx)
 	if p.selected < 0 || p.selected >= limit {
 		return ""
 	}
-	rows := p.folderLines(p.selected, 1)
+	rows := p.folderLines(ctx, p.selected, 1)
 	if len(rows) == 0 {
 		return ""
 	}
@@ -413,16 +405,16 @@ func (p *Panel) selectedRowID() string {
 
 // SelectedNavItem resolves the currently focused navigation item, skipping the
 // synthetic back entry. Returns false when no concrete item is selected.
-func (p *Panel) SelectedNavItem() (models.Item, bool) {
+func (p *Panel) SelectedNavItem(ctx context.Context) (models.Item, bool) {
 	if !p.useFolder || p.folder == nil {
 		return nil, false
 	}
-	p.syncFromFolder()
-	id := p.selectedRowID()
+	p.syncFromFolder(ctx)
+	id := p.selectedRowID(ctx)
 	if id == "" {
 		return nil, false
 	}
-	item, ok := p.folderItemByID(id)
+	item, ok := p.folderItemByID(ctx, id)
 	if !ok || item == nil {
 		return nil, false
 	}
@@ -550,10 +542,6 @@ func (g *GenericDataSource) Watch(ctx context.Context, ns string) (<-chan resEve
 // SetViewConfig injects the view configuration (global + per resource overrides).
 func (p *Panel) SetViewConfig(cfg *ViewConfig) { p.viewConfig = cfg }
 
-func (p *Panel) newContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), panelContextTimeout)
-}
-
 // SetContextCountProvider injects a function to return the number of contexts.
 func (p *Panel) SetContextCountProvider(fn func() int) { p.contextCountProvider = fn }
 
@@ -590,7 +578,7 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							p.selected = 0
 							p.scrollTop = 0
 						} else {
-							p.SelectByRowID(id)
+							p.SelectByRowID(ctx, id)
 						}
 					}
 				}
@@ -600,13 +588,13 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		// Navigation keys (Midnight Commander style)
 		case "up":
-			p.moveUp()
+			p.moveUp(ctx)
 		case "down":
-			p.moveDown()
+			p.moveDown(ctx)
 		case "left":
-			p.moveUp()
+			p.moveUp(ctx)
 		case "right":
-			p.moveDown()
+			p.moveDown(ctx)
 		case "home":
 			p.moveToTop()
 		case "end":
@@ -616,9 +604,9 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "pgdown":
 			p.pageDown()
 
-			// Selection keys
+		// Selection keys
 		case "enter":
-			return p, p.enterItem()
+			return p, p.enterItem(ctx)
 		case "ctrl+t", "insert":
 			p.toggleSelection()
 		case "ctrl+a":
@@ -655,14 +643,12 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the panel
 func (p *Panel) View() string {
-	// Create header
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+
 	header := p.renderHeader()
-
-	// Create content area
-	content := p.renderContent()
-
-	// Create footer
-	footer := p.renderFooter()
+	content := p.renderContent(ctx)
+	footer := p.renderFooter(ctx)
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -674,17 +660,21 @@ func (p *Panel) View() string {
 
 // ViewWithoutHeader renders the panel content and footer only (no header)
 func (p *Panel) ViewWithoutHeader() string {
-	return p.ViewWithoutHeaderFocused(false)
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	return p.viewWithoutHeaderWithContext(ctx, false)
 }
 
 // ViewWithoutHeaderFocused renders the panel content and footer with focus state
 func (p *Panel) ViewWithoutHeaderFocused(isFocused bool) string {
-	// Create content area
-	content := p.renderContentFocused(isFocused)
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	return p.viewWithoutHeaderWithContext(ctx, isFocused)
+}
 
-	// Create footer
-	footer := p.renderFooter()
-
+func (p *Panel) viewWithoutHeaderWithContext(ctx context.Context, isFocused bool) string {
+	content := p.renderContentFocused(ctx, isFocused)
+	footer := p.renderFooter(ctx)
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		content,
@@ -693,8 +683,8 @@ func (p *Panel) ViewWithoutHeaderFocused(isFocused bool) string {
 }
 
 // ViewContentOnlyFocused renders just the panel content without header or footer
-func (p *Panel) ViewContentOnlyFocused(isFocused bool) string {
-	return p.renderContentFocused(isFocused)
+func (p *Panel) ViewContentOnlyFocused(ctx context.Context, isFocused bool) string {
+	return p.renderContentFocused(ctx, isFocused)
 }
 
 // GetCurrentPath returns the current path for breadcrumbs
@@ -707,16 +697,16 @@ func (p *Panel) GetCurrentPath() string {
 func (p *Panel) SetCurrentPath(path string) { p.currentPath = path }
 
 // GetFooter returns the rendered footer for external use
-func (p *Panel) GetFooter() string {
-	return p.renderFooter()
+func (p *Panel) GetFooter(ctx context.Context) string {
+	return p.renderFooter(ctx)
 }
 
 // SetDimensions sets the panel dimensions
-func (p *Panel) SetDimensions(width, height int) {
+func (p *Panel) SetDimensions(ctx context.Context, width, height int) {
 	p.width = width
 	p.height = height
 	if p.bt != nil {
-		p.bt.SetSize(max(1, width), max(1, height))
+		p.bt.SetSize(ctx, max(1, width), max(1, height))
 	}
 }
 
@@ -769,21 +759,20 @@ func (p *Panel) ellipsizePath(path string, width int) string {
 }
 
 // renderContent renders the panel content
-func (p *Panel) renderContent() string {
-	return p.renderContentFocused(false)
+func (p *Panel) renderContent(ctx context.Context) string {
+	return p.renderContentFocused(ctx, false)
 }
 
 // renderContentFocused renders the panel content with focus state
-func (p *Panel) renderContentFocused(isFocused bool) string {
+func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string {
 	// If a folder is set for preview, sync headers/rows/items from it first.
 	if p.useFolder && p.folder != nil {
-		p.syncFromFolder()
+		p.syncFromFolder(ctx)
 		// Ensure BigTable exists and is sized
 		if p.bt == nil {
 			cols := p.folder.Columns()
 			p.lastColTitles = columnsToTitles(cols)
 			bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
-			ctx, cancel := p.newContext()
 			bt.SetMode(ctx, p.tableMode)
 			st := table.DefaultStyles()
 			st.Header = PanelTableHeaderStyle
@@ -798,19 +787,15 @@ func (p *Panel) renderContentFocused(isFocused bool) string {
 				BorderBackground(lipgloss.Blue)
 			bt.SetStyles(st)
 			bt.BorderVertical(ctx, true)
-			cancel()
 			p.bt = &bt
 		} else {
 			// Keep list fresh in case the folder instance changed
-			ctx, cancel := p.newContext()
 			p.bt.SetList(ctx, p.folder)
 			p.bt.SetSize(ctx, max(1, p.width), max(1, p.height))
-			cancel()
 		}
+		p.bt.Refresh(ctx)
 		// Focus state drives selector styling
-		ctx, cancel := p.newContext()
 		p.bt.SetFocused(ctx, isFocused)
-		cancel()
 		// Render BigTable inside the panel content area, preserving its colors.
 		// Apply only background + sizing to avoid overriding table border/text colors.
 		return lipgloss.NewStyle().
@@ -1213,7 +1198,7 @@ func (p *Panel) formatRow(cells []string, widths []int) string {
 }
 
 // renderFooter renders the panel footer
-func (p *Panel) renderFooter() string {
+func (p *Panel) renderFooter(ctx context.Context) string {
 	var footerText string
 
 	// Get current item info
@@ -1221,8 +1206,8 @@ func (p *Panel) renderFooter() string {
 	if currentItem != nil {
 		// Prefer folder-backed row Details() when available for precise breadcrumbs/kinds
 		if p.useFolder && p.folder != nil {
-			rowCount := p.folderLen()
-			rows := p.folderLines(0, rowCount)
+			rowCount := p.folderLen(ctx)
+			rows := p.folderLines(ctx, 0, rowCount)
 			if p.selected >= 0 && p.selected < len(rows) {
 				if id, _, _, ok := rows[p.selected].Columns(); ok && id != "__back__" {
 					if ni, ok2 := rows[p.selected].(interface{ Details() string }); ok2 {
@@ -1263,16 +1248,17 @@ func (p *Panel) renderFooter() string {
 }
 
 // Navigation methods
-func (p *Panel) moveUp() {
+
+func (p *Panel) moveUp(ctx context.Context) {
 	if p.useFolder && p.folder != nil && p.bt != nil {
 		if p.selected > 0 {
 			p.selected--
 		}
-		rowCount := p.folderLen()
-		rows := p.folderLines(0, rowCount)
+		rowCount := p.folderLen(ctx)
+		rows := p.folderLines(ctx, 0, rowCount)
 		if p.selected >= 0 && p.selected < len(rows) {
 			if id, _, _, ok := rows[p.selected].Columns(); ok {
-				p.SelectByRowID(id)
+				p.SelectByRowID(ctx, id)
 			}
 		}
 		p.saveCurrentPosition()
@@ -1285,17 +1271,17 @@ func (p *Panel) moveUp() {
 	}
 }
 
-func (p *Panel) moveDown() {
+func (p *Panel) moveDown(ctx context.Context) {
 	if p.useFolder && p.folder != nil && p.bt != nil {
-		max := p.folderLen() - 1
+		max := p.folderLen(ctx) - 1
 		if p.selected < max {
 			p.selected++
 		}
-		rowCount := p.folderLen()
-		rows := p.folderLines(0, rowCount)
+		rowCount := p.folderLen(ctx)
+		rows := p.folderLines(ctx, 0, rowCount)
 		if p.selected >= 0 && p.selected < len(rows) {
 			if id, _, _, ok := rows[p.selected].Columns(); ok {
-				p.SelectByRowID(id)
+				p.SelectByRowID(ctx, id)
 			}
 		}
 		p.saveCurrentPosition()
@@ -1349,19 +1335,19 @@ func (p *Panel) invertSelection() {
 }
 
 // Item interaction
-func (p *Panel) enterItem() tea.Cmd {
+func (p *Panel) enterItem(ctx context.Context) tea.Cmd {
 	// Folder-backed navigation: delegate to handler
 	if p.useFolder && p.folder != nil {
 		// Ensure items are in sync with folder rows (back row, etc.).
-		p.syncFromFolder()
+		p.syncFromFolder(ctx)
 		if p.folderHandler != nil {
 			// Determine back selection or enterable row from folder rows (folder already includes back row)
-			limit := p.folderLen()
+			limit := p.folderLen(ctx)
 			if p.selected < 0 || p.selected >= limit {
 				return nil
 			}
-			rowCount := p.folderLen()
-			rows := p.folderLines(0, rowCount)
+			rowCount := p.folderLen(ctx)
+			rows := p.folderLines(ctx, 0, rowCount)
 			id, _, _, _ := rows[p.selected].Columns()
 			if back, ok := rows[p.selected].(models.Back); ok && back.IsBack() {
 				p.folderHandler(true, "", nil)

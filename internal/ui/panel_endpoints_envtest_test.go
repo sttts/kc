@@ -68,8 +68,8 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	// Panel should pick up server columns on SetFolder
 	p := NewPanel("")
 	p.UseFolder(true)
-	p.SetDimensions(120, 20)
-	p.SetFolder(folder, false)
+	p.SetDimensions(ctx, 120, 20)
+	p.SetFolder(ctx, folder, false)
 	if len(p.lastColTitles) < 2 {
 		t.Fatalf("expected >=2 columns for endpoints, got %v", p.lastColTitles)
 	}

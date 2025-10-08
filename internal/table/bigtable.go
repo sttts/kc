@@ -110,7 +110,6 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 		hStep:      4,
 		focused:    true,
 	}
-	bt.applyMode()
 	return bt
 }
 

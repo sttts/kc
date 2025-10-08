@@ -1,7 +1,6 @@
 package navigation
 
 import (
-	"context"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +35,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	ctx := context.TODO()
+	ctx := t.Context()
 	if err := cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-objtest"}}); err != nil {
 		t.Fatalf("create ns: %v", err)
 	}

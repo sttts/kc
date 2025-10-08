@@ -73,7 +73,7 @@ func TestNewTerminal(t *testing.T) {
 
 func TestPanelSetDimensions(t *testing.T) {
 	panel := NewPanel("Test")
-	panel.SetDimensions(100, 50)
+	panel.SetDimensions(t.Context(), 100, 50)
 
 	if panel.width != 100 {
 		t.Errorf("Expected width to be 100, got %d", panel.width)

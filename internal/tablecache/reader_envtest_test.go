@@ -22,7 +22,7 @@ func TestReaderListPodsEnvtest(t *testing.T) {
 		t.Skip("envtest not available")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	httpClient, err := rest.HTTPClientFor(testCfg)
 	if err != nil {
@@ -108,7 +108,7 @@ func TestReaderWatchPodsEnvtest(t *testing.T) {
 		t.Skip("envtest not available")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	httpClient, err := rest.HTTPClientFor(testCfg)
 	if err != nil {

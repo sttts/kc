@@ -18,7 +18,7 @@ import (
 )
 
 func TestReaderListTables(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{corev1.SchemeGroupVersion})
 	target := corev1.SchemeGroupVersion.WithKind("Pod")
@@ -75,7 +75,7 @@ func TestReaderListTables(t *testing.T) {
 }
 
 func TestReaderListFallback(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{corev1.SchemeGroupVersion})
 	fetcher := &fakeFetcher{}
@@ -88,7 +88,7 @@ func TestReaderListFallback(t *testing.T) {
 }
 
 func TestReaderListMissingTarget(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{corev1.SchemeGroupVersion})
 	fetcher := &fakeFetcher{}
@@ -101,7 +101,7 @@ func TestReaderListMissingTarget(t *testing.T) {
 }
 
 func TestReaderWatchTables(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{corev1.SchemeGroupVersion})
 	target := corev1.SchemeGroupVersion.WithKind("Pod")
@@ -150,7 +150,7 @@ func TestReaderWatchTables(t *testing.T) {
 }
 
 func TestReaderWatchFallback(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{corev1.SchemeGroupVersion})
 	fakeWatch := watch.NewFake()

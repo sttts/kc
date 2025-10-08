@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"testing"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
@@ -18,7 +17,7 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
-	ctx := context.TODO()
+	ctx := t.Context()
 	go cl.Start(ctx)
 
 	cfg := appconfig.Default()
@@ -39,8 +38,8 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 
 	p := NewPanel("")
 	p.UseFolder(true)
-	p.SetFolder(folder, false)
-	_ = p.ViewContentOnlyFocused(false)
+	p.SetFolder(ctx, folder, false)
+	_ = p.ViewContentOnlyFocused(ctx, false)
 
 	count := folder.Len(ctx)
 	rows := folder.Lines(ctx, 0, count)

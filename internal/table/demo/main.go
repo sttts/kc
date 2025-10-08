@@ -75,6 +75,7 @@ func newApp(provider string) app {
 	default:
 		list = table.NewSliceList(rows)
 	}
+	ctx := context.Background()
 	left := table.NewBigTable(cols, list, 100, 28)
 	right := table.NewBigTable(cols, list, 100, 28)
 	// Apply Norton Commander-inspired color scheme (table only)
@@ -93,10 +94,10 @@ func newApp(provider string) app {
 		}
 	}
 	// start with no inner separators (no outside borders are ever rendered)
-	left.BorderVertical(false)
-	right.BorderVertical(false)
-	left.Focus()
-	right.Blur()
+	left.BorderVertical(ctx, false)
+	right.BorderVertical(ctx, false)
+	left.Focus(ctx)
+	right.Blur(ctx)
 	return app{left: left, right: right, focus: 0, bstateL: 0, bstateR: 0}
 }
 
@@ -106,6 +107,7 @@ func (a app) Init() tea.Cmd {
 }
 
 func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	ctx := context.Background()
 	switch v := msg.(type) {
 	case tea.KeyMsg:
 		switch v.String() {
@@ -116,7 +118,7 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.focus == 1 {
 				cur = &a.right
 			}
-			cur.ToggleMode()
+			cur.ToggleMode(ctx)
 			return a, nil
 		case "i":
 			// Insert a new row after current
@@ -124,7 +126,7 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.focus == 1 {
 				cur = &a.right
 			}
-			if id, ok := cur.CurrentID(); ok {
+			if id, ok := cur.CurrentID(ctx); ok {
 				nr := table.SimpleRow{ID: fmt.Sprintf("id-%d", time.Now().UnixNano()%1_000_000_000)}
 				nr.SetColumn(0, nr.ID, nil)
 				nr.SetColumn(1, "OK", nil)
@@ -132,10 +134,10 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch l := cur.GetList().(type) {
 				case *table.SliceList:
 					l.InsertAfter(id, nr)
-					cur.SetList(l)
+					cur.SetList(ctx, l)
 				case *table.LinkedList:
 					l.InsertAfterID(id, nr)
-					cur.SetList(l)
+					cur.SetList(ctx, l)
 				}
 			}
 			return a, nil
@@ -145,14 +147,14 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.focus == 1 {
 				cur = &a.right
 			}
-			if id, ok := cur.CurrentID(); ok {
+			if id, ok := cur.CurrentID(ctx); ok {
 				switch l := cur.GetList().(type) {
 				case *table.SliceList:
 					l.RemoveIDs(id)
-					cur.SetList(l)
+					cur.SetList(ctx, l)
 				case *table.LinkedList:
 					l.RemoveIDs(id)
-					cur.SetList(l)
+					cur.SetList(ctx, l)
 				}
 			}
 			return a, nil
@@ -162,13 +164,12 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.focus == 1 {
 				cur = &a.right
 			}
-			ctx := context.Background()
 			list := cur.GetList()
 			src := table.LinesToRows(list.Lines(ctx, 0, list.Len(ctx)))
 			if _, isSlice := cur.GetList().(*table.SliceList); isSlice {
-				cur.SetList(table.NewLinkedList(src))
+				cur.SetList(ctx, table.NewLinkedList(src))
 			} else {
-				cur.SetList(table.NewSliceList(src))
+				cur.SetList(ctx, table.NewSliceList(src))
 			}
 			return a, nil
 		case "b":
@@ -176,22 +177,22 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// 0: none, 1: verticals
 			if a.focus == 0 {
 				a.bstateL = (a.bstateL + 1) % 2
-				a.left.BorderVertical(a.bstateL == 1)
+				a.left.BorderVertical(ctx, a.bstateL == 1)
 			} else {
 				a.bstateR = (a.bstateR + 1) % 2
-				a.right.BorderVertical(a.bstateR == 1)
+				a.right.BorderVertical(ctx, a.bstateR == 1)
 			}
 			return a, nil
 		case "tab":
 			// Switch focus between left and right tables (outer routes keys)
 			if a.focus == 0 {
 				a.focus = 1
-				a.left.Blur()
-				a.right.Focus()
+				a.left.Blur(ctx)
+				a.right.Focus(ctx)
 			} else {
 				a.focus = 0
-				a.right.Blur()
-				a.left.Focus()
+				a.right.Blur(ctx)
+				a.left.Focus(ctx)
 			}
 			return a, nil
 		}
@@ -202,8 +203,8 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sep := 1
 		lw := (totalW - sep) / 2
 		rw := totalW - sep - lw
-		a.left.SetSize(lw, bodyH)
-		a.right.SetSize(rw, bodyH)
+		a.left.SetSize(ctx, lw, bodyH)
+		a.right.SetSize(ctx, rw, bodyH)
 		// keep ticking once per second
 		return a, tea.Tick(time.Second, func(t time.Time) tea.Msg { return t })
 	}
@@ -284,7 +285,7 @@ func (a app) randomlyUpdateStatuses(bt *table.BigTable, p float64) {
 	ctx := context.Background()
 	n := list.Len(ctx)
 	if n == 0 || p <= 0 {
-		bt.Refresh()
+		bt.Refresh(ctx)
 		return
 	}
 	count := int(float64(n) * p)
@@ -313,7 +314,7 @@ func (a app) randomlyUpdateStatuses(bt *table.BigTable, p float64) {
 			r.SetColumn(1, val, st)
 		}
 	}
-	bt.Refresh()
+	bt.Refresh(ctx)
 }
 
 func makeBaseRows(nRows, nCols int) [][]string {

@@ -24,8 +24,9 @@ func TestIndependentPanelNavigation(t *testing.T) {
 	// Bind folders to panels
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
-	a.leftPanel.SetFolder(leftRoot, false)
-	a.rightPanel.SetFolder(rightRoot, false)
+	ctx := t.Context()
+	a.leftPanel.SetFolder(ctx, leftRoot, false)
+	a.rightPanel.SetFolder(ctx, rightRoot, false)
 	// Set initial breadcrumbs from navigators
 	a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
 	a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))

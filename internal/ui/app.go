@@ -108,6 +108,7 @@ func NewApp() *App {
 		// Invariant: cfg is always non-nil; initialize with defaults
 		cfg: appconfig.Default(),
 	}
+	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.toastLogger = NewToastLogger(app, 2*time.Second)
 
 	// Register modals
@@ -211,18 +212,11 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, current str
 	}
 }
 
-func (a *App) requestContext() (context.Context, context.CancelFunc) {
-	if a.ctx != nil {
-		return context.WithTimeout(a.ctx, requestTimeout)
-	}
-	return context.WithTimeout(context.Background(), requestTimeout)
-}
-
 func (a *App) navigatorPath(nav *navui.Navigator) string {
 	if nav == nil {
 		return "/"
 	}
-	ctx, cancel := a.requestContext()
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	return nav.Path(ctx)
 }
@@ -325,26 +319,26 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				// Refresh only the active panel's folder
 				if a.activePanel == 0 && a.leftNav != nil {
-					ctx, cancel := a.requestContext()
+					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 					if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
 						rf.Refresh()
 					}
-					a.leftPanel.SetFolderWithContext(ctx, a.leftNav.Current(), a.leftNav.HasBack())
+					a.leftPanel.SetFolder(ctx, a.leftNav.Current(), a.leftNav.HasBack())
 					a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
 					cancel()
-					ctxRefresh, cancelRefresh := a.requestContext()
+					ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
 					a.leftPanel.RefreshFolder(ctxRefresh)
 					cancelRefresh()
 				}
 				if a.activePanel == 1 && a.rightNav != nil {
-					ctx, cancel := a.requestContext()
+					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 					if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
 						rf.Refresh()
 					}
-					a.rightPanel.SetFolderWithContext(ctx, a.rightNav.Current(), a.rightNav.HasBack())
+					a.rightPanel.SetFolder(ctx, a.rightNav.Current(), a.rightNav.HasBack())
 					a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
 					cancel()
-					ctxRefresh, cancelRefresh := a.requestContext()
+					ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
 					a.rightPanel.RefreshFolder(ctxRefresh)
 					cancelRefresh()
 				}
@@ -376,26 +370,34 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_ = appconfig.Save(a.cfg)
 			}
 			if a.activePanel == 0 {
-				a.leftPanel.SetTableMode(m.TableMode)
-				a.leftPanel.SetColumnsMode(m.Columns)
-				a.leftPanel.SetObjectOrder(m.ObjectsOrder)
+				ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
+				a.leftPanel.SetTableMode(ctxPanel, m.TableMode)
+				a.leftPanel.SetColumnsMode(ctxPanel, m.Columns)
+				a.leftPanel.SetObjectOrder(ctxPanel, m.ObjectsOrder)
 				a.syncPanelConfig(a.leftPanel)
+				cancelPanel()
 				if a.leftNav != nil {
 					if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
 						rf.Refresh()
 					}
-					a.leftPanel.RefreshFolder()
+					ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
+					a.leftPanel.RefreshFolder(ctxRefresh)
+					cancelRefresh()
 				}
 			} else {
-				a.rightPanel.SetTableMode(m.TableMode)
-				a.rightPanel.SetColumnsMode(m.Columns)
-				a.rightPanel.SetObjectOrder(m.ObjectsOrder)
+				ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
+				a.rightPanel.SetTableMode(ctxPanel, m.TableMode)
+				a.rightPanel.SetColumnsMode(ctxPanel, m.Columns)
+				a.rightPanel.SetObjectOrder(ctxPanel, m.ObjectsOrder)
 				a.syncPanelConfig(a.rightPanel)
+				cancelPanel()
 				if a.rightNav != nil {
 					if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
 						rf.Refresh()
 					}
-					a.rightPanel.RefreshFolder()
+					ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
+					a.rightPanel.RefreshFolder(ctxRefresh)
+					cancelRefresh()
 				}
 			}
 			if m.Close {
@@ -470,12 +472,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh only when current folders report dirty to avoid unnecessary redraws.
 		if a.leftNav != nil && a.leftPanel != nil {
 			if d, ok := a.leftNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
-				a.leftPanel.RefreshFolder()
+				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+				a.leftPanel.RefreshFolder(ctx)
+				cancel()
 			}
 		}
 		if a.rightNav != nil && a.rightPanel != nil {
 			if d, ok := a.rightNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
-				a.rightPanel.RefreshFolder()
+				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+				a.rightPanel.RefreshFolder(ctx)
+				cancel()
 			}
 		}
 		// Schedule next tick (lightweight check)
@@ -587,33 +593,35 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if msg.String() == "ctrl+w" {
 				// Toggle columns mode (Normal/Wide) on active panel
+				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+				defer cancel()
 				if a.activePanel == 0 {
 					if a.leftPanel.ColumnsMode() == "wide" {
-						a.leftPanel.SetColumnsMode("normal")
+						a.leftPanel.SetColumnsMode(ctx, "normal")
 						a.syncPanelConfig(a.leftPanel)
 					} else {
-						a.leftPanel.SetColumnsMode("wide")
+						a.leftPanel.SetColumnsMode(ctx, "wide")
 						a.syncPanelConfig(a.leftPanel)
 					}
 					if a.leftNav != nil {
 						if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
 							rf.Refresh()
 						}
-						a.leftPanel.RefreshFolder()
+						a.leftPanel.RefreshFolder(ctx)
 					}
 				} else {
 					if a.rightPanel.ColumnsMode() == "wide" {
-						a.rightPanel.SetColumnsMode("normal")
+						a.rightPanel.SetColumnsMode(ctx, "normal")
 						a.syncPanelConfig(a.rightPanel)
 					} else {
-						a.rightPanel.SetColumnsMode("wide")
+						a.rightPanel.SetColumnsMode(ctx, "wide")
 						a.syncPanelConfig(a.rightPanel)
 					}
 					if a.rightNav != nil {
 						if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
 							rf.Refresh()
 						}
-						a.rightPanel.RefreshFolder()
+						a.rightPanel.RefreshFolder(ctx)
 					}
 				}
 				return a, nil
@@ -674,12 +682,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.activePanel == 1 {
 					target = a.rightPanel
 				}
+				ctxWheel, cancelWheel := context.WithTimeout(a.ctx, panelContextTimeout)
 				switch m.Button {
 				case tea.MouseWheelUp:
-					target.moveUp()
+					target.moveUp(ctxWheel)
 				case tea.MouseWheelDown:
-					target.moveDown()
+					target.moveDown(ctxWheel)
 				}
+				cancelWheel()
 				return a, tea.Batch(cmds...)
 			case tea.MouseClickMsg:
 				m := e.Mouse()
@@ -710,7 +720,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if target.useFolder && target.folder != nil && target.bt != nil {
 						if id, ok := target.bt.VisibleRowID(contentY); ok {
 							clickedID = id
-							target.SelectByRowID(id)
+							ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+							target.SelectByRowID(ctxSel, id)
+							cancelSel()
 						}
 					} else {
 						idx := target.scrollTop + contentY
@@ -732,9 +744,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if a.lastClickRowID == clickedID && a.lastClickPanel == a.activePanel && now.Sub(a.lastClickTime) <= timeout {
 							a.lastClickTime = time.Time{}
 							a.lastClickRowID = ""
-							if cmd := target.enterItem(); cmd != nil {
+							ctxEnter, cancelEnter := context.WithTimeout(a.ctx, panelContextTimeout)
+							if cmd := target.enterItem(ctxEnter); cmd != nil {
+								cancelEnter()
 								return a, cmd
 							}
+							cancelEnter()
 						} else {
 							a.lastClickTime = now
 							a.lastClickPanel = a.activePanel
@@ -900,10 +915,16 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 
 	// Panel content height must match the frame interior (frameHeight-2).
 	// contentHeight already equals (panelHeight-2), so subtract one more to account for the frame's top/bottom.
-	a.leftPanel.SetDimensions(contentWidth, contentHeight-2)
-	a.rightPanel.SetDimensions(contentWidth, contentHeight-2)
-	leftContentView := a.leftPanel.ViewContentOnlyFocused(a.activePanel == 0)
-	rightContentView := a.rightPanel.ViewContentOnlyFocused(a.activePanel == 1)
+	ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.leftPanel.SetDimensions(ctxLeft, contentWidth, contentHeight-2)
+	leftContentView := a.leftPanel.ViewContentOnlyFocused(ctxLeft, a.activePanel == 0)
+	leftFooterView := a.leftPanel.GetFooter(ctxLeft)
+	cancelLeft()
+	ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.rightPanel.SetDimensions(ctxRight, contentWidth, contentHeight-2)
+	rightContentView := a.rightPanel.ViewContentOnlyFocused(ctxRight, a.activePanel == 1)
+	rightFooterView := a.rightPanel.GetFooter(ctxRight)
+	cancelRight()
 
 	// Calculate heights for frame and footer
 	footerHeight := 2
@@ -914,8 +935,8 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	rightFramed := a.createFrameWithOverlayTitle(rightContentView, a.rightPanel.GetCurrentPath(), panelWidth, frameHeight, a.activePanel == 1)
 
 	// Create framed footers with T-junction connection
-	leftFooter := a.createFramedFooter(a.leftPanel.GetFooter(), panelWidth)
-	rightFooter := a.createFramedFooter(a.rightPanel.GetFooter(), panelWidth)
+	leftFooter := a.createFramedFooter(leftFooterView, panelWidth)
+	rightFooter := a.createFramedFooter(rightFooterView, panelWidth)
 
 	// Combine frame and footer for each panel
 	leftPanel := lipgloss.JoinVertical(lipgloss.Top, leftFramed, leftFooter)
@@ -1067,15 +1088,19 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
 func (a *App) refreshFoldersAfterViewChange() {
 	if a.leftNav != nil {
 		cur := a.leftNav.Current()
-		a.leftPanel.SetFolder(cur, a.leftNav.HasBack())
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		a.leftPanel.SetFolder(ctx, cur, a.leftNav.HasBack())
 		a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
-		a.leftPanel.RefreshFolder()
+		a.leftPanel.RefreshFolder(ctx)
+		cancel()
 	}
 	if a.rightNav != nil {
 		cur := a.rightNav.Current()
-		a.rightPanel.SetFolder(cur, a.rightNav.HasBack())
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		a.rightPanel.SetFolder(ctx, cur, a.rightNav.HasBack())
 		a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
-		a.rightPanel.RefreshFolder()
+		a.rightPanel.RefreshFolder(ctx)
+		cancel()
 	}
 }
 
@@ -1423,7 +1448,9 @@ func (a *App) openViewerForSelection() tea.Cmd {
 	if p == nil {
 		return nil
 	}
-	item, ok := p.SelectedNavItem()
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	item, ok := p.SelectedNavItem(ctx)
 	if !ok || item == nil {
 		return nil
 	}
@@ -1747,9 +1774,7 @@ func Run(ctx context.Context) error {
 		if app.clPool != nil {
 			app.clPool.Stop()
 		}
-		if app.cancel != nil {
-			app.cancel()
-		}
+		app.cancel()
 	}()
 
 	if _, err := p.Run(); err != nil {
@@ -1787,6 +1812,7 @@ func (a *App) initData(ctx context.Context) error {
 	}
 	log.Info("selected context", "name", a.currentCtx.Name, "cluster", a.currentCtx.Cluster, "namespace", ctxNamespace)
 	// Prepare app context and cluster pool; cluster will be started via pool.Get
+	a.cancel()
 	a.ctx, a.cancel = context.WithCancel(ctx)
 	a.clPool = kccluster.NewPool(2 * time.Minute)
 	log.Info("starting cluster pool")
@@ -1822,13 +1848,17 @@ func (a *App) initData(ctx context.Context) error {
 		a.leftPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
 		a.rightPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
 		// Initialize table mode from config defaults
-		a.leftPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
-		a.rightPanel.SetTableMode(string(a.cfg.Panel.Table.Mode))
+		ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
+		a.leftPanel.SetTableMode(ctxLeft, string(a.cfg.Panel.Table.Mode))
+		a.leftPanel.SetColumnsMode(ctxLeft, a.cfg.Objects.Columns)
+		a.leftPanel.SetObjectOrder(ctxLeft, a.cfg.Objects.Order)
+		cancelLeft()
+		ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
+		a.rightPanel.SetTableMode(ctxRight, string(a.cfg.Panel.Table.Mode))
+		a.rightPanel.SetColumnsMode(ctxRight, a.cfg.Objects.Columns)
+		a.rightPanel.SetObjectOrder(ctxRight, a.cfg.Objects.Order)
+		cancelRight()
 		// Initialize columns mode and objects order from config defaults
-		a.leftPanel.SetColumnsMode(a.cfg.Objects.Columns)
-		a.rightPanel.SetColumnsMode(a.cfg.Objects.Columns)
-		a.leftPanel.SetObjectOrder(a.cfg.Objects.Order)
-		a.rightPanel.SetObjectOrder(a.cfg.Objects.Order)
 		a.syncPanelConfig(a.leftPanel)
 		a.syncPanelConfig(a.rightPanel)
 	}
@@ -1876,7 +1906,7 @@ func (a *App) goToNamespace(ns string) {
 		leftNSPath := append(append([]string{}, rootLeft.Path()...), "namespaces")
 		leftNS := models.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, leftNSPath)
 		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg {
-			ctx, cancel := a.requestContext()
+			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 			defer cancel()
 			_ = leftNS.Len(ctx)
 			return nil
@@ -1886,7 +1916,7 @@ func (a *App) goToNamespace(ns string) {
 		leftGroupsPath := append(append([]string{}, leftNSPath...), ns)
 		leftGroups := models.NewNamespacedResourcesFolder(depsLeft, ns, leftGroupsPath)
 		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg {
-			ctx, cancel := a.requestContext()
+			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 			defer cancel()
 			_ = leftGroups.Len(ctx)
 			return nil
@@ -1897,7 +1927,7 @@ func (a *App) goToNamespace(ns string) {
 		rightNSPath := append(append([]string{}, rootRight.Path()...), "namespaces")
 		rightNS := models.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, rightNSPath)
 		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg {
-			ctx, cancel := a.requestContext()
+			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 			defer cancel()
 			_ = rightNS.Len(ctx)
 			return nil
@@ -1907,7 +1937,7 @@ func (a *App) goToNamespace(ns string) {
 		rightGroupsPath := append(append([]string{}, rightNSPath...), ns)
 		rightGroups := models.NewNamespacedResourcesFolder(depsRight, ns, rightGroupsPath)
 		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg {
-			ctx, cancel := a.requestContext()
+			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 			defer cancel()
 			_ = rightGroups.Len(ctx)
 			return nil
@@ -1918,8 +1948,12 @@ func (a *App) goToNamespace(ns string) {
 	hasBackL := a.leftNav.HasBack()
 	curR := a.rightNav.Current()
 	hasBackR := a.rightNav.HasBack()
-	a.leftPanel.SetFolder(curL, hasBackL)
-	a.rightPanel.SetFolder(curR, hasBackR)
+	ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.leftPanel.SetFolder(ctxLeft, curL, hasBackL)
+	cancelLeft()
+	ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.rightPanel.SetFolder(ctxRight, curR, hasBackR)
+	cancelRight()
 	// Use navigator paths for breadcrumbs
 	a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
 	a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
@@ -1933,8 +1967,12 @@ func (a *App) goToNamespace(ns string) {
 		a.activePanel = 1
 		a.handleFolderNav(back, selID, next)
 	})
-	a.leftPanel.ResetSelectionTop()
-	a.rightPanel.ResetSelectionTop()
+	ctxResetL, cancelResetL := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.leftPanel.ResetSelectionTop(ctxResetL)
+	cancelResetL()
+	ctxResetR, cancelResetR := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.rightPanel.ResetSelectionTop(ctxResetR)
+	cancelResetR()
 }
 
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
@@ -1952,9 +1990,9 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		currentName = a.currentCtx.Name
 	}
 	var nav *navui.Navigator
-	var panelSet func(models.Folder, bool)
-	var panelSelectByID func(string)
-	var panelReset func()
+	var panelSet func(context.Context, models.Folder, bool)
+	var panelSelectByID func(context.Context, string)
+	var panelReset func(context.Context)
 	if a.activePanel == 0 {
 		cfg := a.ensurePanelConfig(a.leftPanel)
 		a.syncPanelConfig(a.leftPanel)
@@ -1964,9 +2002,11 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 			a.leftNav = navui.NewNavigator(models.NewRootFolder(deps, enter))
 		}
 		nav = a.leftNav
-		panelSet = func(folder models.Folder, hasBack bool) { a.leftPanel.SetFolder(folder, hasBack) }
-		panelSelectByID = a.leftPanel.SelectByRowID
-		panelReset = func() { a.leftPanel.ResetSelectionTop() }
+		panelSet = func(ctx context.Context, folder models.Folder, hasBack bool) {
+			a.leftPanel.SetFolder(ctx, folder, hasBack)
+		}
+		panelSelectByID = func(ctx context.Context, id string) { a.leftPanel.SelectByRowID(ctx, id) }
+		panelReset = func(ctx context.Context) { a.leftPanel.ResetSelectionTop(ctx) }
 	} else {
 		cfg := a.ensurePanelConfig(a.rightPanel)
 		a.syncPanelConfig(a.rightPanel)
@@ -1976,9 +2016,11 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 			a.rightNav = navui.NewNavigator(models.NewRootFolder(deps, enter))
 		}
 		nav = a.rightNav
-		panelSet = func(folder models.Folder, hasBack bool) { a.rightPanel.SetFolder(folder, hasBack) }
-		panelSelectByID = a.rightPanel.SelectByRowID
-		panelReset = func() { a.rightPanel.ResetSelectionTop() }
+		panelSet = func(ctx context.Context, folder models.Folder, hasBack bool) {
+			a.rightPanel.SetFolder(ctx, folder, hasBack)
+		}
+		panelSelectByID = func(ctx context.Context, id string) { a.rightPanel.SelectByRowID(ctx, id) }
+		panelReset = func(ctx context.Context) { a.rightPanel.ResetSelectionTop(ctx) }
 	}
 	if back {
 		nav.Back()
@@ -1986,7 +2028,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		// Pre-warm the next folder in background to trigger informer/lister start.
 		// This shows a spinner if it takes longer than the delay and avoids UI freeze.
 		a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg {
-			ctx, cancel := a.requestContext()
+			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 			defer cancel()
 			_ = next.Len(ctx)
 			return nil
@@ -1996,7 +2038,9 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	}
 	cur := nav.Current()
 	hasBack := nav.HasBack()
-	panelSet(cur, hasBack)
+	ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
+	panelSet(ctxPanel, cur, hasBack)
+	cancelPanel()
 	// Update breadcrumbs from navigator state
 	if a.activePanel == 0 {
 		a.leftPanel.SetCurrentPath(a.navigatorPath(nav))
@@ -2006,12 +2050,18 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	if back {
 		id := nav.CurrentSelectionID()
 		if id != "" {
-			panelSelectByID(id)
+			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+			panelSelectByID(ctxSel, id)
+			cancelSel()
 		} else {
-			panelReset()
+			ctxReset, cancelReset := context.WithTimeout(a.ctx, panelContextTimeout)
+			panelReset(ctxReset)
+			cancelReset()
 		}
 	} else {
-		panelReset()
+		ctxReset, cancelReset := context.WithTimeout(a.ctx, panelContextTimeout)
+		panelReset(ctxReset)
+		cancelReset()
 	}
 }
 
