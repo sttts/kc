@@ -1,5 +1,6 @@
 package ui
 
+
 import (
 	"context"
 	"errors"
@@ -17,7 +18,6 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
-	_ "github.com/sttts/kc/internal/ui/view"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	metamapper "k8s.io/apimachinery/pkg/api/meta"

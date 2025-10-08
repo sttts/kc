@@ -11,7 +11,6 @@ import (
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
-	viewpkg "github.com/sttts/kc/internal/ui/view"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -67,7 +66,6 @@ type Item struct {
 	models.Item
 	Name     string
 	Selected bool
-	Viewer   viewpkg.ViewProvider // Optional: F3 view provider for this item
 }
 
 // NewPanel creates a new panel
@@ -172,18 +170,6 @@ func (p *Panel) syncFromFolder(ctx context.Context) {
 	rowCount := p.folderLen(ctx)
 	rows := p.folderLines(ctx, 0, rowCount)
 
-	isKeysFolder := false
-	var parentNS, parentName string
-	var isSecret bool
-	if kf, ok := p.folder.(models.KeyFolder); ok {
-		gvr, ns, name := kf.Parent()
-		if gvr.Resource == "configmaps" || gvr.Resource == "secrets" {
-			isKeysFolder = true
-			parentNS, parentName = ns, name
-			isSecret = (gvr.Resource == "secrets")
-		}
-	}
-
 	items := make([]Item, 0, len(rows)+1)
 	for _, row := range rows {
 		if back, ok := row.(models.Back); ok && back.IsBack() {
@@ -209,9 +195,6 @@ func (p *Panel) syncFromFolder(ctx context.Context) {
 		entry := Item{
 			Item: itemRow,
 			Name: displayName,
-		}
-		if isKeysFolder && displayName != "" {
-			entry.Viewer = &viewpkg.ConfigKeyView{Namespace: parentNS, Name: parentName, Key: displayName, IsSecret: isSecret}
 		}
 		items = append(items, entry)
 	}
