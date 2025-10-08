@@ -38,6 +38,7 @@
 - Always import controller-runtime logging as `ctrllog` (e.g., `ctrllog "sigs.k8s.io/controller-runtime/pkg/log"`).
 - Thread a `context.Context` through the call chain and retrieve loggers with `ctrllog.FromContext(ctx)`; never grab the global logger directly.
 - Name the logger variable `log`, and derive new loggers with `log := ctrllog.FromContext(ctx).WithName("component")` before use.
+- Treat `Deps.Ctx` as the long-lived root context (e.g., for informers). For request-scoped or short-lived work, derive a child context from it and pass that down. Accessing `Deps.Ctx` directly should be the exception, not the default.
 
 ## Abstraction Guidelines
 - Prefer composition over wrapping: do not re-invent controller-runtime/client-go abstractions. Embed or compose original types instead of creating near-duplicates.
