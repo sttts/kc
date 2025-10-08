@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"fmt"
 
 	table "github.com/sttts/kc/internal/table"
@@ -20,12 +21,12 @@ func NewClusterResourcesFolder(deps Deps, path []string) *ClusterResourcesFolder
 	return folder
 }
 
-func (f *ClusterResourcesFolder) populate() ([]table.Row, error) {
+func (f *ClusterResourcesFolder) populate(ctx context.Context) ([]table.Row, error) {
 	specs, err := f.resourceGroupSpecs()
 	if err != nil {
 		return nil, err
 	}
-	rows := f.ResourcesFolder.finalize(specs)
+	rows := f.ResourcesFolder.finalize(ctx, specs)
 	return rows, nil
 }
 

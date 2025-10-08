@@ -1,6 +1,7 @@
 package navigation
 
 import (
+	"context"
 	"strings"
 
 	"github.com/sttts/kc/internal/models"
@@ -78,7 +79,7 @@ func (n *Navigator) CurrentSelectionID() string {
 // selected row IDs in each parent frame and the first column text of those rows.
 // It ignores synthetic back rows ("__back__"). The returned string is an
 // absolute path starting with a leading "/". Root with no selections yields "/".
-func (n *Navigator) Path() string {
+func (n *Navigator) Path(ctx context.Context) string {
 	if len(n.stack) == 0 {
 		return "/"
 	}
@@ -90,7 +91,7 @@ func (n *Navigator) Path() string {
 		if fr.selID == "" || fr.selID == "__back__" || fr.f == nil {
 			continue
 		}
-		_, row, ok := fr.f.Find(fr.selID)
+		_, row, ok := fr.f.Find(ctx, fr.selID)
 		if !ok || row == nil {
 			continue
 		}

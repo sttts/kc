@@ -71,8 +71,9 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 
 	// Order by name ascending
 	f1 := models.NewClusterObjectsFolder(makeDeps("name"), gvrNS, []string{"namespaces"})
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len() >= 3 })
-	rows := f1.Lines(0, f1.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len(ctx) >= 3 })
+	count := f1.Len(ctx)
+	rows := f1.Lines(ctx, 0, count)
 	got := normFirstCells(rows)
 	// Assert relative order of our namespaces regardless of other system entries
 	idxA, idxB, idxC := indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
@@ -98,8 +99,9 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 
 	// Order by -name
 	f2 := models.NewClusterObjectsFolder(makeDeps("-name"), gvrNS, []string{"namespaces"})
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len() >= 3 })
-	rows = f2.Lines(0, f2.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len(ctx) >= 3 })
+	count = f2.Len(ctx)
+	rows = f2.Lines(ctx, 0, count)
 	got = normFirstCells(rows)
 	idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
 	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {
@@ -108,8 +110,9 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 
 	// Order by creation
 	f3 := models.NewClusterObjectsFolder(makeDeps("creation"), gvrNS, []string{"namespaces"})
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len() >= 3 })
-	rows = f3.Lines(0, f3.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len(ctx) >= 3 })
+	count = f3.Len(ctx)
+	rows = f3.Lines(ctx, 0, count)
 	got = normFirstCells(rows)
 	idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
 	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxA < idxB && idxB < idxC) {
@@ -118,8 +121,9 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 
 	// Order by -creation
 	f4 := models.NewClusterObjectsFolder(makeDeps("-creation"), gvrNS, []string{"namespaces"})
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len() >= 3 })
-	rows = f4.Lines(0, f4.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len(ctx) >= 3 })
+	count = f4.Len(ctx)
+	rows = f4.Lines(ctx, 0, count)
 	got = normFirstCells(rows)
 	idxA, idxB, idxC = indexOf(got, "a"), indexOf(got, "b"), indexOf(got, "c")
 	if idxA < 0 || idxB < 0 || idxC < 0 || !(idxC < idxB && idxB < idxA) {

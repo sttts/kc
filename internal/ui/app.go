@@ -88,6 +88,8 @@ type App struct {
 	rightConfig *appconfig.Config
 }
 
+const requestTimeout = 10 * time.Second
+
 // Invariant: a.cfg is always non-nil. NewApp initializes it with defaults and
 // Init() loads and overwrites with persisted config, never leaving it nil.
 
@@ -209,6 +211,22 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, current str
 	}
 }
 
+func (a *App) requestContext() (context.Context, context.CancelFunc) {
+	if a.ctx != nil {
+		return context.WithTimeout(a.ctx, requestTimeout)
+	}
+	return context.WithTimeout(context.Background(), requestTimeout)
+}
+
+func (a *App) navigatorPath(nav *navui.Navigator) string {
+	if nav == nil {
+		return "/"
+	}
+	ctx, cancel := a.requestContext()
+	defer cancel()
+	return nav.Path(ctx)
+}
+
 func (a *App) makeEnterContextFunc(cfg *appconfig.Config) func(string, []string) (models.Folder, error) {
 	return func(name string, basePath []string) (models.Folder, error) {
 		if a.kubeMgr == nil {
@@ -307,20 +325,28 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				// Refresh only the active panel's folder
 				if a.activePanel == 0 && a.leftNav != nil {
+					ctx, cancel := a.requestContext()
 					if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
 						rf.Refresh()
 					}
-					a.leftPanel.SetFolder(a.leftNav.Current(), a.leftNav.HasBack())
-					a.leftPanel.SetCurrentPath(a.leftNav.Path())
-					a.leftPanel.RefreshFolder()
+					a.leftPanel.SetFolderWithContext(ctx, a.leftNav.Current(), a.leftNav.HasBack())
+					a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
+					cancel()
+					ctxRefresh, cancelRefresh := a.requestContext()
+					a.leftPanel.RefreshFolder(ctxRefresh)
+					cancelRefresh()
 				}
 				if a.activePanel == 1 && a.rightNav != nil {
+					ctx, cancel := a.requestContext()
 					if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
 						rf.Refresh()
 					}
-					a.rightPanel.SetFolder(a.rightNav.Current(), a.rightNav.HasBack())
-					a.rightPanel.SetCurrentPath(a.rightNav.Path())
-					a.rightPanel.RefreshFolder()
+					a.rightPanel.SetFolderWithContext(ctx, a.rightNav.Current(), a.rightNav.HasBack())
+					a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
+					cancel()
+					ctxRefresh, cancelRefresh := a.requestContext()
+					a.rightPanel.RefreshFolder(ctxRefresh)
+					cancelRefresh()
 				}
 			}
 			if m.Close {
@@ -1042,13 +1068,13 @@ func (a *App) refreshFoldersAfterViewChange() {
 	if a.leftNav != nil {
 		cur := a.leftNav.Current()
 		a.leftPanel.SetFolder(cur, a.leftNav.HasBack())
-		a.leftPanel.SetCurrentPath(a.leftNav.Path())
+		a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
 		a.leftPanel.RefreshFolder()
 	}
 	if a.rightNav != nil {
 		cur := a.rightNav.Current()
 		a.rightPanel.SetFolder(cur, a.rightNav.HasBack())
-		a.rightPanel.SetCurrentPath(a.rightNav.Path())
+		a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
 		a.rightPanel.RefreshFolder()
 	}
 }
@@ -1849,23 +1875,43 @@ func (a *App) goToNamespace(ns string) {
 		a.leftNav.SetSelectionID("namespaces")
 		leftNSPath := append(append([]string{}, rootLeft.Path()...), "namespaces")
 		leftNS := models.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, leftNSPath)
-		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = leftNS.Len(); return nil }))
+		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg {
+			ctx, cancel := a.requestContext()
+			defer cancel()
+			_ = leftNS.Len(ctx)
+			return nil
+		}))
 		a.leftNav.Push(leftNS)
 		a.leftNav.SetSelectionID(ns)
 		leftGroupsPath := append(append([]string{}, leftNSPath...), ns)
 		leftGroups := models.NewNamespacedResourcesFolder(depsLeft, ns, leftGroupsPath)
-		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = leftGroups.Len(); return nil }))
+		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg {
+			ctx, cancel := a.requestContext()
+			defer cancel()
+			_ = leftGroups.Len(ctx)
+			return nil
+		}))
 		a.leftNav.Push(leftGroups)
 		// Right panel: same
 		a.rightNav.SetSelectionID("namespaces")
 		rightNSPath := append(append([]string{}, rootRight.Path()...), "namespaces")
 		rightNS := models.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, rightNSPath)
-		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg { _ = rightNS.Len(); return nil }))
+		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg {
+			ctx, cancel := a.requestContext()
+			defer cancel()
+			_ = rightNS.Len(ctx)
+			return nil
+		}))
 		a.rightNav.Push(rightNS)
 		a.rightNav.SetSelectionID(ns)
 		rightGroupsPath := append(append([]string{}, rightNSPath...), ns)
 		rightGroups := models.NewNamespacedResourcesFolder(depsRight, ns, rightGroupsPath)
-		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg { _ = rightGroups.Len(); return nil }))
+		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg {
+			ctx, cancel := a.requestContext()
+			defer cancel()
+			_ = rightGroups.Len(ctx)
+			return nil
+		}))
 		a.rightNav.Push(rightGroups)
 	}
 	curL := a.leftNav.Current()
@@ -1875,12 +1921,8 @@ func (a *App) goToNamespace(ns string) {
 	a.leftPanel.SetFolder(curL, hasBackL)
 	a.rightPanel.SetFolder(curR, hasBackR)
 	// Use navigator paths for breadcrumbs
-	if a.leftNav != nil {
-		a.leftPanel.SetCurrentPath(a.leftNav.Path())
-	}
-	if a.rightNav != nil {
-		a.rightPanel.SetCurrentPath(a.rightNav.Path())
-	}
+	a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
+	a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
 	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
@@ -1943,7 +1985,12 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	} else if next != nil {
 		// Pre-warm the next folder in background to trigger informer/lister start.
 		// This shows a spinner if it takes longer than the delay and avoids UI freeze.
-		a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg { _ = next.Len(); return nil }))
+		a.enqueueCmd(a.withBusy("Loading", 800*time.Millisecond, func() tea.Msg {
+			ctx, cancel := a.requestContext()
+			defer cancel()
+			_ = next.Len(ctx)
+			return nil
+		}))
 		nav.SetSelectionID(selID)
 		nav.Push(next)
 	}
@@ -1952,9 +1999,9 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	panelSet(cur, hasBack)
 	// Update breadcrumbs from navigator state
 	if a.activePanel == 0 {
-		a.leftPanel.SetCurrentPath(nav.Path())
+		a.leftPanel.SetCurrentPath(a.navigatorPath(nav))
 	} else {
-		a.rightPanel.SetCurrentPath(nav.Path())
+		a.rightPanel.SetCurrentPath(a.navigatorPath(nav))
 	}
 	if back {
 		id := nav.CurrentSelectionID()

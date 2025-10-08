@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"fmt"
 
 	table "github.com/sttts/kc/internal/table"
@@ -21,7 +22,7 @@ func NewRootFolder(deps Deps, enterContext func(name string, basePath []string) 
 	return root
 }
 
-func (f *RootFolder) populate() ([]table.Row, error) {
+func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	cfg := f.Deps.AppConfig
 	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
 
@@ -61,7 +62,7 @@ func (f *RootFolder) populate() ([]table.Row, error) {
 		return nil, err
 	}
 	groupItems = append(groupItems, clusterItems...)
-	rows = append(rows, f.ResourcesFolder.finalize(groupItems)...)
+	rows = append(rows, f.ResourcesFolder.finalize(ctx, groupItems)...)
 
 	return rows, nil
 }

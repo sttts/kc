@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"fmt"
 
 	table "github.com/sttts/kc/internal/table"
@@ -24,12 +25,12 @@ func NewNamespacedResourcesFolder(deps Deps, namespace string, path []string) *N
 	return folder
 }
 
-func (f *NamespacedResourcesFolder) populate() ([]table.Row, error) {
+func (f *NamespacedResourcesFolder) populate(ctx context.Context) ([]table.Row, error) {
 	specs, err := f.resourceGroupSpecs()
 	if err != nil {
 		return nil, err
 	}
-	rows := f.ResourcesFolder.finalize(specs)
+	rows := f.ResourcesFolder.finalize(ctx, specs)
 	return rows, nil
 }
 

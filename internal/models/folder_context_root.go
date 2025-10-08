@@ -1,6 +1,8 @@
 package models
 
 import (
+	"context"
+
 	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -19,7 +21,7 @@ func NewContextRootFolder(deps Deps, path []string) *ContextRootFolder {
 	return folder
 }
 
-func (f *ContextRootFolder) populate() ([]table.Row, error) {
+func (f *ContextRootFolder) populate(ctx context.Context) ([]table.Row, error) {
 	nameStyle := WhiteStyle()
 
 	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
@@ -44,6 +46,6 @@ func (f *ContextRootFolder) populate() ([]table.Row, error) {
 	}
 	groupItems = append(groupItems, clusterItems...)
 
-	rows := f.ResourcesFolder.finalize(groupItems)
+	rows := f.ResourcesFolder.finalize(ctx, groupItems)
 	return rows, nil
 }

@@ -1,6 +1,7 @@
 package modeltesting
 
 import (
+	"context"
 	"strings"
 
 	models "github.com/sttts/kc/internal/models"
@@ -46,73 +47,73 @@ func (f *SliceFolder) ObjectListMeta() (schema.GroupVersionResource, string, boo
 	return schema.GroupVersionResource{}, "", false
 }
 
-func (f *SliceFolder) Lines(top, num int) []table.Row {
+func (f *SliceFolder) Lines(ctx context.Context, top, num int) []table.Row {
 	if num <= 0 {
 		return nil
 	}
 	if !f.hasBack() {
-		return f.list.Lines(top, num)
+		return f.list.Lines(ctx, top, num)
 	}
 	if top <= 0 {
 		rows := make([]table.Row, 0, num)
 		rows = append(rows, models.BackItem{})
 		if num-1 > 0 {
-			rows = append(rows, f.list.Lines(0, num-1)...)
+			rows = append(rows, f.list.Lines(ctx, 0, num-1)...)
 		}
 		return rows
 	}
-	return f.list.Lines(top-1, num)
+	return f.list.Lines(ctx, top-1, num)
 }
 
-func (f *SliceFolder) Above(rowID string, num int) []table.Row {
+func (f *SliceFolder) Above(ctx context.Context, rowID string, num int) []table.Row {
 	if num <= 0 {
 		return nil
 	}
 	if !f.hasBack() || rowID == "__back__" {
 		return nil
 	}
-	return f.list.Above(rowID, num)
+	return f.list.Above(ctx, rowID, num)
 }
 
-func (f *SliceFolder) Below(rowID string, num int) []table.Row {
+func (f *SliceFolder) Below(ctx context.Context, rowID string, num int) []table.Row {
 	if num <= 0 {
 		return nil
 	}
 	if f.hasBack() && rowID == "__back__" {
-		return f.list.Lines(0, num)
+		return f.list.Lines(ctx, 0, num)
 	}
-	return f.list.Below(rowID, num)
+	return f.list.Below(ctx, rowID, num)
 }
 
-func (f *SliceFolder) Len() int {
+func (f *SliceFolder) Len(ctx context.Context) int {
 	if f.hasBack() {
-		return f.list.Len() + 1
+		return f.list.Len(ctx) + 1
 	}
-	return f.list.Len()
+	return f.list.Len(ctx)
 }
 
-func (f *SliceFolder) Find(rowID string) (int, table.Row, bool) {
+func (f *SliceFolder) Find(ctx context.Context, rowID string) (int, table.Row, bool) {
 	if f.hasBack() {
 		if rowID == "__back__" {
 			return 0, models.BackItem{}, true
 		}
-		idx, row, ok := f.list.Find(rowID)
+		idx, row, ok := f.list.Find(ctx, rowID)
 		if !ok {
 			return -1, nil, false
 		}
 		return idx + 1, row, true
 	}
-	return f.list.Find(rowID)
+	return f.list.Find(ctx, rowID)
 }
 
-func (f *SliceFolder) ItemByID(id string) (models.Item, bool) {
+func (f *SliceFolder) ItemByID(ctx context.Context, id string) (models.Item, bool) {
 	if id == "" {
 		return nil, false
 	}
 	if f.hasBack() && id == "__back__" {
 		return models.BackItem{}, true
 	}
-	_, row, ok := f.list.Find(id)
+	_, row, ok := f.list.Find(ctx, id)
 	if !ok {
 		return nil, false
 	}

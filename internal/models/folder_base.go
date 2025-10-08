@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"sync"
 
 	table "github.com/sttts/kc/internal/table"
@@ -54,7 +55,7 @@ func (b *BaseFolder) Columns() []table.Column { return append([]table.Column(nil
 func (b *BaseFolder) Path() []string { return append([]string(nil), b.path...) }
 
 // ItemByID returns the navigation item by ID when available.
-func (b *BaseFolder) ItemByID(id string) (Item, bool) {
+func (b *BaseFolder) ItemByID(ctx context.Context, id string) (Item, bool) {
 	if id == "" {
 		return nil, false
 	}
@@ -65,11 +66,11 @@ func (b *BaseFolder) ItemByID(id string) (Item, bool) {
 	if src == nil {
 		return nil, false
 	}
-	return src.ItemByID(id)
+	return src.ItemByID(ctx, id)
 }
 
 // Lines implements table.List with optional back-row support.
-func (b *BaseFolder) Lines(top, num int) []table.Row {
+func (b *BaseFolder) Lines(ctx context.Context, top, num int) []table.Row {
 	if num <= 0 {
 		return nil
 	}
@@ -83,7 +84,7 @@ func (b *BaseFolder) Lines(top, num int) []table.Row {
 		return nil
 	}
 	if !b.hasBack() {
-		rows := src.Lines(top, num)
+		rows := src.Lines(ctx, top, num)
 		b.clearDirty()
 		return rows
 	}
@@ -91,18 +92,18 @@ func (b *BaseFolder) Lines(top, num int) []table.Row {
 		rows := make([]table.Row, 0, num)
 		rows = append(rows, BackItem{})
 		if num-1 > 0 {
-			rows = append(rows, src.Lines(0, num-1)...)
+			rows = append(rows, src.Lines(ctx, 0, num-1)...)
 		}
 		b.clearDirty()
 		return rows
 	}
-	rows := src.Lines(top-1, num)
+	rows := src.Lines(ctx, top-1, num)
 	b.clearDirty()
 	return rows
 }
 
 // Above implements table.List with back-row handling.
-func (b *BaseFolder) Above(id string, n int) []table.Row {
+func (b *BaseFolder) Above(ctx context.Context, id string, n int) []table.Row {
 	if n <= 0 {
 		return nil
 	}
@@ -111,13 +112,13 @@ func (b *BaseFolder) Above(id string, n int) []table.Row {
 		return nil
 	}
 	if !b.hasBack() || id == "__back__" {
-		return src.Above(id, n)
+		return src.Above(ctx, id, n)
 	}
-	return src.Above(id, n)
+	return src.Above(ctx, id, n)
 }
 
 // Below implements table.List with back-row handling.
-func (b *BaseFolder) Below(id string, n int) []table.Row {
+func (b *BaseFolder) Below(ctx context.Context, id string, n int) []table.Row {
 	if n <= 0 {
 		return nil
 	}
@@ -126,17 +127,17 @@ func (b *BaseFolder) Below(id string, n int) []table.Row {
 		return nil
 	}
 	if b.hasBack() && id == "__back__" {
-		return src.Lines(0, n)
+		return src.Lines(ctx, 0, n)
 	}
-	return src.Below(id, n)
+	return src.Below(ctx, id, n)
 }
 
 // Len reports the number of rows including the synthetic back row when present.
-func (b *BaseFolder) Len() int {
+func (b *BaseFolder) Len(ctx context.Context) int {
 	src := b.rowSource()
 	count := 0
 	if src != nil {
-		count = src.Len()
+		count = src.Len(ctx)
 	}
 	if b.hasBack() {
 		return count + 1
@@ -145,7 +146,7 @@ func (b *BaseFolder) Len() int {
 }
 
 // Find locates a row by ID, accounting for the back row.
-func (b *BaseFolder) Find(id string) (int, table.Row, bool) {
+func (b *BaseFolder) Find(ctx context.Context, id string) (int, table.Row, bool) {
 	src := b.rowSource()
 	if src == nil {
 		return -1, nil, false
@@ -154,13 +155,13 @@ func (b *BaseFolder) Find(id string) (int, table.Row, bool) {
 		if id == "__back__" {
 			return 0, BackItem{}, true
 		}
-		idx, row, ok := src.Find(id)
+		idx, row, ok := src.Find(ctx, id)
 		if !ok {
 			return -1, nil, false
 		}
 		return idx + 1, row, true
 	}
-	return src.Find(id)
+	return src.Find(ctx, id)
 }
 
 func (b *BaseFolder) hasBack() bool { return len(b.path) > 0 }
@@ -210,7 +211,7 @@ func (b *BaseFolder) SetRowSource(src rowSource) {
 // SetPopulate is a convenience helper for cached folders that still rebuild
 // their rows via a populate callback. It wraps the callback with a
 // sliceRowSource and installs it.
-func (b *BaseFolder) SetPopulate(fn func() ([]table.Row, error)) {
+func (b *BaseFolder) SetPopulate(fn func(context.Context) ([]table.Row, error)) {
 	if fn == nil {
 		b.SetRowSource(nil)
 		return

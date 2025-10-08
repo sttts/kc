@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"sort"
 
 	table "github.com/sttts/kc/internal/table"
@@ -30,9 +31,9 @@ func (f *SecretKeysFolder) Parent() (schema.GroupVersionResource, string, string
 	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}, f.Namespace, f.Name
 }
 
-func (f *SecretKeysFolder) buildRows() ([]table.Row, error) {
+func (f *SecretKeysFolder) buildRows(ctx context.Context) ([]table.Row, error) {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
-	obj, err := f.Deps.Cl.GetByGVR(f.Deps.Ctx, gvr, f.Namespace, f.Name)
+	obj, err := f.Deps.Cl.GetByGVR(ctx, gvr, f.Namespace, f.Name)
 	if err != nil {
 		return nil, err
 	}

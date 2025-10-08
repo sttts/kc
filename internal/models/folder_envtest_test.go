@@ -38,9 +38,9 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 
-	seedData(t, ctx, cli)
+	seedData(t, cli)
 
 	cl, err := kccluster.New(cfg)
 	if err != nil {
@@ -103,32 +103,36 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 	})
 }
 
-func seedData(t *testing.T, ctx context.Context, cli crclient.Client) {
+func seedData(t *testing.T, cli crclient.Client) {
 	t.Helper()
-	mustCreate(t, ctx, cli, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}})
-	mustCreate(t, ctx, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "testns"}, Data: map[string]string{"a": "A", "b": "B"}})
-	mustCreate(t, ctx, cli, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "sec1", Namespace: "testns"}, Data: map[string][]byte{"x": []byte("xx"), "y": []byte("yy")}})
-	mustCreate(t, ctx, cli, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}})
+	mustCreate(t, cli, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "testns"}})
+	mustCreate(t, cli, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "testns"}, Data: map[string]string{"a": "A", "b": "B"}})
+	mustCreate(t, cli, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "sec1", Namespace: "testns"}, Data: map[string][]byte{"x": []byte("xx"), "y": []byte("yy")}})
+	mustCreate(t, cli, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}})
 }
 
-func mustCreate(t *testing.T, ctx context.Context, cli crclient.Client, obj crclient.Object) {
+func mustCreate(t *testing.T, cli crclient.Client, obj crclient.Object) {
 	t.Helper()
-	if err := cli.Create(ctx, obj); err != nil {
+	if err := cli.Create(t.Context(), obj); err != nil {
 		t.Fatalf("create %T: %v", obj, err)
 	}
 }
 
-func waitFolder(t *testing.T, f interface{ Len() int }) {
+func waitFolder(t *testing.T, f interface{ Len(context.Context) int }) {
 	t.Helper()
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f.Len() > 0 })
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool {
+		return f.Len(t.Context()) > 0
+	})
 }
 
 func assertRows(t *testing.T, name string, f interface {
-	Len() int
-	Lines(int, int) []table.Row
+	Len(context.Context) int
+	Lines(context.Context, int, int) []table.Row
 }, expected map[string][]string) {
 	t.Helper()
-	rows := f.Lines(0, f.Len())
+	ctx := t.Context()
+	count := f.Len(ctx)
+	rows := f.Lines(ctx, 0, count)
 	got := make(map[string][]string, len(rows))
 	for _, r := range rows {
 		id, cells, _, ok := r.Columns()

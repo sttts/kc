@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -29,7 +30,7 @@ func NewResourcesFolder(base *BaseFolder) *ResourcesFolder {
 	}
 }
 
-func (f *ResourcesFolder) finalize(specs []resourceGroupSpec) []table.Row {
+func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpec) []table.Row {
 	if len(specs) == 0 {
 		f.items = make(map[string]*ResourceGroupItem)
 		f.lastSpecs = make(map[string]resourceGroupSignature)

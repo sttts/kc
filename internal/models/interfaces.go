@@ -1,6 +1,8 @@
 package models
 
 import (
+	"context"
+
 	"github.com/charmbracelet/lipgloss/v2"
 	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -26,7 +28,7 @@ type Folder interface {
 	table.List
 	Columns() []table.Column
 	Path() []string
-	ItemByID(string) (Item, bool)
+	ItemByID(context.Context, string) (Item, bool)
 }
 
 // Enterable identifies rows that can return a child folder when Enter is pressed.

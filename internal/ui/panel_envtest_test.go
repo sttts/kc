@@ -42,7 +42,8 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 	p.SetFolder(folder, false)
 	_ = p.ViewContentOnlyFocused(false)
 
-	rows := folder.Lines(0, folder.Len())
+	count := folder.Len(ctx)
+	rows := folder.Lines(ctx, 0, count)
 	idx := -1
 	for i := range rows {
 		_, cells, _, _ := rows[i].Columns()

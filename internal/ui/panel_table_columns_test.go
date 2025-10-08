@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"testing"
 
 	"github.com/sttts/kc/internal/models"
@@ -15,17 +16,25 @@ type fakeFolder struct {
 }
 
 // table.List implementation
-func (f *fakeFolder) Lines(top, num int) []table.Row        { return f.list.Lines(top, num) }
-func (f *fakeFolder) Above(id string, n int) []table.Row    { return f.list.Above(id, n) }
-func (f *fakeFolder) Below(id string, n int) []table.Row    { return f.list.Below(id, n) }
-func (f *fakeFolder) Len() int                              { return f.list.Len() }
-func (f *fakeFolder) Find(id string) (int, table.Row, bool) { return f.list.Find(id) }
+func (f *fakeFolder) Lines(ctx context.Context, top, num int) []table.Row {
+	return f.list.Lines(ctx, top, num)
+}
+func (f *fakeFolder) Above(ctx context.Context, id string, n int) []table.Row {
+	return f.list.Above(ctx, id, n)
+}
+func (f *fakeFolder) Below(ctx context.Context, id string, n int) []table.Row {
+	return f.list.Below(ctx, id, n)
+}
+func (f *fakeFolder) Len(ctx context.Context) int { return f.list.Len(ctx) }
+func (f *fakeFolder) Find(ctx context.Context, id string) (int, table.Row, bool) {
+	return f.list.Find(ctx, id)
+}
 
 // Folder metadata
-func (f *fakeFolder) Columns() []table.Column             { return f.cols }
-func (f *fakeFolder) Path() []string                      { return append([]string(nil), f.path...) }
-func (f *fakeFolder) Key() string                         { return "fake" }
-func (f *fakeFolder) ItemByID(string) (models.Item, bool) { return nil, false }
+func (f *fakeFolder) Columns() []table.Column                              { return f.cols }
+func (f *fakeFolder) Path() []string                                       { return append([]string(nil), f.path...) }
+func (f *fakeFolder) Key() string                                          { return "fake" }
+func (f *fakeFolder) ItemByID(context.Context, string) (models.Item, bool) { return nil, false }
 
 func newFakeFolder(cols []string, rows [][]string) *fakeFolder {
 	tc := make([]table.Column, len(cols))

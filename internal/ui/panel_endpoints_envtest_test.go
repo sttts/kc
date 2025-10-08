@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	ctx := context.TODO()
+	ctx := t.Context()
 	// Ensure kube-system exists
 	_ = cli.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system"}})
 	ep := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "kube-system"}}
@@ -64,7 +63,7 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	folder := models.NewNamespacedObjectsFolder(deps, gvr, "kube-system", []string{"namespaces", "kube-system", gvr.Resource})
 
 	// Wait until at least one row appears
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return folder.Len() > 0 })
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return folder.Len(ctx) > 0 })
 
 	// Panel should pick up server columns on SetFolder
 	p := NewPanel("")

@@ -100,8 +100,9 @@ func TestHierarchyEnvtest(t *testing.T) {
 	// 1) Root
 	root := models.NewRootFolder(deps, nil)
 	// Wait until namespaces are visible
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return root.Len() > 0 })
-	rows := root.Lines(0, root.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return root.Len(ctx) > 0 })
+	count := root.Len(ctx)
+	rows := root.Lines(ctx, 0, count)
 	foundNamespaces := false
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
@@ -116,8 +117,9 @@ func TestHierarchyEnvtest(t *testing.T) {
 
 	// 2) Enter /namespaces
 	nsFolder := models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len() > 0 })
-	rows = nsFolder.Lines(0, nsFolder.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len(ctx) > 0 })
+	count = nsFolder.Len(ctx)
+	rows = nsFolder.Lines(ctx, 0, count)
 	foundTestns := false
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
@@ -135,8 +137,9 @@ func TestHierarchyEnvtest(t *testing.T) {
 	if got := strings.Join(ctxRoot.Path(), "/"); got != "contexts/"+deps.CtxName {
 		t.Fatalf("context root path: got %q", got)
 	}
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return ctxRoot.Len() > 0 })
-	rows = ctxRoot.Lines(0, ctxRoot.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return ctxRoot.Len(ctx) > 0 })
+	count = ctxRoot.Len(ctx)
+	rows = ctxRoot.Lines(ctx, 0, count)
 	hasNamespaces := false
 	hasNodes := false
 	for _, r := range rows {
@@ -159,8 +162,9 @@ func TestHierarchyEnvtest(t *testing.T) {
 
 	// 3) Enter groups for testns
 	grp := models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"})
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return grp.Len() > 0 })
-	rows = grp.Lines(0, grp.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return grp.Len(ctx) > 0 })
+	count = grp.Len(ctx)
+	rows = grp.Lines(ctx, 0, count)
 	hasCM, hasSec := false, false
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
@@ -180,8 +184,9 @@ func TestHierarchyEnvtest(t *testing.T) {
 	// 4) Enter objects: configmaps
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 	objs := models.NewNamespacedObjectsFolder(deps, gvrCM, "testns", []string{"namespaces", "testns", gvrCM.Resource})
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len() > 0 })
-	rows = objs.Lines(0, objs.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len(ctx) > 0 })
+	count = objs.Len(ctx)
+	rows = objs.Lines(ctx, 0, count)
 	foundCM1 := false
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
@@ -196,8 +201,9 @@ func TestHierarchyEnvtest(t *testing.T) {
 
 	// 5) Enter cm1 keys
 	keys := models.NewConfigMapKeysFolder(deps, []string{"namespaces", "testns", "configmaps", "cm1"}, "testns", "cm1")
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len() >= 2 })
-	rows = keys.Lines(0, keys.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len(ctx) >= 2 })
+	count = keys.Len(ctx)
+	rows = keys.Lines(ctx, 0, count)
 	hasA, hasB := false, false
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
@@ -217,8 +223,9 @@ func TestHierarchyEnvtest(t *testing.T) {
 	// 6) Cluster-scoped objects: nodes
 	gvrNodes := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}
 	nodes := models.NewClusterObjectsFolder(deps, gvrNodes, []string{"nodes"})
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nodes.Len() > 0 })
-	rows = nodes.Lines(0, nodes.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nodes.Len(ctx) > 0 })
+	count = nodes.Len(ctx)
+	rows = nodes.Lines(ctx, 0, count)
 	foundN1 := false
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
@@ -267,10 +274,11 @@ func TestContextNamespaceWalk(t *testing.T) {
 
 	// Context root
 	ctxRoot := models.NewContextRootFolder(deps, []string{"contexts", deps.CtxName})
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return ctxRoot.Len() > 0 })
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return ctxRoot.Len(ctx) > 0 })
 	// Enter /namespaces
 	var nsFolder models.Folder
-	rows := ctxRoot.Lines(0, ctxRoot.Len())
+	count := ctxRoot.Len(ctx)
+	rows := ctxRoot.Lines(ctx, 0, count)
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 0 && cells[0] == "/namespaces" {
@@ -287,10 +295,11 @@ func TestContextNamespaceWalk(t *testing.T) {
 		t.Fatalf("enter namespaces from context root failed")
 	}
 	// Wait for namespace
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len() > 0 })
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len(ctx) > 0 })
 	// Enter testns
 	var grp models.Folder
-	rows = nsFolder.Lines(0, nsFolder.Len())
+	count = nsFolder.Len(ctx)
+	rows = nsFolder.Lines(ctx, 0, count)
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 0 && cells[0] == "/testns" {
@@ -308,7 +317,8 @@ func TestContextNamespaceWalk(t *testing.T) {
 	}
 	// Enter configmaps group; verify proper "/" prefix and core group displayed as "v1"
 	var objs models.Folder
-	rows = grp.Lines(0, grp.Len())
+	count = grp.Len(ctx)
+	rows = grp.Lines(ctx, 0, count)
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 1 && cells[0] == "/configmaps" {
@@ -327,10 +337,11 @@ func TestContextNamespaceWalk(t *testing.T) {
 	if objs == nil {
 		t.Fatalf("enter configmaps objects failed")
 	}
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len() > 0 })
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len(ctx) > 0 })
 	// Enter cm1 keys
 	var keys models.Folder
-	rows = objs.Lines(0, objs.Len())
+	count = objs.Len(ctx)
+	rows = objs.Lines(ctx, 0, count)
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
 		if len(cells) > 0 && cells[0] == "/cm1" {
@@ -346,8 +357,9 @@ func TestContextNamespaceWalk(t *testing.T) {
 	if keys == nil {
 		t.Fatalf("enter cm1 keys failed")
 	}
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len() >= 2 })
-	rows = keys.Lines(0, keys.Len())
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return keys.Len(ctx) >= 2 })
+	count = keys.Len(ctx)
+	rows = keys.Lines(ctx, 0, count)
 	seen := map[string]bool{}
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
@@ -508,7 +520,9 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	// Find configmaps group and enter objects
 	var objs models.Folder
 	var groupID string
-	rows := nav.Current().Lines(0, nav.Current().Len())
+	current := nav.Current()
+	count := current.Len(ctx)
+	rows := current.Lines(ctx, 0, count)
 	for _, r := range rows {
 		id, cells, _, _ := r.Columns()
 		if len(cells) > 0 && cells[0] == "/configmaps" {
@@ -525,14 +539,16 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	if objs == nil {
 		t.Fatalf("enter configmaps objects failed")
 	}
-	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len() > 0 })
+	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len(ctx) > 0 })
 	// Remember group selection and enter objects
 	nav.SetSelectionID(groupID)
 	nav.Push(objs)
 	// Enter cm1 keys (simulate selection)
 	nav.SetSelectionID("cm1")
 	// Ensure a keys folder can be constructed by calling Enterable on cm1 row
-	rows = nav.Current().Lines(0, nav.Current().Len())
+	current = nav.Current()
+	count = current.Len(ctx)
+	rows = current.Lines(ctx, 0, count)
 	var keys models.Folder
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()

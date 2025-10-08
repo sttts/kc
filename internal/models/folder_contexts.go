@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"sort"
 
 	table "github.com/sttts/kc/internal/table"
@@ -23,7 +24,7 @@ func NewContextsFolder(deps Deps, enter func(name string, basePath []string) (Fo
 	return folder
 }
 
-func (f *ContextsFolder) populate() ([]table.Row, error) {
+func (f *ContextsFolder) populate(context.Context) ([]table.Row, error) {
 	rows := make([]table.Row, 0, 16)
 	cfg := f.Deps.KubeConfig
 	if len(cfg.Contexts) == 0 {

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"testing"
 
 	table "github.com/sttts/kc/internal/table"
@@ -25,7 +26,7 @@ func TestLiveObjectRowSourceRefresh(t *testing.T) {
 	var informer func()
 
 	src := newLiveObjectRowSourceWithHooks(
-		func() ([]table.Row, error) {
+		func(context.Context) ([]table.Row, error) {
 			populateCalls++
 			rows := append([]table.Row(nil), rowsSet[idx]...)
 			return rows, nil
@@ -38,23 +39,24 @@ func TestLiveObjectRowSourceRefresh(t *testing.T) {
 		t.Fatalf("expected informer callback to be registered")
 	}
 
-	first := src.Lines(0, 10)
+	ctx := t.Context()
+	first := src.Lines(ctx, 0, 10)
 	if len(first) != len(rowsSet[0]) {
 		t.Fatalf("expected %d rows, got %d", len(rowsSet[0]), len(first))
 	}
 	if populateCalls != 1 {
 		t.Fatalf("expected one populate call, got %d", populateCalls)
 	}
-	if src.Len() != len(rowsSet[0]) {
-		t.Fatalf("Len mismatch: got %d", src.Len())
+	if src.Len(ctx) != len(rowsSet[0]) {
+		t.Fatalf("Len mismatch: got %d", src.Len(ctx))
 	}
-	if _, row, ok := src.Find("apps/v1/deployments/foo"); !ok || row == nil {
+	if _, row, ok := src.Find(ctx, "apps/v1/deployments/foo"); !ok || row == nil {
 		t.Fatalf("expected to find foo row")
 	}
-	if above := src.Above("apps/v1/deployments/foo", 1); len(above) != 0 {
+	if above := src.Above(ctx, "apps/v1/deployments/foo", 1); len(above) != 0 {
 		t.Fatalf("expected no rows above the first entry")
 	}
-	if below := src.Below("apps/v1/deployments/foo", 1); len(below) != 1 || below[0] == nil {
+	if below := src.Below(ctx, "apps/v1/deployments/foo", 1); len(below) != 1 || below[0] == nil {
 		t.Fatalf("expected one row below the first entry")
 	}
 
@@ -64,21 +66,21 @@ func TestLiveObjectRowSourceRefresh(t *testing.T) {
 		t.Fatalf("expected folder dirty once, got %d", folderDirty)
 	}
 
-	second := src.Lines(0, 10)
+	second := src.Lines(ctx, 0, 10)
 	if len(second) != len(rowsSet[1]) {
 		t.Fatalf("expected %d rows after refresh, got %d", len(rowsSet[1]), len(second))
 	}
 	if populateCalls != 2 {
 		t.Fatalf("expected populate to be called again, got %d", populateCalls)
 	}
-	if _, _, ok := src.Find("apps/v1/deployments/foo"); ok {
+	if _, _, ok := src.Find(ctx, "apps/v1/deployments/foo"); ok {
 		t.Fatalf("expected old row to disappear after refresh")
 	}
-	if _, row, ok := src.Find("apps/v1/deployments/baz"); !ok || row == nil {
+	if _, row, ok := src.Find(ctx, "apps/v1/deployments/baz"); !ok || row == nil {
 		t.Fatalf("expected new row to be findable")
 	}
 
-	secondAgain := src.Lines(0, 10)
+	secondAgain := src.Lines(ctx, 0, 10)
 	if populateCalls != 2 {
 		t.Fatalf("expected no extra populate on cache hit, got %d", populateCalls)
 	}

@@ -27,8 +27,8 @@ func TestIndependentPanelNavigation(t *testing.T) {
 	a.leftPanel.SetFolder(leftRoot, false)
 	a.rightPanel.SetFolder(rightRoot, false)
 	// Set initial breadcrumbs from navigators
-	a.leftPanel.SetCurrentPath(a.leftNav.Path())
-	a.rightPanel.SetCurrentPath(a.rightNav.Path())
+	a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
+	a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
 
 	// Navigate left only
 	a.activePanel = 0

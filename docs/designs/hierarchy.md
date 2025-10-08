@@ -251,9 +251,9 @@ Notes:
 ## Breadcrumbs and Paths
 
 - Rule: the first column of each selected row is the path segment. Enterable rows display a UI leading “/”; navigation trims it for the logical segment.
-- `Navigator.Path()` walks the navigator stack, finds each parent frame’s selected row, collects its first column (after trimming one leading “/”), ignores the synthetic back row, and joins segments with a leading "/". Root is just `/`.
+- `Navigator.Path(ctx)` walks the navigator stack, finds each parent frame’s selected row, collects its first column (after trimming one leading “/”), ignores the synthetic back row, and joins segments with a leading "/". Root is just `/`.
 - Items expose `Path() []string` carrying their absolute segments so viewers/modal titles don’t need to inspect navigator state.
-- Panels set their header from `nav.Path()`; viewers prefer `item.Path()` and fall back to GVR/ns when needed.
+- Panels set their header from `nav.Path(ctx)`; viewers prefer `item.Path()` and fall back to GVR/ns when needed.
 
 ## Testing (Envtest)
 

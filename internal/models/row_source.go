@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"sync"
 
 	table "github.com/sttts/kc/internal/table"
@@ -9,12 +10,12 @@ import (
 // rowSource supplies row windows for a folder. Implementations may cache rows
 // or stream them directly from informer-backed stores.
 type rowSource interface {
-	Lines(top, num int) []table.Row
-	Above(id string, n int) []table.Row
-	Below(id string, n int) []table.Row
-	Len() int
-	Find(id string) (int, table.Row, bool)
-	ItemByID(id string) (Item, bool)
+	Lines(ctx context.Context, top, num int) []table.Row
+	Above(ctx context.Context, id string, n int) []table.Row
+	Below(ctx context.Context, id string, n int) []table.Row
+	Len(ctx context.Context) int
+	Find(ctx context.Context, id string) (int, table.Row, bool)
+	ItemByID(ctx context.Context, id string) (Item, bool)
 	MarkDirty()
 }
 
@@ -22,7 +23,7 @@ type rowSource interface {
 // a populate callback. It replaces the previous table.SliceList usage while
 // keeping cached folders simple for now.
 type sliceRowSource struct {
-	populate func() ([]table.Row, error)
+	populate func(context.Context) ([]table.Row, error)
 
 	mu    sync.Mutex
 	rows  []table.Row
@@ -32,18 +33,18 @@ type sliceRowSource struct {
 	once  sync.Once
 }
 
-func newSliceRowSource(populate func() ([]table.Row, error)) *sliceRowSource {
+func newSliceRowSource(populate func(context.Context) ([]table.Row, error)) *sliceRowSource {
 	return &sliceRowSource{populate: populate, dirty: true}
 }
 
-func (s *sliceRowSource) setPopulate(populate func() ([]table.Row, error)) {
+func (s *sliceRowSource) setPopulate(populate func(context.Context) ([]table.Row, error)) {
 	s.mu.Lock()
 	s.populate = populate
 	s.dirty = true
 	s.mu.Unlock()
 }
 
-func (s *sliceRowSource) ensureLocked() {
+func (s *sliceRowSource) ensureLocked(ctx context.Context) {
 	s.once.Do(func() { s.dirty = true })
 	if !s.dirty {
 		return
@@ -55,7 +56,7 @@ func (s *sliceRowSource) ensureLocked() {
 		s.items = nil
 		return
 	}
-	rows, err := s.populate()
+	rows, err := s.populate(ctx)
 	if err != nil {
 		// Preserve previous snapshot if populate fails; caller may log separately.
 		s.dirty = true
@@ -83,12 +84,12 @@ func (s *sliceRowSource) rebuildIndexLocked() {
 	}
 }
 
-func (s *sliceRowSource) Lines(top, num int) []table.Row {
+func (s *sliceRowSource) Lines(ctx context.Context, top, num int) []table.Row {
 	if num <= 0 {
 		return nil
 	}
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	rows := s.rows
 	s.mu.Unlock()
 	if len(rows) == 0 || top >= len(rows) {
@@ -104,12 +105,12 @@ func (s *sliceRowSource) Lines(top, num int) []table.Row {
 	return rows[top:end]
 }
 
-func (s *sliceRowSource) Above(id string, n int) []table.Row {
+func (s *sliceRowSource) Above(ctx context.Context, id string, n int) []table.Row {
 	if n <= 0 {
 		return nil
 	}
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	idx, ok := s.index[id]
 	if !ok {
 		s.mu.Unlock()
@@ -127,12 +128,12 @@ func (s *sliceRowSource) Above(id string, n int) []table.Row {
 	return rows
 }
 
-func (s *sliceRowSource) Below(id string, n int) []table.Row {
+func (s *sliceRowSource) Below(ctx context.Context, id string, n int) []table.Row {
 	if n <= 0 {
 		return nil
 	}
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	idx, ok := s.index[id]
 	if !ok {
 		s.mu.Unlock()
@@ -152,17 +153,17 @@ func (s *sliceRowSource) Below(id string, n int) []table.Row {
 	return rows
 }
 
-func (s *sliceRowSource) Len() int {
+func (s *sliceRowSource) Len(ctx context.Context) int {
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	ln := len(s.rows)
 	s.mu.Unlock()
 	return ln
 }
 
-func (s *sliceRowSource) Find(id string) (int, table.Row, bool) {
+func (s *sliceRowSource) Find(ctx context.Context, id string) (int, table.Row, bool) {
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	idx, ok := s.index[id]
 	if !ok || idx < 0 || idx >= len(s.rows) {
 		s.mu.Unlock()
@@ -173,9 +174,9 @@ func (s *sliceRowSource) Find(id string) (int, table.Row, bool) {
 	return idx, row, true
 }
 
-func (s *sliceRowSource) ItemByID(id string) (Item, bool) {
+func (s *sliceRowSource) ItemByID(ctx context.Context, id string) (Item, bool) {
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	it, ok := s.items[id]
 	s.mu.Unlock()
 	return it, ok

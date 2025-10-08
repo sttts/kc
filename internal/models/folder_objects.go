@@ -42,14 +42,14 @@ func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace stri
 	return folder
 }
 
-func (o *ObjectsFolder) populateRows() ([]table.Row, error) {
+func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	cfg := o.Deps.AppConfig
 	columnsMode := cfg.Objects.Columns
 	order := cfg.Objects.Order
-	if rl, err := o.Deps.Cl.ListRowsByGVR(o.Deps.Ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
+	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
 		return o.rowsFromRowList(rl, columnsMode, order), nil
 	}
-	list, err := o.Deps.Cl.ListByGVR(o.Deps.Ctx, o.gvr, o.namespace)
+	list, err := o.Deps.Cl.ListByGVR(ctx, o.gvr, o.namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func objectDetails(namespace, name, kind, gv string) string {
 // liveObjectRowSource adapts an ObjectsFolder to the rowSource interface while
 // keeping rows synced with informer events for the target GVR.
 type liveObjectRowSource struct {
-	populate      func() ([]table.Row, error)
+	populate      func(context.Context) ([]table.Row, error)
 	onFolderDirty func()
 	mu            sync.Mutex
 	rows          []table.Row
@@ -252,13 +252,13 @@ type liveObjectRowSource struct {
 
 func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
 	return newLiveObjectRowSourceWithHooks(
-		func() ([]table.Row, error) { return owner.populateRows() },
-		func() { owner.BaseFolder.markDirtyFromSource() },
+		func(ctx context.Context) ([]table.Row, error) { return owner.populateRows(ctx) },
+		owner.BaseFolder.markDirtyFromSource,
 		func(cb func()) { startInformerForObjectsFolder(owner, cb) },
 	)
 }
 
-func newLiveObjectRowSourceWithHooks(populate func() ([]table.Row, error), onDirty func(), startInformer func(func())) *liveObjectRowSource {
+func newLiveObjectRowSourceWithHooks(populate func(context.Context) ([]table.Row, error), onDirty func(), startInformer func(func())) *liveObjectRowSource {
 	src := &liveObjectRowSource{
 		populate:      populate,
 		onFolderDirty: onDirty,
@@ -277,12 +277,12 @@ func startInformerForObjectsFolder(owner *ObjectsFolder, onEvent func()) {
 	startInformerForResource(owner.Deps, owner.gvr, owner.namespace, "", onEvent)
 }
 
-func (s *liveObjectRowSource) ensureLocked() {
+func (s *liveObjectRowSource) ensureLocked(ctx context.Context) {
 	s.once.Do(func() { s.dirty = true })
 	if !s.dirty {
 		return
 	}
-	rows, err := s.populate()
+	rows, err := s.populate(ctx)
 	if err != nil {
 		// keep dirty so we retry next time
 		s.dirty = true
@@ -311,12 +311,12 @@ func (s *liveObjectRowSource) rebuildIndexLocked() {
 	}
 }
 
-func (s *liveObjectRowSource) Lines(top, num int) []table.Row {
+func (s *liveObjectRowSource) Lines(ctx context.Context, top, num int) []table.Row {
 	if num <= 0 {
 		return nil
 	}
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	rows := s.rows
 	s.mu.Unlock()
 	if len(rows) == 0 || top >= len(rows) {
@@ -332,12 +332,12 @@ func (s *liveObjectRowSource) Lines(top, num int) []table.Row {
 	return rows[top:end]
 }
 
-func (s *liveObjectRowSource) Above(id string, n int) []table.Row {
+func (s *liveObjectRowSource) Above(ctx context.Context, id string, n int) []table.Row {
 	if n <= 0 {
 		return nil
 	}
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	idx, ok := s.index[id]
 	if !ok {
 		s.mu.Unlock()
@@ -355,12 +355,12 @@ func (s *liveObjectRowSource) Above(id string, n int) []table.Row {
 	return rows
 }
 
-func (s *liveObjectRowSource) Below(id string, n int) []table.Row {
+func (s *liveObjectRowSource) Below(ctx context.Context, id string, n int) []table.Row {
 	if n <= 0 {
 		return nil
 	}
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	idx, ok := s.index[id]
 	if !ok {
 		s.mu.Unlock()
@@ -380,17 +380,17 @@ func (s *liveObjectRowSource) Below(id string, n int) []table.Row {
 	return rows
 }
 
-func (s *liveObjectRowSource) Len() int {
+func (s *liveObjectRowSource) Len(ctx context.Context) int {
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	ln := len(s.rows)
 	s.mu.Unlock()
 	return ln
 }
 
-func (s *liveObjectRowSource) Find(id string) (int, table.Row, bool) {
+func (s *liveObjectRowSource) Find(ctx context.Context, id string) (int, table.Row, bool) {
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	idx, ok := s.index[id]
 	if !ok || idx < 0 || idx >= len(s.rows) {
 		s.mu.Unlock()
@@ -401,9 +401,9 @@ func (s *liveObjectRowSource) Find(id string) (int, table.Row, bool) {
 	return idx, row, true
 }
 
-func (s *liveObjectRowSource) ItemByID(id string) (Item, bool) {
+func (s *liveObjectRowSource) ItemByID(ctx context.Context, id string) (Item, bool) {
 	s.mu.Lock()
-	s.ensureLocked()
+	s.ensureLocked(ctx)
 	it, ok := s.items[id]
 	s.mu.Unlock()
 	return it, ok
@@ -418,7 +418,7 @@ func (s *liveObjectRowSource) MarkDirty() {
 	}
 }
 
-func newLiveKeyRowSource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, populate func() ([]table.Row, error), onDirty func()) *liveObjectRowSource {
+func newLiveKeyRowSource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, populate func(context.Context) ([]table.Row, error), onDirty func()) *liveObjectRowSource {
 	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
 		startInformerForResource(deps, gvr, namespace, name, cb)
 	})

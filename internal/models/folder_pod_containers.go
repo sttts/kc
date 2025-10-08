@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"fmt"
 
 	table "github.com/sttts/kc/internal/table"
@@ -27,8 +28,8 @@ func NewPodContainersFolder(deps Deps, parentPath []string, namespace, pod strin
 	return folder
 }
 
-func (f *PodContainersFolder) buildRows() ([]table.Row, error) {
-	podObj, err := f.fetchPod()
+func (f *PodContainersFolder) buildRows(ctx context.Context) ([]table.Row, error) {
+	podObj, err := f.fetchPod(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -59,9 +60,9 @@ func (f *PodContainersFolder) buildRows() ([]table.Row, error) {
 	return rows, nil
 }
 
-func (f *PodContainersFolder) fetchPod() (*corev1.Pod, error) {
+func (f *PodContainersFolder) fetchPod(ctx context.Context) (*corev1.Pod, error) {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
-	obj, err := f.Deps.Cl.GetByGVR(f.Deps.Ctx, gvr, f.Namespace, f.Pod)
+	obj, err := f.Deps.Cl.GetByGVR(ctx, gvr, f.Namespace, f.Pod)
 	if err != nil {
 		return nil, err
 	}
@@ -100,8 +101,8 @@ func NewPodContainerListFolder(deps Deps, path []string, namespace, pod string, 
 	return folder
 }
 
-func (f *PodContainerListFolder) buildRows() ([]table.Row, error) {
-	podObj, err := f.fetchPod()
+func (f *PodContainerListFolder) buildRows(ctx context.Context) ([]table.Row, error) {
+	podObj, err := f.fetchPod(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +140,9 @@ func (f *PodContainerListFolder) extractContainers(pod *corev1.Pod) []containerR
 	return records
 }
 
-func (f *PodContainerListFolder) fetchPod() (*corev1.Pod, error) {
+func (f *PodContainerListFolder) fetchPod(ctx context.Context) (*corev1.Pod, error) {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
-	obj, err := f.Deps.Cl.GetByGVR(f.Deps.Ctx, gvr, f.Namespace, f.Pod)
+	obj, err := f.Deps.Cl.GetByGVR(ctx, gvr, f.Namespace, f.Pod)
 	if err != nil {
 		return nil, err
 	}
@@ -177,28 +178,28 @@ func NewPodContainerLogsFolder(deps Deps, path []string, namespace, pod, contain
 	return folder
 }
 
-func (f *PodContainerLogsFolder) buildRows() ([]table.Row, error) {
+func (f *PodContainerLogsFolder) buildRows(context.Context) ([]table.Row, error) {
 	rows := make([]table.Row, 0, 1)
 	item := NewContainerLogItem("latest", []string{"/logs"}, append(append([]string{}, f.Path()...), "latest"), containerLogsViewContent(f.Deps, f.Namespace, f.Pod, f.Container, 200))
 	rows = append(rows, item)
 	return rows, nil
 }
 
-func newPodSectionRowSource(deps Deps, namespace, pod string, populate func() ([]table.Row, error), onDirty func()) rowSource {
+func newPodSectionRowSource(deps Deps, namespace, pod string, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
 		startInformerForResource(deps, gvr, namespace, pod, cb)
 	})
 }
 
-func newPodContainerRowSource(deps Deps, namespace, pod string, kind containerKind, populate func() ([]table.Row, error), onDirty func()) rowSource {
+func newPodContainerRowSource(deps Deps, namespace, pod string, kind containerKind, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
 		startInformerForResource(deps, gvr, namespace, pod, cb)
 	})
 }
 
-func newPodContainerLogRowSource(deps Deps, namespace, pod, container string, populate func() ([]table.Row, error), onDirty func()) rowSource {
+func newPodContainerLogRowSource(deps Deps, namespace, pod, container string, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
 		startInformerForResource(deps, gvr, namespace, pod, cb)
