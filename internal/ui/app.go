@@ -1,6 +1,5 @@
 package ui
 
-
 import (
 	"context"
 	"errors"
@@ -177,6 +176,7 @@ func (a *App) syncPanelConfig(panel *Panel) {
 	cfg.Resources.Columns = panel.columnsMode
 	cfg.Objects.Order = panel.objOrder
 	cfg.Objects.Columns = panel.columnsMode
+	cfg.Panel.Table.Mode = appconfig.TableMode(panel.TableMode())
 }
 
 func (a *App) aggregatedKubeConfig(current string) clientcmdapi.Config {
@@ -304,17 +304,32 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.cfg == nil {
 					a.cfg = appconfig.Default()
 				}
-				a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
-				a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
+				if m.HasInclude {
+					a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
+				}
+				if m.HasOrder {
+					a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
+				}
+				a.cfg.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
 				_ = appconfig.Save(a.cfg)
 			}
 			if m.Accept {
 				// Apply to active panel only; do not persist
 				if a.activePanel == 0 {
-					a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+					ctxTable, cancelTable := context.WithTimeout(a.ctx, panelContextTimeout)
+					a.leftPanel.SetTableMode(ctxTable, m.TableMode)
+					cancelTable()
+					if m.HasInclude || m.HasOrder {
+						a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+					}
 					a.syncPanelConfig(a.leftPanel)
 				} else {
-					a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+					ctxTable, cancelTable := context.WithTimeout(a.ctx, panelContextTimeout)
+					a.rightPanel.SetTableMode(ctxTable, m.TableMode)
+					cancelTable()
+					if m.HasInclude || m.HasOrder {
+						a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+					}
 					a.syncPanelConfig(a.rightPanel)
 				}
 				// Refresh only the active panel's folder
@@ -1320,9 +1335,10 @@ func (a *App) renderToggleMessage() string {
 }
 
 // setupModals sets up the modal dialogs
+
 func (a *App) setupModals() {
 	// Resources options modal (content set dynamically on open)
-	opts := NewResourcesOptionsModel(false, "favorites")
+	opts := NewResourcesOptionsModel(false, false, "scroll", false, "favorites")
 	resModal := NewModal("Resources", opts)
 	a.modalManager.Register("resources_options", resModal)
 
@@ -1342,55 +1358,34 @@ func (a *App) showViewOptionsModal() tea.Cmd {
 		curPanel = a.rightPanel
 	}
 
-	// Prefer navigator folder (unwrapped) to detect object lists.
+	// Determine folder context for contextual options.
 	var curFolder models.Folder
 	if a.activePanel == 0 && a.leftNav != nil {
 		curFolder = a.leftNav.Current()
-	}
-	if a.activePanel == 1 && a.rightNav != nil {
+	} else if a.activePanel == 1 && a.rightNav != nil {
 		curFolder = a.rightNav.Current()
 	}
 	if curFolder == nil {
 		curFolder = curPanel.folder
 	}
 
-	// Detect object-list via ObjectListMeta capability.
-	isObjects := false
-	type metaProv interface {
-		ObjectListMeta() (schema.GroupVersionResource, string, bool)
-	}
-	if mp, ok := curFolder.(metaProv); ok {
-		if _, _, ok2 := mp.ObjectListMeta(); ok2 {
-			isObjects = true
+	showInclude := false
+	showOrder := false
+	if curFolder != nil {
+		switch curFolder.(type) {
+		case *models.RootFolder,
+			*models.ClusterResourcesFolder,
+			*models.NamespacedResourcesFolder,
+			*models.ContextRootFolder,
+			*models.ResourcesFolder:
+			showInclude = true
+			showOrder = true
 		}
 	}
 
-	if isObjects {
-		mode := curPanel.TableMode()
-		cols := curPanel.ColumnsMode()
-		order := curPanel.ObjectOrder()
-		o := NewObjectOptionsModel(mode, cols, order)
-		// Prepare modal
-		modal := a.modalManager.modals["object_options"]
-		if modal == nil {
-			modal = NewModal("Objects View Options", o)
-			a.modalManager.Register("object_options", modal)
-		} else {
-			modal.SetContent(o)
-			modal.title = "Objects View Options"
-		}
-		winW, winH := 50, 6
-		bg, _ := a.renderMainView()
-		modal.SetWindowed(winW, winH, bg)
-		modal.SetOnClose(func() tea.Cmd { return nil })
-		modal.SetDimensions(a.width, a.height)
-		a.modalManager.Show("object_options")
-		return nil
-	}
-
-	// Resources options
 	showNonEmpty, order := curPanel.ResourceViewOptions()
-	content := NewResourcesOptionsModel(showNonEmpty, order)
+	tableMode := curPanel.TableMode()
+	content := NewResourcesOptionsModel(showInclude, showOrder, tableMode, showNonEmpty, order)
 	modal := a.modalManager.modals["resources_options"]
 	if modal == nil {
 		modal = NewModal("Resources View Options", content)
