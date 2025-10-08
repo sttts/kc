@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // EscTimeoutMsg is sent when the escape sequence times out
@@ -1679,13 +1680,18 @@ func (a *App) createFramedFooter(content string, width int) string {
 }
 
 // Run starts the application
-func Run() error {
+func Run(ctx context.Context) error {
+	ctx = ctrllog.IntoContext(ctx, ctrllog.Log.WithName("startup"))
+	log := ctrllog.FromContext(ctx)
 	app := NewApp()
 
 	// Initialize data model (best-effort; UI can still run without it)
-	if err := app.initData(); err != nil {
+	log.Info("initializing data")
+	if err := app.initData(ctx); err != nil {
+		log.Error(err, "initialization warning")
 		fmt.Printf("Data init warning: %v\n", err)
 	}
+	log.Info("initialization complete, launching UI")
 
 	// Create program with proper options
 	p := tea.NewProgram(
@@ -1729,39 +1735,55 @@ func Run() error {
 }
 
 // initData discovers kubeconfigs, selects current context, starts cluster/cache and wires navigation.
-func (a *App) initData() error {
+func (a *App) initData(ctx context.Context) error {
+	log := ctrllog.FromContext(ctx).WithName("init")
 	// Kubeconfig manager and discovery
 	a.kubeMgr = kubeconfig.NewManager()
+	log.Info("discovering kubeconfigs")
 	if err := a.kubeMgr.DiscoverKubeconfigs(); err != nil {
 		// Log and show toast
 		if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("Kubeconfig discovery failed: %v", err))
 		}
+		log.Error(err, "failed to discover kubeconfigs")
 		return fmt.Errorf("discover kubeconfigs: %w", err)
 	}
+	log.Info("kubeconfigs discovered", "count", len(a.kubeMgr.GetKubeconfigs()), "contexts", len(a.kubeMgr.GetContexts()))
 	// Select current context (prefer env KUBECONFIG first path)
 	a.currentCtx = a.selectCurrentContext()
 	if a.currentCtx == nil {
+		log.Error(nil, "no current context found")
 		return fmt.Errorf("no current context found")
 	}
+	ctxNamespace := a.currentCtx.Namespace
+	if ctxNamespace == "" {
+		ctxNamespace = "default"
+	}
+	log.Info("selected context", "name", a.currentCtx.Name, "cluster", a.currentCtx.Cluster, "namespace", ctxNamespace)
 	// Prepare app context and cluster pool; cluster will be started via pool.Get
-	a.ctx, a.cancel = context.WithCancel(context.TODO())
+	a.ctx, a.cancel = context.WithCancel(ctx)
 	a.clPool = kccluster.NewPool(2 * time.Minute)
+	log.Info("starting cluster pool")
 	a.clPool.Start()
 	k := kccluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
+	log.Info("acquiring cluster", "key", k)
 	cl, err := a.clPool.Get(a.ctx, k)
 	if err != nil {
+		log.Error(err, "cluster acquisition failed")
 		return fmt.Errorf("cluster pool get: %w", err)
 	}
 	a.cl = cl
+	log.Info("cluster ready, fetching resource info")
 	// Discovery-backed catalog (for panel displays)
 	if infos, err := a.cl.GetResourceInfos(); err == nil {
+		log.Info("resource infos fetched", "count", len(infos))
 		a.leftPanel.SetResourceCatalog(infos)
 		a.rightPanel.SetResourceCatalog(infos)
 	} else {
 		if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("Discovery resources failed: %v", err))
 		}
+		log.Error(err, "failed to fetch resource infos")
 	}
 	// Legacy generic data sources removed; folders provide data directly
 	a.leftPanel.SetViewConfig(a.viewConfig)
@@ -1791,8 +1813,10 @@ func (a *App) initData() error {
 		if a.currentCtx != nil && a.currentCtx.Namespace != "" {
 			ns = a.currentCtx.Namespace
 		}
+		log.Info("initial navigation", "namespace", ns)
 		a.goToNamespace(ns)
 	}
+	log.Info("panel initialization complete")
 	return nil
 }
 

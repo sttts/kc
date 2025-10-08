@@ -34,6 +34,11 @@
 - Errors: wrap with `%w` (e.g., `fmt.Errorf("reading config: %w", err)`).
 - Files: group closely related types; avoid large god files.
 
+## Logging Guidelines
+- Always import controller-runtime logging as `ctrllog` (e.g., `ctrllog "sigs.k8s.io/controller-runtime/pkg/log"`).
+- Thread a `context.Context` through the call chain and retrieve loggers with `ctrllog.FromContext(ctx)`; never grab the global logger directly.
+- Name the logger variable `log`, and derive new loggers with `log := ctrllog.FromContext(ctx).WithName("component")` before use.
+
 ## Abstraction Guidelines
 - Prefer composition over wrapping: do not re-invent controller-runtime/client-go abstractions. Embed or compose original types instead of creating near-duplicates.
 - Use Kubernetes/client-go types and `controller-runtime` primitives directly (clients, caches, informers, RESTMapper). Add small adapters only where strictly needed.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -42,7 +43,7 @@ func main() {
 	}
 
 	// Run the application
-	if err := ui.Run(); err != nil {
+	if err := ui.Run(context.Background()); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
