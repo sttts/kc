@@ -39,9 +39,11 @@ type ResourceGroupItem struct {
 	publishedEmptyKnown bool
 }
 
-func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, namespace, id string, cells []string, path []string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
+func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, namespace, id string, cells []string, path []string, detail string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
+	row := NewRowItem(id, cells, path, style)
+	row.details = detail
 	return &ResourceGroupItem{
-		RowItem:   NewRowItem(id, cells, path, style),
+		RowItem:   row,
 		enter:     enter,
 		deps:      deps,
 		gvr:       gvr,
@@ -245,6 +247,7 @@ func (r *ResourceGroupItem) applySpec(spec resourceGroupSpec, deps Deps, created
 	} else {
 		r.RowItem.reset(spec.id, spec.cells, spec.path, spec.style)
 	}
+	r.RowItem.details = spec.detail
 	r.enter = spec.enter
 	r.deps = deps
 	r.gvr = spec.gvr

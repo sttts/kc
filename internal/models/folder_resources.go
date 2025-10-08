@@ -184,6 +184,7 @@ type resourceGroupSpec struct {
 	cells     []string
 	path      []string
 	style     *lipgloss.Style
+	detail    string
 	gvr       schema.GroupVersionResource
 	namespace string
 	watchable bool
@@ -197,6 +198,7 @@ type resourceGroupSignature struct {
 	cellsHash string
 	pathHash  string
 	visible   bool
+	detail    string
 }
 
 func makeResourceGroupSignature(spec resourceGroupSpec, visible bool) resourceGroupSignature {
@@ -207,6 +209,7 @@ func makeResourceGroupSignature(spec resourceGroupSpec, visible bool) resourceGr
 		cellsHash: joinStrings(spec.cells),
 		pathHash:  joinStrings(spec.path),
 		visible:   visible,
+		detail:    spec.detail,
 	}
 }
 
@@ -226,6 +229,6 @@ func (f *ResourcesFolder) ensureResourceGroupItem(spec resourceGroupSpec) (*Reso
 	if existing, ok := f.items[spec.id]; ok {
 		return existing, false
 	}
-	item := NewResourceGroupItem(f.Deps, spec.gvr, spec.namespace, spec.id, spec.cells, spec.path, spec.style, spec.watchable, spec.enter)
+	item := NewResourceGroupItem(f.Deps, spec.gvr, spec.namespace, spec.id, spec.cells, spec.path, spec.detail, spec.style, spec.watchable, spec.enter)
 	return item, true
 }

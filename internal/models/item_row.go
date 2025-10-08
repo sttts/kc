@@ -63,3 +63,11 @@ func (r *RowItem) reset(id string, cells []string, path []string, style *lipglos
 	}
 	r.path = append([]string(nil), path...)
 }
+
+// SetDetails updates the human-readable details string exposed via Details().
+func (r *RowItem) SetDetails(detail string) {
+	if r == nil {
+		return
+	}
+	r.details = detail
+}

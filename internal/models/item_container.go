@@ -50,7 +50,7 @@ type ContainerLogItem struct {
 }
 
 func NewContainerLogItem(id string, cells []string, path []string, view ViewContentFunc) *ContainerLogItem {
-	item := NewSimpleItem(id, cells, path, DimStyle())
+	item := NewSimpleItem(id, cells, path, GreenStyle())
 	item.WithViewContent(view)
 	return &ContainerLogItem{SimpleItem: item}
 }

@@ -1124,8 +1124,12 @@ func (a *App) renderFunctionKeys() string {
 		if path == "/namespaces" {
 			canCreateNS = true
 			// viewing a namespace YAML is allowed when an item selected
-			if cur != nil && cur.Type == ItemTypeNamespace {
-				canView, canEdit, canDelete = true, true, true
+			if cur != nil && cur.Item != nil {
+				if oi, ok := cur.Item.(models.ObjectItem); ok {
+					if gvr := oi.GVR(); gvr.Resource == "namespaces" {
+						canView, canEdit, canDelete = true, true, true
+					}
+				}
 			}
 		} else if strings.HasPrefix(path, "/namespaces/") {
 			parts := strings.Split(path, "/")
@@ -1225,8 +1229,12 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 		canView, canEdit, canCreateNS, canDelete := false, false, false, false
 		if path == "/namespaces" {
 			canCreateNS = true
-			if cur != nil && cur.Type == ItemTypeNamespace {
-				canView, canEdit, canDelete = true, true, true
+			if cur != nil && cur.Item != nil {
+				if oi, ok := cur.Item.(models.ObjectItem); ok {
+					if gvr := oi.GVR(); gvr.Resource == "namespaces" {
+						canView, canEdit, canDelete = true, true, true
+					}
+				}
 			}
 		} else if strings.HasPrefix(path, "/namespaces/") {
 			parts := strings.Split(path, "/")

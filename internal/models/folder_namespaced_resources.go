@@ -56,16 +56,19 @@ func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, e
 	nameStyle := WhiteStyle()
 	for _, entry := range entries {
 		id := fmt.Sprintf("%s/%s/%s/%s", f.Namespace, entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
-		cells := []string{"/" + entry.info.Resource, groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version), ""}
+		gvLabel := groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version)
+		cells := []string{"/" + entry.info.Resource, gvLabel, ""}
 		basePath := append(append([]string{}, f.Path()...), entry.info.Resource)
 		cellsCopy := append([]string(nil), cells...)
 		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
 		ns := f.Namespace
+		detail := fmt.Sprintf("%s (%s)", entry.info.Resource, gvLabel)
 		specs = append(specs, resourceGroupSpec{
 			id:        id,
 			cells:     cellsCopy,
 			path:      pathCopy,
+			detail:    detail,
 			style:     nameStyle,
 			gvr:       gvr,
 			namespace: ns,

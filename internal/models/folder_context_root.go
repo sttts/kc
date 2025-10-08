@@ -31,6 +31,7 @@ func (f *ContextRootFolder) populate(ctx context.Context) ([]table.Row, error) {
 		id:        "namespaces",
 		cells:     []string{"/namespaces", "v1", ""},
 		path:      nsPathCopy,
+		detail:    "namespaces (v1)",
 		style:     nameStyle,
 		gvr:       gvrNamespaces,
 		watchable: true,

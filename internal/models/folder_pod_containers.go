@@ -126,15 +126,15 @@ func (f *PodContainerListFolder) extractContainers(pod *corev1.Pod) []containerR
 	switch f.Kind {
 	case containerKindPrimary:
 		for _, c := range pod.Spec.Containers {
-			records = append(records, containerRecord{Name: c.Name, Label: c.Name, Detail: c.Image})
+			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: c.Image})
 		}
 	case containerKindInit:
 		for _, c := range pod.Spec.InitContainers {
-			records = append(records, containerRecord{Name: c.Name, Label: c.Name, Detail: "init"})
+			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "init"})
 		}
 	case containerKindEphemeral:
 		for _, c := range pod.Spec.EphemeralContainers {
-			records = append(records, containerRecord{Name: c.Name, Label: c.Name, Detail: "ephemeral"})
+			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "ephemeral"})
 		}
 	}
 	return records
