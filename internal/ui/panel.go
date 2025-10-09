@@ -53,6 +53,9 @@ type Panel struct {
 	objOrder        string // "name", "-name", "creation", "-creation"
 	actionHandlers  PanelActionHandlers
 	envSupplier     PanelEnvironmentSupplier
+	mode            PanelViewMode
+	widgets         map[PanelViewMode]PanelWidget
+	widgetFactories map[PanelViewMode]PanelWidgetFactory
 }
 
 const panelContextTimeout = 250 * time.Millisecond
@@ -72,7 +75,7 @@ type Item struct {
 
 // NewPanel creates a new panel
 func NewPanel(title string) *Panel {
-	return &Panel{
+	p := &Panel{
 		title:            title,
 		items:            make([]Item, 0),
 		selected:         0,
@@ -85,7 +88,97 @@ func NewPanel(title string) *Panel {
 		tableMode:        table.ModeScroll,
 		columnsMode:      "normal",
 		objOrder:         "name",
+		mode:             PanelModeList,
+		widgets:          make(map[PanelViewMode]PanelWidget),
+		widgetFactories:  make(map[PanelViewMode]PanelWidgetFactory),
 	}
+	p.RegisterMode(PanelModeList, newListWidget)
+	p.RegisterMode(PanelModeDescribe, func(panel *Panel) PanelWidget {
+		return newPlaceholderWidget(panel, "Describe mode placeholder")
+	})
+	p.RegisterMode(PanelModeManifest, func(panel *Panel) PanelWidget {
+		return newPlaceholderWidget(panel, "Manifest mode placeholder")
+	})
+	p.RegisterMode(PanelModeFile, func(panel *Panel) PanelWidget {
+		return newPlaceholderWidget(panel, "File mode placeholder")
+	})
+	return p
+}
+
+// RegisterMode registers a widget factory for a panel view mode.
+func (p *Panel) RegisterMode(mode PanelViewMode, factory PanelWidgetFactory) {
+	if p.widgetFactories == nil {
+		p.widgetFactories = make(map[PanelViewMode]PanelWidgetFactory)
+	}
+	p.widgetFactories[mode] = factory
+}
+
+// SetMode switches the active view mode and ensures the widget is initialized.
+func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), panelContextTimeout)
+		defer cancel()
+	}
+	if current := p.ensureActiveWidget(ctx); current != nil && p.mode != mode {
+		current.SetFocus(ctx, false)
+	}
+	p.mode = mode
+	w := p.ensureActiveWidget(ctx)
+	if w == nil {
+		return nil
+	}
+	w.Resize(ctx, p.width, p.height)
+	w.SetFocus(ctx, true)
+	return w.Init(ctx)
+}
+
+func (p *Panel) ensureActiveWidget(ctx context.Context) PanelWidget {
+	if p.widgets == nil {
+		p.widgets = make(map[PanelViewMode]PanelWidget)
+	}
+	if widget, ok := p.widgets[p.mode]; ok && widget != nil {
+		return widget
+	}
+	factory := newListWidget
+	if p.widgetFactories != nil {
+		if f, ok := p.widgetFactories[p.mode]; ok && f != nil {
+			factory = f
+		}
+	}
+	widget := factory(p)
+	if widget == nil {
+		return nil
+	}
+	p.widgets[p.mode] = widget
+	if ctx != nil {
+		widget.Resize(ctx, p.width, p.height)
+	}
+	return widget
+}
+
+// Mode returns the currently active view mode.
+func (p *Panel) Mode() PanelViewMode { return p.mode }
+
+// AvailableModes reports registered modes in deterministic order.
+func (p *Panel) AvailableModes() []PanelViewMode {
+	order := PanelModeOrder()
+	result := make([]PanelViewMode, 0, len(order))
+	for _, mode := range order {
+		if p.widgetFactories == nil {
+			if mode == PanelModeList {
+				result = append(result, mode)
+			}
+			continue
+		}
+		if _, ok := p.widgetFactories[mode]; ok {
+			result = append(result, mode)
+		}
+	}
+	if len(result) == 0 {
+		result = append(result, PanelModeList)
+	}
+	return result
 }
 
 // SetResourceViewOptions sets the per-panel view toggles for resource groups.
@@ -528,6 +621,11 @@ func (p *Panel) countContexts() int {
 
 // Init initializes the panel
 func (p *Panel) Init() tea.Cmd {
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		return widget.Init(ctx)
+	}
 	return nil
 }
 
@@ -535,83 +633,11 @@ func (p *Panel) Init() tea.Cmd {
 func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
 	defer cancel()
-	switch msg := msg.(type) {
-	// Legacy watch events removed; folders handle refresh separately.
-	case tea.KeyMsg:
-		// When using folder-backed rendering with BigTable, route navigation/selection keys to it
-		if p.useFolder && p.folder != nil && p.bt != nil {
-			key := msg.String()
-			switch key {
-			case "up", "down", "left", "right", "home", "end", "pgup", "pgdown", "ctrl+t", "insert":
-				_, _ = p.bt.UpdateWithContext(ctx, msg)
-				if id, ok := p.bt.CurrentID(ctx); ok {
-					if item, ok := p.folderItemByID(ctx, id); ok {
-						if back, ok := item.(models.Back); ok && back.IsBack() {
-							p.selected = 0
-							p.scrollTop = 0
-						} else {
-							p.SelectByRowID(ctx, id)
-						}
-					}
-				}
-				return p, nil
-			}
-		}
-		switch msg.String() {
-		// Navigation keys (Midnight Commander style)
-		case "up":
-			p.moveUp(ctx)
-		case "down":
-			p.moveDown(ctx)
-		case "left":
-			p.moveUp(ctx)
-		case "right":
-			p.moveDown(ctx)
-		case "home":
-			p.moveToTop()
-		case "end":
-			p.moveToBottom()
-		case "pgup":
-			p.pageUp()
-		case "pgdown":
-			p.pageDown()
-
-		// Selection keys
-		case "enter":
-			return p, p.enterItem(ctx)
-		case "ctrl+t", "insert":
-			p.toggleSelection()
-		case "ctrl+a":
-			p.selectAll()
-		case "ctrl+r":
-			return p, p.refresh()
-		case "ctrl+v":
-			// Toggle table view rendering on resource lists
-			p.tableViewEnabled = !p.tableViewEnabled
-			return p, p.refresh()
-		case "*":
-			p.invertSelection()
-		case "+", "-":
-			return p, p.showGlobPatternDialog(msg.String())
-
-		// Function keys handled through action handlers
-		case "f1":
-			return p, p.invokeActionIfAllowed(ctx, PanelActionHelp)
-		case "f2":
-			return p, p.invokeActionIfAllowed(ctx, PanelActionOptions)
-		case "f3":
-			return p, p.invokeActionIfAllowed(ctx, PanelActionView)
-		case "f4":
-			return p, p.invokeActionIfAllowed(ctx, PanelActionEdit)
-		case "f7":
-			return p, p.invokeActionIfAllowed(ctx, PanelActionCreateNamespace)
-		case "f8":
-			return p, p.invokeActionIfAllowed(ctx, PanelActionDelete)
-		case "f9":
-			return p, p.invokeActionIfAllowed(ctx, PanelActionMenu)
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		if cmd, handled := widget.Update(ctx, msg); handled {
+			return p, cmd
 		}
 	}
-
 	return p, nil
 }
 
@@ -679,6 +705,12 @@ func (p *Panel) GetFooter(ctx context.Context) string {
 func (p *Panel) SetDimensions(ctx context.Context, width, height int) {
 	p.width = width
 	p.height = height
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		widget.Resize(ctx, width, height)
+	}
+}
+
+func (p *Panel) resizeListWidget(ctx context.Context, width, height int) {
 	if p.bt != nil {
 		p.bt.SetSize(ctx, max(1, width), max(1, height))
 	}
@@ -732,13 +764,8 @@ func (p *Panel) ellipsizePath(path string, width int) string {
 	return "..." + acc
 }
 
-// renderContent renders the panel content
-func (p *Panel) renderContent(ctx context.Context) string {
-	return p.renderContentFocused(ctx, false)
-}
-
-// renderContentFocused renders the panel content with focus state
-func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string {
+// renderListContentFocused renders the legacy list content.
+func (p *Panel) renderListContentFocused(ctx context.Context, isFocused bool) string {
 	// If a folder is set for preview, use the BigTable view directly.
 	if p.useFolder && p.folder != nil {
 		p.syncFromFolder(ctx)
@@ -797,6 +824,19 @@ func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string
 		lines = append(lines, PanelContentStyle.Width(p.width).Render(""))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// renderContent renders the panel content
+func (p *Panel) renderContent(ctx context.Context) string {
+	return p.renderContentFocused(ctx, false)
+}
+
+// renderContentFocused renders the panel content with focus state
+func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string {
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		return widget.View(ctx, isFocused)
+	}
+	return ""
 }
 
 // renderItem renders a single item

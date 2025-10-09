@@ -231,6 +231,13 @@ func (a *App) navigatorForPanel(panel *Panel) *navui.Navigator {
 	return a.leftNav
 }
 
+func (a *App) panelByIndex(idx int) *Panel {
+	if idx == 1 {
+		return a.rightPanel
+	}
+	return a.leftPanel
+}
+
 func (a *App) syncPanelConfig(panel *Panel) {
 	cfg := a.ensurePanelConfig(panel)
 	cfg.Resources.ShowNonEmptyOnly = panel.resShowNonEmpty
@@ -654,6 +661,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// Handle global shortcuts first
 		switch msg.String() {
+		case "alt+f1", "ctrl+1":
+			return a, a.cyclePanelMode(0)
+		case "alt+f2", "ctrl+2":
+			return a, a.cyclePanelMode(1)
 		case "ctrl+o":
 			// Toggle terminal mode
 			a.showTerminal = !a.showTerminal
@@ -1460,13 +1471,29 @@ func (a *App) setupModals() {
 
 func (a *App) setupPanelInputs() {
 	envSupplier := func() PanelEnvironment { return a.panelEnvironment() }
+	registerModes := func(panel *Panel, name string) {
+		if panel == nil {
+			return
+		}
+		panel.RegisterMode(PanelModeDescribe, func(p *Panel) PanelWidget {
+			return newPlaceholderWidget(p, fmt.Sprintf("%s describe view coming soon", name))
+		})
+		panel.RegisterMode(PanelModeManifest, func(p *Panel) PanelWidget {
+			return newPlaceholderWidget(p, fmt.Sprintf("%s manifest view coming soon", name))
+		})
+		panel.RegisterMode(PanelModeFile, func(p *Panel) PanelWidget {
+			return newPlaceholderWidget(p, fmt.Sprintf("%s file view coming soon", name))
+		})
+	}
 	if a.leftPanel != nil {
 		a.leftPanel.SetEnvironmentSupplier(envSupplier)
 		a.leftPanel.SetActionHandlers(a.panelActionHandlers())
+		registerModes(a.leftPanel, "Left panel")
 	}
 	if a.rightPanel != nil {
 		a.rightPanel.SetEnvironmentSupplier(envSupplier)
 		a.rightPanel.SetActionHandlers(a.panelActionHandlers())
+		registerModes(a.rightPanel, "Right panel")
 	}
 }
 
@@ -1517,6 +1544,17 @@ func (a *App) capabilitiesForPanel(panel *Panel) PanelCapabilities {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	return panel.Capabilities(ctx)
+}
+
+func (a *App) cyclePanelMode(idx int) tea.Cmd {
+	panel := a.panelByIndex(idx)
+	if panel == nil {
+		return nil
+	}
+	next := NextPanelMode(panel.Mode())
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	return panel.SetMode(ctx, next)
 }
 
 // Message handlers for function keys
