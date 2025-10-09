@@ -1,8 +1,9 @@
 package ui
 
 import (
-	tea "github.com/charmbracelet/bubbletea/v2"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea/v2"
 )
 
 func TestNewApp(t *testing.T) {
@@ -94,5 +95,21 @@ func TestTerminalResizeViaWindowSize(t *testing.T) {
 	}
 	if term.height != 50 {
 		t.Errorf("Expected height to be 50, got %d", term.height)
+	}
+}
+
+func TestPanelHelpAndMenuActionsDisabled(t *testing.T) {
+	app := NewApp()
+	panel := NewPanel("test")
+	panel.SetActionHandlers(app.panelActionHandlers())
+
+	ctx := t.Context()
+	caps := panel.Capabilities(ctx)
+
+	if caps.HasHelp {
+		t.Fatal("expected HasHelp to be false until help is implemented")
+	}
+	if caps.HasContextMenu {
+		t.Fatal("expected HasContextMenu to be false until context menu is implemented")
 	}
 }
