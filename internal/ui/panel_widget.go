@@ -17,6 +17,22 @@ const (
 	PanelModeFile
 )
 
+// PanelMouseType identifies mouse intents routed to widgets.
+type PanelMouseType int
+
+const (
+	PanelMouseClick PanelMouseType = iota
+	PanelMouseWheel
+)
+
+// PanelMouseMsg conveys mouse events with panel-relative context.
+type PanelMouseMsg struct {
+	Type   PanelMouseType
+	Row    int
+	Button tea.MouseButton
+	DeltaY int
+}
+
 // PanelWidget renders a panel mode and receives routed input.
 type PanelWidget interface {
 	Init(ctx context.Context) tea.Cmd
@@ -47,84 +63,128 @@ func (w *listWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	if p == nil {
 		return nil, false
 	}
+	prev := p.currentSelectionID(ctx)
+	var cmd tea.Cmd
+	var handled bool
+
 	switch m := msg.(type) {
 	case tea.KeyMsg:
-		key := m.String()
-		if p.useFolder && p.folder != nil && p.bt != nil {
-			switch key {
-			case "up", "down", "left", "right", "home", "end", "pgup", "pgdown", "ctrl+t", "insert":
-				_, _ = p.bt.UpdateWithContext(ctx, m)
-				if id, ok := p.bt.CurrentID(ctx); ok {
-					if item, ok := p.folderItemByID(ctx, id); ok {
-						if back, ok := item.(models.Back); ok && back.IsBack() {
-							p.selected = 0
-							p.scrollTop = 0
-						} else {
-							p.SelectByRowID(ctx, id)
-						}
+		cmd, handled = w.handleKey(ctx, m)
+	case PanelMouseMsg:
+		cmd, handled = w.handleMouse(ctx, m)
+	}
+
+	if !handled {
+		return nil, false
+	}
+	next := p.currentSelectionID(ctx)
+	if next != prev {
+		cmd = tea.Batch(cmd, p.selectionChangedCmd(ctx))
+	}
+	return cmd, true
+}
+
+func (w *listWidget) handleKey(ctx context.Context, m tea.KeyMsg) (tea.Cmd, bool) {
+	p := w.panel
+	if p == nil {
+		return nil, false
+	}
+	key := m.String()
+	if p.useFolder && p.folder != nil && p.bt != nil {
+		switch key {
+		case "up", "down", "left", "right", "home", "end", "pgup", "pgdown", "ctrl+t", "insert":
+			_, _ = p.bt.UpdateWithContext(ctx, m)
+			if id, ok := p.bt.CurrentID(ctx); ok {
+				if item, ok := p.folderItemByID(ctx, id); ok {
+					if back, ok := item.(models.Back); ok && back.IsBack() {
+						p.selected = 0
+						p.scrollTop = 0
+					} else {
+						p.SelectByRowID(ctx, id)
 					}
 				}
-				return nil, true
 			}
+			return nil, true
 		}
-		switch key {
-		case "up":
+	}
+	switch key {
+	case "up":
+		p.moveUp(ctx)
+		return nil, true
+	case "down":
+		p.moveDown(ctx)
+		return nil, true
+	case "left":
+		p.moveUp(ctx)
+		return nil, true
+	case "right":
+		p.moveDown(ctx)
+		return nil, true
+	case "home":
+		p.moveToTop()
+		return nil, true
+	case "end":
+		p.moveToBottom()
+		return nil, true
+	case "pgup":
+		p.pageUp()
+		return nil, true
+	case "pgdown":
+		p.pageDown()
+		return nil, true
+	case "enter":
+		return p.enterItem(ctx), true
+	case "ctrl+t", "insert":
+		p.toggleSelection()
+		return nil, true
+	case "ctrl+a":
+		p.selectAll()
+		return nil, true
+	case "ctrl+r":
+		return p.refresh(), true
+	case "ctrl+v":
+		p.tableViewEnabled = !p.tableViewEnabled
+		return p.refresh(), true
+	case "ctrl+w":
+		return p.toggleColumnsMode(ctx), true
+	case "*":
+		p.invertSelection()
+		return nil, true
+	case "+", "-":
+		return p.showGlobPatternDialog(key), true
+	case "f1":
+		return p.invokeActionIfAllowed(ctx, PanelActionHelp), true
+	case "f2":
+		return p.invokeActionIfAllowed(ctx, PanelActionOptions), true
+	case "f3":
+		return p.invokeActionIfAllowed(ctx, PanelActionView), true
+	case "f4":
+		return p.invokeActionIfAllowed(ctx, PanelActionEdit), true
+	case "f7":
+		return p.invokeActionIfAllowed(ctx, PanelActionCreateNamespace), true
+	case "f8":
+		return p.invokeActionIfAllowed(ctx, PanelActionDelete), true
+	case "f9":
+		return p.invokeActionIfAllowed(ctx, PanelActionMenu), true
+	}
+	return nil, false
+}
+
+func (w *listWidget) handleMouse(ctx context.Context, msg PanelMouseMsg) (tea.Cmd, bool) {
+	p := w.panel
+	if p == nil {
+		return nil, false
+	}
+	switch msg.Type {
+	case PanelMouseWheel:
+		if msg.DeltaY < 0 {
 			p.moveUp(ctx)
-			return nil, true
-		case "down":
+		} else if msg.DeltaY > 0 {
 			p.moveDown(ctx)
-			return nil, true
-		case "left":
-			p.moveUp(ctx)
-			return nil, true
-		case "right":
-			p.moveDown(ctx)
-			return nil, true
-		case "home":
-			p.moveToTop()
-			return nil, true
-		case "end":
-			p.moveToBottom()
-			return nil, true
-		case "pgup":
-			p.pageUp()
-			return nil, true
-		case "pgdown":
-			p.pageDown()
-			return nil, true
-		case "enter":
-			return p.enterItem(ctx), true
-		case "ctrl+t", "insert":
-			p.toggleSelection()
-			return nil, true
-		case "ctrl+a":
-			p.selectAll()
-			return nil, true
-		case "ctrl+r":
-			return p.refresh(), true
-		case "ctrl+v":
-			p.tableViewEnabled = !p.tableViewEnabled
-			return p.refresh(), true
-		case "*":
-			p.invertSelection()
-			return nil, true
-		case "+", "-":
-			return p.showGlobPatternDialog(key), true
-		case "f1":
-			return p.invokeActionIfAllowed(ctx, PanelActionHelp), true
-		case "f2":
-			return p.invokeActionIfAllowed(ctx, PanelActionOptions), true
-		case "f3":
-			return p.invokeActionIfAllowed(ctx, PanelActionView), true
-		case "f4":
-			return p.invokeActionIfAllowed(ctx, PanelActionEdit), true
-		case "f7":
-			return p.invokeActionIfAllowed(ctx, PanelActionCreateNamespace), true
-		case "f8":
-			return p.invokeActionIfAllowed(ctx, PanelActionDelete), true
-		case "f9":
-			return p.invokeActionIfAllowed(ctx, PanelActionMenu), true
 		}
+		return nil, true
+	case PanelMouseClick:
+		return p.selectByVisibleRow(ctx, msg.Row, msg.Button), true
 	}
 	return nil, false
 }

@@ -623,6 +623,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.performDelete(*target)
 		}
 		return a, nil
+	case PanelSelectionChangedMsg:
+		return a, nil
 	case resourceDeletedMsg:
 		if msg.err != nil {
 			if a.toastLogger != nil {
@@ -799,41 +801,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.terminal = model.(*Terminal)
 				a.terminal.ClearTyped() // reset typed; next keys route to panels
 				return a, cmd
-			}
-			if msg.String() == "ctrl+w" {
-				// Toggle columns mode (Normal/Wide) on active panel
-				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-				defer cancel()
-				if a.activePanel == 0 {
-					if a.leftPanel.ColumnsMode() == "wide" {
-						a.leftPanel.SetColumnsMode(ctx, "normal")
-						a.syncPanelConfig(a.leftPanel)
-					} else {
-						a.leftPanel.SetColumnsMode(ctx, "wide")
-						a.syncPanelConfig(a.leftPanel)
-					}
-					if a.leftNav != nil {
-						if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
-							rf.Refresh()
-						}
-						a.leftPanel.RefreshFolder(ctx)
-					}
-				} else {
-					if a.rightPanel.ColumnsMode() == "wide" {
-						a.rightPanel.SetColumnsMode(ctx, "normal")
-						a.syncPanelConfig(a.rightPanel)
-					} else {
-						a.rightPanel.SetColumnsMode(ctx, "wide")
-						a.syncPanelConfig(a.rightPanel)
-					}
-					if a.rightNav != nil {
-						if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
-							rf.Refresh()
-						}
-						a.rightPanel.RefreshFolder(ctx)
-					}
-				}
-				return a, nil
 			}
 			if a.shouldRouteToPanel(msg.String()) {
 				// Handle panel-specific keys
@@ -1023,6 +990,7 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		"ctrl+t", "insert", // Toggle selection
 		"*",      // Invert selection
 		"ctrl+a", // Select all
+		"ctrl+w",
 		// Function keys (F10 handled separately for fullscreen vs panel mode)
 		"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f11", "f12",
 		// Other panel actions

@@ -43,9 +43,10 @@
 ## Input Handling
 - The app only owns truly global shortcuts (quit, fullscreen/toggle terminal, `Alt+F1/Alt+F2`, `Ctrl+1/2`). Every other key and mouse event is forwarded directly to the active panel.
 - The panel shell contains a small input router: it gives the widget first shot at each `tea.Msg`; if the widget returns “handled,” the shell stops. Otherwise the shell applies its minimal built-in navigation (selection movement, folder enter/back).
-- Widgets declare their own key and mouse behaviour. `ListWidget` consumes navigation keys, selection toggles, and scroll wheel; `DescribeWidget` might handle search/theme keys; future widgets can claim drag/drop or other mouse gestures.
+- Widgets declare their own key and mouse behaviour. `ListWidget` consumes navigation keys, selection toggles, layout toggles (`ctrl+w`), and scroll wheel; `DescribeWidget` might handle search/theme keys; future widgets can claim drag/drop or other mouse gestures.
 - Mouse coordinates are normalized by the panel before invoking the widget so individual widgets never worry about frame borders.
 - Cross-panel effects still surface as high-level events (`SelectionChanged`, `ModeChanged`) rather than raw keycodes, keeping both `App` and `Panel` lean.
+- The list widget emits `PanelSelectionChangedMsg` so the app can trigger dependent updates (e.g., describe/manifest) without duplicating navigation logic.
 
 ## Lifecycle Flow
 1. App bootstraps two panels, builds a `WidgetDeps` per panel, registers widget factories for each supported mode.
@@ -65,3 +66,4 @@
 - Register the widget factory in `ui/app.go` with the appropriate mode enum.
 - Update the mode dialog to list the new entry (and any help overlays to document shortcuts).
 - Add widget-focused tests and, if needed, mock-based panel tests to cover new hooks.
+- Placeholder widgets currently back the Describe/Manifest/File modes and render friendly “coming soon” messages; they can be replaced in isolation once the data providers are ready.

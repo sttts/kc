@@ -28,3 +28,21 @@ func TestNextPanelModeCycles(t *testing.T) {
 		}
 	}
 }
+
+func TestPanelSelectionChangedMessage(t *testing.T) {
+	ctx := context.Background()
+	panel := NewPanel("test")
+	panel.items = []Item{{Name: "a"}, {Name: "b"}}
+	panel.SetDimensions(ctx, 10, 5)
+	panel.selectionChangedCmd(ctx) // seed initial state
+	panel.moveDown(ctx)
+	cmd := panel.selectionChangedCmd(ctx)
+	if cmd == nil {
+		t.Fatalf("expected selection change command")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatalf("expected selection change message")
+	} else if _, ok := msg.(PanelSelectionChangedMsg); !ok {
+		t.Fatalf("expected PanelSelectionChangedMsg, got %#v", msg)
+	}
+}

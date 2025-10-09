@@ -56,6 +56,7 @@ type Panel struct {
 	mode            PanelViewMode
 	widgets         map[PanelViewMode]PanelWidget
 	widgetFactories map[PanelViewMode]PanelWidgetFactory
+	lastSelectionID string
 }
 
 const panelContextTimeout = 250 * time.Millisecond
@@ -347,6 +348,16 @@ func (p *Panel) SetObjectOrder(ctx context.Context, order string) {
 	}
 }
 
+func (p *Panel) toggleColumnsMode(ctx context.Context) tea.Cmd {
+	if p.columnsMode == "wide" {
+		p.SetColumnsMode(ctx, "normal")
+	} else {
+		p.SetColumnsMode(ctx, "wide")
+	}
+	p.RefreshFolder(ctx)
+	return nil
+}
+
 func (p *Panel) ObjectOrder() string { return p.objOrder }
 
 // SelectByRowID moves the selection to the row with the given ID if present.
@@ -411,6 +422,24 @@ func (p *Panel) selectedRowID(ctx context.Context) string {
 		return ""
 	}
 	return id
+}
+
+func (p *Panel) currentSelectionID(ctx context.Context) string {
+	id := p.selectedRowID(ctx)
+	if id != "" {
+		return id
+	}
+	if item := p.GetCurrentItem(); item != nil {
+		if item.Item != nil {
+			if rid, _, _, ok := item.Item.Columns(); ok && rid != "" {
+				return rid
+			}
+		}
+		if item.Name != "" {
+			return item.Name
+		}
+	}
+	return ""
 }
 
 // SelectedNavItem resolves the currently focused navigation item, skipping the
@@ -912,6 +941,30 @@ func (p *Panel) selectAll() {
 	}
 }
 
+func (p *Panel) selectByVisibleRow(ctx context.Context, row int, button tea.MouseButton) tea.Cmd {
+	if row < 0 {
+		return nil
+	}
+	if p.useFolder && p.folder != nil && p.bt != nil {
+		if id, ok := p.bt.VisibleRowID(row); ok {
+			p.SelectByRowID(ctx, id)
+			if button == tea.MouseRight {
+				return p.invokeActionIfAllowed(ctx, PanelActionMenu)
+			}
+		}
+		return nil
+	}
+	idx := p.scrollTop + row
+	if idx >= 0 && idx < len(p.items) {
+		p.selected = idx
+		p.adjustScroll()
+		if button == tea.MouseRight {
+			return p.invokeActionIfAllowed(ctx, PanelActionMenu)
+		}
+	}
+	return nil
+}
+
 func (p *Panel) unselectAll() {
 	for i := range p.items {
 		p.items[i].Selected = false
@@ -921,6 +974,14 @@ func (p *Panel) unselectAll() {
 func (p *Panel) invertSelection() {
 	for i := range p.items {
 		p.items[i].Selected = !p.items[i].Selected
+	}
+}
+
+func (p *Panel) handleWheel(ctx context.Context, delta int) {
+	if delta < 0 {
+		p.moveUp(ctx)
+	} else if delta > 0 {
+		p.moveDown(ctx)
 	}
 }
 
