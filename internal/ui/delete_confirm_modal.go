@@ -104,8 +104,8 @@ func (m *DeleteConfirmModel) View() string {
 		m.buttonRect[i] = buttonRect{}
 	}
 	bg := lipgloss.NewStyle().
-		Background(lipgloss.Color("250")).
-		Foreground(lipgloss.Black).
+		Background(lipgloss.Color(ColorModalBg)).
+		Foreground(lipgloss.Color(ColorModalFg)).
 		Width(innerWidth)
 	title := fmt.Sprintf("Delete %s?", m.target)
 	if m.namespace != "" {
@@ -118,7 +118,7 @@ func (m *DeleteConfirmModel) View() string {
 		m.renderOption("No", buttonWidth, m.focus != 0),
 	}
 	separator := lipgloss.NewStyle().
-		Background(lipgloss.Color("250")).
+		Background(lipgloss.Color(ColorModalBg)).
 		Render(" ")
 	bodyRow := lipgloss.JoinHorizontal(lipgloss.Center, options[0], separator, options[1])
 	bodyView := bg.Copy().Align(lipgloss.Center).Render(bodyRow)
@@ -140,18 +140,15 @@ func (m *DeleteConfirmModel) View() string {
 
 func (m *DeleteConfirmModel) renderOption(label string, width int, focused bool) string {
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("240")).
+		Foreground(lipgloss.Color(ColorModalFg)).
+		Background(lipgloss.Color(ColorDarkGrey)).
 		Width(width).
 		Align(lipgloss.Center)
 	if focused {
 		style = style.
-			Foreground(lipgloss.Color("0")).
-			Background(lipgloss.Color("203")).
+			Foreground(lipgloss.Color(ColorModalFg)).
+			Background(lipgloss.Color(ColorModalSelBg)).
 			Bold(true)
-	} else {
-		style = style.
-			Foreground(lipgloss.Color("0"))
 	}
 	return style.Render(label)
 }

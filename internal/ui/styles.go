@@ -11,6 +11,9 @@ const (
 	ColorGrey       = "7"  // prefer lipgloss.White (base white)
 	ColorDarkGrey   = "8"  // bright black (grey)
 	ColorWhite      = "15" // bright white
+	ColorModalBg    = ColorGrey
+	ColorModalFg    = ColorBlack
+	ColorModalSelBg = ColorCyan
 )
 
 // Common styles
@@ -37,11 +40,11 @@ var (
 				Background(lipgloss.Cyan).
 				Foreground(lipgloss.Black)
 
-	// Table header style for server-side Table rendering in panel content
-    PanelTableHeaderStyle = lipgloss.NewStyle().
-                Background(lipgloss.Blue).
-                Foreground(lipgloss.Yellow).
-                Bold(true)
+		// Table header style for server-side Table rendering in panel content
+	PanelTableHeaderStyle = lipgloss.NewStyle().
+				Background(lipgloss.Blue).
+				Foreground(lipgloss.Yellow).
+				Bold(true)
 
 		// Border and frame styles
 	BorderStyle = lipgloss.NewStyle().

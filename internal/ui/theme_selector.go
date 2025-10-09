@@ -95,14 +95,13 @@ func (s *ThemeSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (s *ThemeSelector) View() string {
-	// Dialog-specific styling: whole area cyan background with black text;
-	// selected row contrasted as white background with black text.
 	base := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorGrey)).
-		Foreground(lipgloss.Black)
+		Background(lipgloss.Color(ColorModalBg)).
+		Foreground(lipgloss.Color(ColorModalFg))
 	sel := lipgloss.NewStyle().
-		Background(lipgloss.Cyan).
-		Foreground(lipgloss.Black)
+		Background(lipgloss.Color(ColorModalSelBg)).
+		Foreground(lipgloss.Color(ColorModalFg)).
+		Bold(true)
 
 	var b strings.Builder
 	start := 0

@@ -174,35 +174,38 @@ func (m *ResourcesOptionsModel) View() string {
 	if len(m.options) == 0 {
 		return ""
 	}
-	labels := make([]string, 0, len(m.options))
-	values := make([]string, 0, len(m.options))
-	for _, opt := range m.options {
+	labels := make([]string, len(m.options))
+	values := make([]string, len(m.options))
+	for i, opt := range m.options {
 		switch opt {
 		case optInclude:
-			labels = append(labels, "Include empty")
+			labels[i] = "Include empty"
 			if m.includeEmpty {
-				values = append(values, "Yes")
+				values[i] = "Yes"
 			} else {
-				values = append(values, "No")
+				values[i] = "No"
 			}
 		case optOrder:
-			labels = append(labels, "Order")
-			values = append(values, orderLabels[m.orderIdx])
+			labels[i] = "Order"
+			values[i] = orderLabels[m.orderIdx]
 		case optTableMode:
-			labels = append(labels, "Table mode")
-			values = append(values, tableModeLabels[m.tableIdx])
+			labels[i] = "Table mode"
+			values[i] = tableModeLabels[m.tableIdx]
 		}
 	}
-
 	maxLabel := 0
 	for _, l := range labels {
 		if w := lipgloss.Width(l); w > maxLabel {
 			maxLabel = w
 		}
 	}
-
-	rowStyle := lipgloss.NewStyle().Background(lipgloss.Color("250")).Foreground(lipgloss.Black)
-	focusStyle := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.White).Bold(true)
+	rowStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color(ColorModalBg)).
+		Foreground(lipgloss.Color(ColorModalFg))
+	focusStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color(ColorModalSelBg)).
+		Foreground(lipgloss.Color(ColorModalFg)).
+		Bold(true)
 
 	rows := make([]string, 0, len(labels))
 	for i := range labels {
