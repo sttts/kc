@@ -22,10 +22,22 @@
 - Run binary: `./kc`
 - Run without building: `go run ./cmd/kc`
 - Run examples: `go run examples/handler/main.go`
+- Headless TUI driver: `go run ./cmd/bubbleheadless -- go run ./cmd/kc`
 - All tests (verbose): `go test ./... -v`
 - With coverage: `go test ./... -cover`
 - Static checks: `go vet ./...`
 - Tidy modules (after dep changes): `go mod tidy`
+
+### Headless Bubbleterm Wrapper
+- `cmd/bubbleheadless` is a REPL-style driver around bubbleterm for end-to-end automation in non-interactive environments.
+- Launch it with `go run ./cmd/bubbleheadless -- <app command...>`; e.g. `go run ./cmd/bubbleheadless -- go run ./cmd/kc`.
+- Once started, send commands over stdin:
+  - `key <token>` / `text <string>` to feed keystrokes,
+  - `mouse <button> <x> <y> <press|release|motion>` for mouse events,
+  - `screen [ansi|plain]` to dump the current framebuffer,
+  - `snapshot <file.png>` to write a PNG render of the terminal,
+  - `resize <cols> <rows>` and `wait` / `exit` for session control.
+- Designed for CI/e2e test harnesses—script it from shell pipelines or expect-like drivers without allocating a PTY.
 
 ## Coding Style & Naming Conventions
 - Format: `go fmt ./...` (CI expects gofmt-clean code).
