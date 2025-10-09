@@ -22,6 +22,7 @@ type Widget struct {
 	lines   []string
 	message string
 	scroll  int
+	last    panelcontent.Selection
 }
 
 // New constructs a manifest widget.
@@ -88,19 +89,22 @@ func (w *Widget) Footer(ctx context.Context, width int) string {
 
 // OnSelectionChanged refreshes content when the host reports a new selection.
 func (w *Widget) OnSelectionChanged(ctx context.Context, sel panelcontent.Selection) {
+	w.last = sel
 	_ = w.refresh(ctx)
 }
 
 func (w *Widget) refresh(ctx context.Context) tea.Cmd {
-	if w.deps.SelectedItem == nil {
-		w.message = "Manifest data unavailable"
-		w.lines = []string{w.message}
-		return nil
+	sel := w.last
+	if sel.Item == nil && w.deps.SelectedItem != nil {
+		if item, ok := w.deps.SelectedItem(ctx); ok {
+			sel.Item = item
+		}
 	}
-	item, ok := w.deps.SelectedItem(ctx)
-	if !ok {
+	item := sel.Item
+	if item == nil {
 		w.message = "Select a resource to view its manifest."
 		w.lines = []string{w.message}
+		w.title = ""
 		return nil
 	}
 	modelItem, _ := item.(models.Item)
@@ -115,17 +119,20 @@ func (w *Widget) refresh(ctx context.Context) tea.Cmd {
 	if viewable == nil {
 		w.message = "Selected resource does not expose manifest content."
 		w.lines = []string{w.message}
+		w.title = ""
 		return nil
 	}
 	title, body, _, _, _, err := viewable.ViewContent()
 	if err != nil {
 		w.message = "Failed to load manifest: " + err.Error()
 		w.lines = []string{w.message}
+		w.title = ""
 		return nil
 	}
 	if body == "" {
 		w.message = "Manifest is empty."
 		w.lines = []string{w.message}
+		w.title = title
 		return nil
 	}
 	w.title = title
@@ -199,10 +206,9 @@ func (w *Widget) visibleLines() []string {
 	for i := len(segment); i < h; i++ {
 		padded[i] = ""
 	}
+	style := lipgloss.NewStyle().Width(max(1, w.width))
 	for i := range padded {
-		if w.width > 0 && lipgloss.Width(padded[i]) > w.width {
-			padded[i] = lipgloss.NewStyle().Width(w.width).Render(padded[i])
-		}
+		padded[i] = style.Render(padded[i])
 	}
 	return padded
 }

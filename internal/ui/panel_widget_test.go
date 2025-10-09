@@ -42,7 +42,9 @@ func TestPanelSelectionChangedMessage(t *testing.T) {
 	}
 	if msg := cmd(); msg == nil {
 		t.Fatalf("expected selection change message")
-	} else if _, ok := msg.(PanelSelectionChangedMsg); !ok {
+	} else if selMsg, ok := msg.(PanelSelectionChangedMsg); !ok {
 		t.Fatalf("expected PanelSelectionChangedMsg, got %#v", msg)
+	} else if selMsg.Selection.ID != "item-a" {
+		t.Fatalf("expected selection ID item-a, got %s", selMsg.Selection.ID)
 	}
 }

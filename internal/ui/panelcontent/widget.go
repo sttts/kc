@@ -4,6 +4,7 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+	models "github.com/sttts/kc/internal/models"
 )
 
 // Size describes the drawable rectangle granted to a widget.
@@ -36,13 +37,14 @@ type WidgetDeps struct {
 	InvokeAction     func(context.Context, Action) tea.Cmd
 	Path             func() string
 	SelectionChanged func(context.Context, Selection) tea.Cmd
-	SelectedItem     func(context.Context) (interface{}, bool)
+	SelectedItem     func(context.Context) (models.Item, bool)
 }
 
 // Selection represents the widget's current selection identity.
 type Selection struct {
 	ID   string
 	Path string
+	Item models.Item
 }
 
 // SelectionProvider widgets expose the currently highlighted item.

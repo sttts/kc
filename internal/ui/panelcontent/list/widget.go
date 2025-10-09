@@ -903,18 +903,22 @@ func (w *Widget) invoke(ctx context.Context, action panelcontent.Action) tea.Cmd
 }
 
 func (w *Widget) selectionCmd(ctx context.Context, prev string, cmds ...tea.Cmd) tea.Cmd {
-	next := w.CurrentSelectionID(ctx)
-	if next != prev && w.deps.SelectionChanged != nil {
-		path := ""
-		if w.deps.Path != nil {
-			path = w.deps.Path()
-		}
-		cmds = append(cmds, w.deps.SelectionChanged(ctx, panelcontent.Selection{
-			ID:   next,
-			Path: path,
-		}))
+	if w.deps.SelectionChanged != nil {
+		cmds = append(cmds, w.deps.SelectionChanged(ctx, w.selectionSnapshot(ctx)))
 	}
 	return tea.Batch(cmds...)
+}
+
+func (w *Widget) selectionSnapshot(ctx context.Context) panelcontent.Selection {
+	selection := panelcontent.Selection{}
+	if w.deps.Path != nil {
+		selection.Path = w.deps.Path()
+	}
+	selection.ID = w.CurrentSelectionID(ctx)
+	if current := w.CurrentItem(ctx); current != nil && current.Item != nil {
+		selection.Item = current.Item
+	}
+	return selection
 }
 
 func columnsToTitles(cols []table.Column) []string {

@@ -30,6 +30,7 @@ type Panel struct {
 	widgets              map[PanelViewMode]PanelWidget
 	widgetFactories      map[PanelViewMode]PanelWidgetFactory
 	lastSelectionID      string
+	lastSelection        models.Item
 }
 
 const panelContextTimeout = 250 * time.Millisecond
@@ -67,9 +68,6 @@ func (p *Panel) listWidgetDeps() panelcontent.WidgetDeps {
 		InvokeAction:     p.invokeWidgetAction,
 		Path:             func() string { return p.currentPath },
 		SelectionChanged: p.widgetSelectionChanged,
-		SelectedItem: func(ctx context.Context) (interface{}, bool) {
-			return p.SelectedNavItem(ctx)
-		},
 	}
 }
 
@@ -77,7 +75,7 @@ func (p *Panel) manifestWidgetDeps() panelcontent.WidgetDeps {
 	return panelcontent.WidgetDeps{
 		InvokeAction: p.invokeWidgetAction,
 		Path:         func() string { return p.currentPath },
-		SelectedItem: func(ctx context.Context) (interface{}, bool) {
+		SelectedItem: func(ctx context.Context) (models.Item, bool) {
 			return p.SelectedNavItem(ctx)
 		},
 	}
@@ -121,19 +119,28 @@ func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Sel
 	if sel.Path == "" {
 		sel.Path = p.currentPath
 	}
-	if sel.ID == "" || sel.ID == p.lastSelectionID {
+	if sel.Item == nil {
+		if item, ok := p.SelectedNavItem(ctx); ok {
+			sel.Item = item
+		}
+	}
+	changed := sel.ID != "" && sel.ID != p.lastSelectionID
+	if sel.ID != "" {
+		p.lastSelectionID = sel.ID
+	}
+	if sel.Item != nil {
+		p.lastSelection = sel.Item
+	}
+	p.notifySelectionListeners(ctx, sel)
+	if !changed {
 		return nil
 	}
-	p.lastSelectionID = sel.ID
 	panel := p
-	path := sel.Path
-	id := sel.ID
-	p.notifySelectionListeners(ctx, sel)
+	selection := sel
 	return func() tea.Msg {
 		return PanelSelectionChangedMsg{
-			Panel:       panel,
-			SelectionID: id,
-			Path:        path,
+			Panel:     panel,
+			Selection: selection,
 		}
 	}
 }
@@ -361,7 +368,12 @@ func (p *Panel) currentSelectionID(ctx context.Context) string {
 // synthetic back entry. Returns false when no concrete item is selected.
 func (p *Panel) SelectedNavItem(ctx context.Context) (models.Item, bool) {
 	if lw := p.listWidget(ctx); lw != nil {
-		return lw.SelectedNavItem(ctx)
+		if item, ok := lw.SelectedNavItem(ctx); ok {
+			return item, true
+		}
+	}
+	if p.lastSelection != nil {
+		return p.lastSelection, true
 	}
 	return nil, false
 }
@@ -385,8 +397,22 @@ func (p *Panel) RefreshFolder(ctx context.Context) {
 }
 
 // NotifySelection explicitly broadcasts a selection change to widgets.
-func (p *Panel) NotifySelection(ctx context.Context, selectionID string) {
-	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: selectionID, Path: p.currentPath})
+func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection) {
+	if sel.Path == "" {
+		sel.Path = p.currentPath
+	}
+	if sel.Item == nil {
+		if item, ok := p.SelectedNavItem(ctx); ok {
+			sel.Item = item
+		}
+	}
+	if sel.ID != "" {
+		p.lastSelectionID = sel.ID
+	}
+	if sel.Item != nil {
+		p.lastSelection = sel.Item
+	}
+	p.notifySelectionListeners(ctx, sel)
 }
 
 // SetResourceCatalog injects the namespaced resource catalog (plural -> GVK).
@@ -607,6 +633,9 @@ func (p *Panel) GetCurrentItem() *Item {
 			return item
 		}
 	}
+	if p.lastSelection != nil {
+		return &Item{Item: p.lastSelection}
+	}
 	return nil
 }
 
@@ -630,11 +659,19 @@ func (p *Panel) ColumnTitles(ctx context.Context) []string {
 }
 
 func (p *Panel) notifySelectionListeners(ctx context.Context, sel panelcontent.Selection) {
-	for mode, widget := range p.widgets {
-		if widget == nil || mode == PanelModeList {
-			continue
+	if sel.Path == "" {
+		sel.Path = p.currentPath
+	}
+	if sel.Item == nil {
+		if item, ok := p.SelectedNavItem(ctx); ok {
+			sel.Item = item
 		}
-		if listener, ok := widget.(panelcontent.SelectionListener); ok {
+	}
+	if sel.Item != nil {
+		p.lastSelection = sel.Item
+	}
+	for _, widget := range p.widgets {
+		if listener, ok := widget.(panelcontent.SelectionListener); ok && widget != nil {
 			listener.OnSelectionChanged(ctx, sel)
 		}
 	}

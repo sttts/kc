@@ -249,6 +249,19 @@ func (a *App) panelByIndex(idx int) *Panel {
 	return a.leftPanel
 }
 
+func (a *App) panelIndexFor(panel *Panel) (int, bool) {
+	if panel == nil {
+		return -1, false
+	}
+	if panel == a.leftPanel {
+		return 0, true
+	}
+	if panel == a.rightPanel {
+		return 1, true
+	}
+	return -1, false
+}
+
 func (a *App) panelAreaMetrics() (panelWidth int, panelHeight int, headerOffset int) {
 	reserved := 3
 	if a.toastActive {
@@ -683,8 +696,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PanelSelectionChangedMsg:
 		if panel := msg.Panel; panel != nil {
 			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-			panel.NotifySelection(ctxSel, msg.SelectionID)
+			panel.NotifySelection(ctxSel, msg.Selection)
 			cancelSel()
+			if idx, ok := a.panelIndexFor(panel); ok {
+				other := a.panelByIndex(1 - idx)
+				if other != nil {
+					ctxOther, cancelOther := context.WithTimeout(a.ctx, panelContextTimeout)
+					other.NotifySelection(ctxOther, msg.Selection)
+					cancelOther()
+				}
+			}
 		}
 		return a, nil
 	case PanelModeSelectedMsg:
@@ -702,7 +723,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		a.modalManager.Hide()
+		a.modalManager.HideName(panelModeModalKey(msg.PanelIndex))
 		return a, tea.Batch(cmds...)
 	case resourceDeletedMsg:
 		if msg.err != nil {
