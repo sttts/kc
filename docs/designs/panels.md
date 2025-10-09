@@ -68,3 +68,11 @@
 - Update the mode dialog to list the new entry (and any help overlays to document shortcuts).
 - Add widget-focused tests and, if needed, mock-based panel tests to cover new hooks.
 - Placeholder widgets currently back the Describe/Manifest/File modes and render friendly “coming soon” messages; they can be replaced in isolation once the data providers are ready.
+
+## Implementation TODOs
+- Extract the legacy list logic from `internal/ui/panel.go`/`panel_widget.go` into `internal/ui/panelcontent/list/` with the shared `Widget` interface, keeping list-specific helpers local to that package.
+- Introduce the shared widget contracts (`Widget`, factories, `WidgetDeps`, optional hooks) under `internal/ui/panelcontent/` so all modes share a single dependency surface.
+- Update the panel shell in `internal/ui/panel.go` to instantiate widgets via the registry, forward lifecycle/input events, and drop direct knowledge of list-specific rendering or key handling.
+- Adapt selection propagation so the list widget emits the selection change command and the panel shell just relays it to the app controller.
+- Re-enable tests by moving list-focused cases next to the new widget implementation and adding shell tests that rely on mocked widgets for lifecycle/registry assertions.
+- Once the list widget is migrated and stable, implement the manifest widget in `internal/ui/panelcontent/manifest/`, reusing the existing viewer helpers for YAML rendering.
