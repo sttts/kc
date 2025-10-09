@@ -2,7 +2,10 @@ package ui
 
 import (
 	"context"
+	"strings"
 	"testing"
+
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 )
 
 func TestPanelModeSwitchesToPlaceholder(t *testing.T) {
@@ -13,8 +16,8 @@ func TestPanelModeSwitchesToPlaceholder(t *testing.T) {
 	if panel.Mode() != PanelModeManifest {
 		t.Fatalf("expected manifest mode, got %v", panel.Mode())
 	}
-	view := panel.renderContent(ctx)
-	if view == "" {
+	view := panel.View()
+	if !strings.Contains(view, "Manifest mode placeholder") {
 		t.Fatalf("expected placeholder content")
 	}
 }
@@ -32,11 +35,8 @@ func TestNextPanelModeCycles(t *testing.T) {
 func TestPanelSelectionChangedMessage(t *testing.T) {
 	ctx := context.Background()
 	panel := NewPanel("test")
-	panel.items = []Item{{Name: "a"}, {Name: "b"}}
-	panel.SetDimensions(ctx, 10, 5)
-	panel.selectionChangedCmd(ctx) // seed initial state
-	panel.moveDown(ctx)
-	cmd := panel.selectionChangedCmd(ctx)
+	panel.listWidget(ctx) // ensure list widget initialized
+	cmd := panel.widgetSelectionChanged(ctx, panelcontent.Selection{ID: "item-a", Path: "/"})
 	if cmd == nil {
 		t.Fatalf("expected selection change command")
 	}

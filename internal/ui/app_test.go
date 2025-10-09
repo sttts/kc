@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -45,12 +46,10 @@ func TestNewPanel(t *testing.T) {
 		t.Errorf("Expected title to be 'Test Panel', got '%s'", panel.title)
 	}
 
-	if len(panel.items) != 0 {
-		t.Errorf("Expected empty items slice, got length %d", len(panel.items))
-	}
-
-	if panel.selected != 0 {
-		t.Errorf("Expected selected to be 0, got %d", panel.selected)
+	if lw := panel.listWidget(context.Background()); lw == nil {
+		t.Fatalf("expected list widget to initialize")
+	} else if len(lw.Items()) != 0 {
+		t.Errorf("Expected empty items slice, got length %d", len(lw.Items()))
 	}
 }
 

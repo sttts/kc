@@ -4,6 +4,7 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
@@ -13,7 +14,7 @@ type placeholderWidget struct {
 	message string
 }
 
-func newPlaceholderWidget(panel *Panel, msg string) PanelWidget {
+func newPlaceholderWidget(panel *Panel, msg string) panelcontent.Widget {
 	return &placeholderWidget{panel: panel, message: msg}
 }
 
@@ -23,21 +24,31 @@ func (w *placeholderWidget) Update(context.Context, tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-func (w *placeholderWidget) View(ctx context.Context, focused bool) string {
+func (w *placeholderWidget) View(ctx context.Context, frame panelcontent.Frame) string {
 	if w.panel == nil {
 		return ""
+	}
+	width := frame.Size.Width
+	if width <= 0 {
+		width = max(1, w.panel.width)
+	}
+	height := frame.Size.Height
+	if height <= 0 {
+		height = max(1, w.panel.height)
 	}
 	content := w.message
 	if content == "" {
 		content = "Mode not yet available"
 	}
-	style := uistyles.PanelContentStyle.Width(max(1, w.panel.width)).Height(max(1, w.panel.height))
-	if focused {
+	style := uistyles.PanelContentStyle.Width(width).Height(height)
+	if frame.Focused {
 		style = style.Copy().Bold(true)
 	}
 	return style.Render(content)
 }
 
-func (w *placeholderWidget) Resize(context.Context, int, int) {}
+func (w *placeholderWidget) Resize(context.Context, panelcontent.Size) {}
 
 func (w *placeholderWidget) SetFocus(context.Context, bool) {}
+
+func (w *placeholderWidget) Teardown(context.Context) {}

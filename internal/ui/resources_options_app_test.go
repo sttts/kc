@@ -91,12 +91,16 @@ func panelResourceNames(ctx context.Context, panel *Panel) []string {
 		return nil
 	}
 	panel.RefreshFolder(ctx)
-	panel.syncFromFolder(ctx)
-	names := make([]string, 0, len(panel.items))
-	for _, item := range panel.items {
-		names = append(names, item.Name)
+	if lw := panel.listWidget(ctx); lw != nil {
+		lw.RefreshFolder(ctx)
+		items := lw.Items()
+		names := make([]string, 0, len(items))
+		for _, item := range items {
+			names = append(names, item.Name)
+		}
+		return names
 	}
-	return names
+	return nil
 }
 
 type testResourcesFolder struct {

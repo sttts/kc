@@ -70,7 +70,8 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	p.UseFolder(true)
 	p.SetDimensions(ctx, 120, 20)
 	p.SetFolder(ctx, folder, false)
-	if len(p.lastColTitles) < 2 {
-		t.Fatalf("expected >=2 columns for endpoints, got %v", p.lastColTitles)
+	cols := p.ColumnTitles(ctx)
+	if len(cols) < 2 {
+		t.Fatalf("expected >=2 columns for endpoints, got %v", cols)
 	}
 }

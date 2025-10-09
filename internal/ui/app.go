@@ -267,11 +267,13 @@ func (a *App) panelAreaMetrics() (panelWidth int, panelHeight int, headerOffset 
 
 func (a *App) syncPanelConfig(panel *Panel) {
 	cfg := a.ensurePanelConfig(panel)
-	cfg.Resources.ShowNonEmptyOnly = panel.resShowNonEmpty
-	cfg.Resources.Order = appconfig.ResourcesViewOrder(panel.resOrder)
-	cfg.Resources.Columns = panel.columnsMode
-	cfg.Objects.Order = panel.objOrder
-	cfg.Objects.Columns = panel.columnsMode
+	showNonEmpty, order := panel.ResourceViewOptions()
+	cfg.Resources.ShowNonEmptyOnly = showNonEmpty
+	cfg.Resources.Order = appconfig.ResourcesViewOrder(order)
+	columns := panel.ColumnsMode()
+	cfg.Resources.Columns = columns
+	cfg.Objects.Order = panel.ObjectOrder()
+	cfg.Objects.Columns = columns
 	cfg.Panel.Table.Mode = appconfig.TableMode(panel.TableMode())
 }
 
@@ -286,7 +288,7 @@ func (a *App) applyResourceOptions(panel *Panel) {
 	if cfg != nil {
 		favorites = cfg.Resources.Favorites
 	}
-	applyResourceOptionsToFolder(panel.folder, show, order, favorites)
+	applyResourceOptionsToFolder(panel.Folder(), show, order, favorites)
 	if nav := a.navigatorForPanel(panel); nav != nil {
 		if cur := nav.Current(); cur != nil {
 			applyResourceOptionsToFolder(cur, show, order, favorites)
@@ -920,7 +922,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if cmd != nil {
 					cmds = append(cmds, cmd)
 				}
-				if panelMsg.Type == PanelMouseClick && panelMsg.Button == tea.MouseLeft && panel != nil {
+				if panelMsg.Intent == PanelMouseClick && panelMsg.Button == tea.MouseLeft && panel != nil {
 					ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
 					selectionID := panel.currentSelectionID(ctxSel)
 					cancelSel()
@@ -934,7 +936,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							a.lastClickTime = time.Time{}
 							a.lastClickRowID = ""
 							ctxEnter, cancelEnter := context.WithTimeout(a.ctx, panelContextTimeout)
-							enterCmd := panel.enterItem(ctxEnter)
+							enterCmd := panel.Enter(ctxEnter)
 							cancelEnter()
 							if enterCmd != nil {
 								return a, enterCmd
@@ -1612,12 +1614,12 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseM
 			return nil, nil, PanelMouseMsg{}, panelIdx, false
 		}
 		panelMsg = PanelMouseMsg{
-			Type:   PanelMouseWheel,
+			Intent: PanelMouseWheel,
 			DeltaY: delta,
 		}
 	case tea.MouseClickMsg:
 		panelMsg = PanelMouseMsg{
-			Type:   PanelMouseClick,
+			Intent: PanelMouseClick,
 			Row:    relRow,
 			Button: mm.Button,
 		}
@@ -1659,7 +1661,7 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 		curFolder = nav.Current()
 	}
 	if curFolder == nil {
-		curFolder = panel.folder
+		curFolder = panel.Folder()
 	}
 
 	showInclude := false

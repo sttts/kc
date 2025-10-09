@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	models "github.com/sttts/kc/internal/models"
+	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -54,10 +55,11 @@ func TestPanelCapabilitiesWithActions(t *testing.T) {
 		namespace: "ns",
 		name:      "foo",
 	}
-	panel.items = []Item{
-		{Item: obj, Name: obj.name},
-	}
-	panel.selected = 0
+	ctx := context.Background()
+	folder := newStubFolder([]models.Item{obj})
+	panel.UseFolder(true)
+	panel.SetFolder(ctx, folder, false)
+	panel.SelectByRowID(ctx, obj.id)
 	panel.SetCurrentPath("/namespaces")
 
 	var invoked []PanelAction
@@ -80,7 +82,6 @@ func TestPanelCapabilitiesWithActions(t *testing.T) {
 		},
 	})
 
-	ctx := context.Background()
 	caps := panel.Capabilities(ctx)
 	if !caps.CanView || !caps.CanEdit || !caps.CanDelete || !caps.CanCreateNS {
 		t.Fatalf("capabilities not computed correctly: %+v", caps)
@@ -93,4 +94,54 @@ func TestPanelCapabilitiesWithActions(t *testing.T) {
 	if len(invoked) != 4 {
 		t.Fatalf("expected 4 invocations, got %d", len(invoked))
 	}
+}
+
+type stubFolder struct {
+	list  *table.SliceList
+	items map[string]models.Item
+	path  []string
+	cols  []table.Column
+}
+
+func newStubFolder(items []models.Item) *stubFolder {
+	rows := make([]table.Row, len(items))
+	itemMap := make(map[string]models.Item, len(items))
+	for i, item := range items {
+		id, _, _, _ := item.Columns()
+		rows[i] = item
+		itemMap[id] = item
+	}
+	return &stubFolder{
+		list:  table.NewSliceList(rows),
+		items: itemMap,
+		path:  []string{"/"},
+		cols:  []table.Column{{Title: "NAME"}},
+	}
+}
+
+func (f *stubFolder) Columns() []table.Column { return f.cols }
+
+func (f *stubFolder) Path() []string { return append([]string(nil), f.path...) }
+
+func (f *stubFolder) ItemByID(ctx context.Context, id string) (models.Item, bool) {
+	item, ok := f.items[id]
+	return item, ok
+}
+
+func (f *stubFolder) Lines(ctx context.Context, top, num int) []table.Row {
+	return f.list.Lines(ctx, top, num)
+}
+
+func (f *stubFolder) Above(ctx context.Context, rowID string, num int) []table.Row {
+	return f.list.Above(ctx, rowID, num)
+}
+
+func (f *stubFolder) Below(ctx context.Context, rowID string, num int) []table.Row {
+	return f.list.Below(ctx, rowID, num)
+}
+
+func (f *stubFolder) Len(ctx context.Context) int { return f.list.Len(ctx) }
+
+func (f *stubFolder) Find(ctx context.Context, rowID string) (int, table.Row, bool) {
+	return f.list.Find(ctx, rowID)
 }

@@ -42,20 +42,20 @@ func TestEnterBackFromNamespacesFolder(t *testing.T) {
 	ctx := t.Context()
 	p.SetFolder(ctx, f, true)
 	p.UseFolder(true)
+	p.RefreshFolder(ctx)
 	backCalls := 0
 	p.SetFolderNavHandler(func(back bool, _ string, next models.Folder) {
 		if back {
 			backCalls++
 		}
 	})
-	// sync and select the back item
-	p.syncFromFolder(ctx)
-	if len(p.items) == 0 || p.items[0].Name != ".." {
-		t.Fatalf("expected back item at top, got %+v", p.items)
+	items := p.Items(ctx)
+	if len(items) == 0 || items[0].Name != ".." {
+		t.Fatalf("expected back item at top, got %+v", items)
 	}
-	p.selected = 0
+	p.ResetSelectionTop(ctx)
 	// act
-	_ = p.enterItem(ctx)
+	_ = p.Enter(ctx)
 	if backCalls != 1 {
 		t.Fatalf("expected one back call, got %d", backCalls)
 	}
@@ -70,16 +70,21 @@ func TestEnterFromNamespacesIntoGroups(t *testing.T) {
 	ctx := t.Context()
 	p.SetFolder(ctx, nsFolder, true)
 	p.UseFolder(true)
+	p.RefreshFolder(ctx)
 	var gotNext models.Folder
 	p.SetFolderNavHandler(func(back bool, _ string, next models.Folder) {
 		if !back {
 			gotNext = next
 		}
 	})
-	// Select the first real row (index 1 due to back row at 0)
-	p.syncFromFolder(ctx)
-	p.selected = 1
-	_ = p.enterItem(ctx)
+	items := p.Items(ctx)
+	if len(items) < 2 {
+		t.Fatalf("expected namespace row present, got %+v", items)
+	}
+	if id, _, _, ok := items[1].Columns(); ok {
+		p.SelectByRowID(ctx, id)
+	}
+	_ = p.Enter(ctx)
 	if gotNext == nil || strings.Join(gotNext.Path(), "/") != "groups" {
 		t.Fatalf("expected to navigate to groups folder, got %v", gotNext.Path())
 	}
