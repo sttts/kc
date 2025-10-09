@@ -711,6 +711,19 @@ func (mm *ModalManager) Hide() {
 	}
 }
 
+// HideName hides a specific modal by name regardless of position.
+func (mm *ModalManager) HideName(name string) {
+	if modal, exists := mm.modals[name]; exists {
+		modal.Hide()
+	}
+	for i := len(mm.stack) - 1; i >= 0; i-- {
+		if mm.stack[i] == name {
+			mm.stack = append(mm.stack[:i], mm.stack[i+1:]...)
+			break
+		}
+	}
+}
+
 // IsModalVisible returns true if any modal is visible
 func (mm *ModalManager) IsModalVisible() bool {
 	return len(mm.stack) > 0

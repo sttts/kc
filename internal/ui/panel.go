@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -14,8 +13,6 @@ import (
 	listwidget "github.com/sttts/kc/internal/ui/panelcontent/list"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Panel represents a file/resource panel
@@ -166,7 +163,12 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 	}
 	w.Resize(ctx, panelcontent.Size{Width: p.width, Height: p.height})
 	w.SetFocus(ctx, true)
-	return w.Init(ctx)
+	cmd := w.Init(ctx)
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{
+		ID:   p.currentSelectionID(ctx),
+		Path: p.currentPath,
+	})
+	return cmd
 }
 
 func (p *Panel) ensureActiveWidget(ctx context.Context) PanelWidget {
@@ -382,75 +384,18 @@ func (p *Panel) RefreshFolder(ctx context.Context) {
 	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.currentSelectionID(ctx), Path: p.currentPath})
 }
 
-// SetNamespacesDataSource wires a namespaces data source for live listings.
-// Legacy live data sources removed; folders drive listings now.
-
-// SetPodsDataSource retained for compatibility; prefer SetGenericDataSourceFactory.
-// Legacy shim type and setter for backwards compatibility.
-type PodsDataSource struct{}
-
-func (p *Panel) SetPodsDataSource(ds *PodsDataSource) { /* deprecated */ }
+// NotifySelection explicitly broadcasts a selection change to widgets.
+func (p *Panel) NotifySelection(ctx context.Context, selectionID string) {
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: selectionID, Path: p.currentPath})
+}
 
 // SetResourceCatalog injects the namespaced resource catalog (plural -> GVK).
 func (p *Panel) SetResourceCatalog(infos []kccluster.ResourceInfo) {
-	// no-op; folders supply resource information directly
+	_ = infos
 }
 
-// SetGenericDataSourceFactory sets a factory for creating per-GVK data sources.
-// Deprecated; no-op now that folders provide data directly.
-func (p *Panel) SetGenericDataSourceFactory(factory func(schema.GroupVersionKind) *GenericDataSource) {
-}
-
-// renderFooter renders the panel footer
-func (p *Panel) renderFooter(ctx context.Context) string {
-	if widget := p.ensureActiveWidget(ctx); widget != nil {
-		if fp, ok := widget.(panelcontent.FooterProvider); ok {
-			return fp.Footer(ctx, p.width)
-		}
-	}
-	return uistyles.PanelFooterStyle.
-		Width(p.width).
-		Height(1).
-		Align(lipgloss.Left).
-		Render("")
-}
-
-// --- Legacy datasource shims (no-ops) ---------------------------------------
-
-// nsEvent/resEvent are local event shims to avoid old resources.Event type.
-type nsEvent struct{}
-type resEvent struct{}
-
-// NamespacesDataSource is a legacy interface placeholder.
-type NamespacesDataSource struct{}
-
-func (n *NamespacesDataSource) ListTable() ([]string, [][]string, []Item, error) {
-	return nil, nil, nil, fmt.Errorf("not supported")
-}
-func (n *NamespacesDataSource) List() ([]Item, error) { return nil, fmt.Errorf("not supported") }
-func (n *NamespacesDataSource) Watch(ctx context.Context) (<-chan nsEvent, func(), error) {
-	ch := make(chan nsEvent)
-	close(ch)
-	stop := func() {}
-	return ch, stop, nil
-}
-
-// GenericDataSource is a legacy data source placeholder.
-type GenericDataSource struct{}
-
-func (g *GenericDataSource) ListTable(ns string) ([]string, [][]string, []Item, error) {
-	return nil, nil, nil, fmt.Errorf("not supported")
-}
-func (g *GenericDataSource) List(ns string) ([]Item, error) { return nil, fmt.Errorf("not supported") }
-func (g *GenericDataSource) Get(ns, name string) (*unstructured.Unstructured, error) {
-	return nil, fmt.Errorf("not supported")
-}
-func (g *GenericDataSource) Watch(ctx context.Context, ns string) (<-chan resEvent, func(), error) {
-	ch := make(chan resEvent)
-	close(ch)
-	stop := func() {}
-	return ch, stop, nil
-}
+// SetNamespacesDataSource wires a namespaces data source for live listings.
+// Legacy live data sources removed; folders drive listings now.
 
 // SetViewConfig injects the view configuration (global + per resource overrides).
 func (p *Panel) SetViewConfig(cfg *ViewConfig) { p.viewConfig = cfg }
@@ -619,6 +564,19 @@ func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string
 		})
 	}
 	return ""
+}
+
+func (p *Panel) renderFooter(ctx context.Context) string {
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		if fp, ok := widget.(panelcontent.FooterProvider); ok {
+			return fp.Footer(ctx, p.width)
+		}
+	}
+	return uistyles.PanelFooterStyle.
+		Width(p.width).
+		Height(1).
+		Align(lipgloss.Left).
+		Render("")
 }
 
 // renderItem renders a single item

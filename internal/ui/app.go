@@ -414,146 +414,150 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle modals first
 	if a.modalManager.IsModalVisible() {
-		// Intercept resource options changes even while modal is visible
-		switch m := msg.(type) {
-		case ResourcesOptionsChangedMsg:
-			if m.SaveDefault {
-				// Persist current dialog values to config defaults
-				if a.cfg == nil {
-					a.cfg = appconfig.Default()
-				}
-				if m.HasInclude {
-					a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
-				}
-				if m.HasOrder {
-					a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
-				}
-				a.cfg.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
-				_ = appconfig.Save(a.cfg)
-				a.applyResourceOptions(a.leftPanel)
-				a.applyResourceOptions(a.rightPanel)
-			}
-			if m.Accept {
-				// Apply to active panel only; do not persist
-				if a.activePanel == 0 {
-					ctxTable, cancelTable := context.WithTimeout(a.ctx, panelContextTimeout)
-					a.leftPanel.SetTableMode(ctxTable, m.TableMode)
-					cancelTable()
-					if m.HasInclude || m.HasOrder {
-						a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+		if _, skip := msg.(PanelModeSelectedMsg); skip {
+			// Let mode selection messages fall through to the main switch so Enter works.
+		} else {
+			// Intercept resource options changes even while modal is visible
+			switch m := msg.(type) {
+			case ResourcesOptionsChangedMsg:
+				if m.SaveDefault {
+					// Persist current dialog values to config defaults
+					if a.cfg == nil {
+						a.cfg = appconfig.Default()
 					}
-					a.syncPanelConfig(a.leftPanel)
+					if m.HasInclude {
+						a.cfg.Resources.ShowNonEmptyOnly = m.ShowNonEmptyOnly
+					}
+					if m.HasOrder {
+						a.cfg.Resources.Order = appconfig.ResourcesViewOrder(m.Order)
+					}
+					a.cfg.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
+					_ = appconfig.Save(a.cfg)
 					a.applyResourceOptions(a.leftPanel)
-				} else {
-					ctxTable, cancelTable := context.WithTimeout(a.ctx, panelContextTimeout)
-					a.rightPanel.SetTableMode(ctxTable, m.TableMode)
-					cancelTable()
-					if m.HasInclude || m.HasOrder {
-						a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
-					}
-					a.syncPanelConfig(a.rightPanel)
 					a.applyResourceOptions(a.rightPanel)
 				}
-				// Refresh only the active panel's folder
-				if a.activePanel == 0 && a.leftNav != nil {
-					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-					if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
-						rf.Refresh()
+				if m.Accept {
+					// Apply to active panel only; do not persist
+					if a.activePanel == 0 {
+						ctxTable, cancelTable := context.WithTimeout(a.ctx, panelContextTimeout)
+						a.leftPanel.SetTableMode(ctxTable, m.TableMode)
+						cancelTable()
+						if m.HasInclude || m.HasOrder {
+							a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+						}
+						a.syncPanelConfig(a.leftPanel)
+						a.applyResourceOptions(a.leftPanel)
+					} else {
+						ctxTable, cancelTable := context.WithTimeout(a.ctx, panelContextTimeout)
+						a.rightPanel.SetTableMode(ctxTable, m.TableMode)
+						cancelTable()
+						if m.HasInclude || m.HasOrder {
+							a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
+						}
+						a.syncPanelConfig(a.rightPanel)
+						a.applyResourceOptions(a.rightPanel)
 					}
-					a.leftPanel.SetFolder(ctx, a.leftNav.Current(), a.leftNav.HasBack())
-					a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
-					cancel()
-					ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
-					a.leftPanel.RefreshFolder(ctxRefresh)
-					cancelRefresh()
-				}
-				if a.activePanel == 1 && a.rightNav != nil {
-					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-					if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
-						rf.Refresh()
+					// Refresh only the active panel's folder
+					if a.activePanel == 0 && a.leftNav != nil {
+						ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+						if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
+							rf.Refresh()
+						}
+						a.leftPanel.SetFolder(ctx, a.leftNav.Current(), a.leftNav.HasBack())
+						a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
+						cancel()
+						ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
+						a.leftPanel.RefreshFolder(ctxRefresh)
+						cancelRefresh()
 					}
-					a.rightPanel.SetFolder(ctx, a.rightNav.Current(), a.rightNav.HasBack())
-					a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
-					cancel()
-					ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
-					a.rightPanel.RefreshFolder(ctxRefresh)
-					cancelRefresh()
+					if a.activePanel == 1 && a.rightNav != nil {
+						ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+						if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
+							rf.Refresh()
+						}
+						a.rightPanel.SetFolder(ctx, a.rightNav.Current(), a.rightNav.HasBack())
+						a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
+						cancel()
+						ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
+						a.rightPanel.RefreshFolder(ctxRefresh)
+						cancelRefresh()
+					}
 				}
-			}
-			if m.Close {
-				a.modalManager.Hide()
-			}
-			return a, nil
-		case ObjectOptionsChangedMsg:
-			if m.SaveDefault {
-				if a.cfg == nil {
-					a.cfg = appconfig.Default()
+				if m.Close {
+					a.modalManager.Hide()
 				}
-				// Save table mode
-				switch strings.ToLower(m.TableMode) {
-				case "fit":
-					a.cfg.Panel.Table.Mode = appconfig.TableModeFit
-				default:
-					a.cfg.Panel.Table.Mode = appconfig.TableModeScroll
+				return a, nil
+			case ObjectOptionsChangedMsg:
+				if m.SaveDefault {
+					if a.cfg == nil {
+						a.cfg = appconfig.Default()
+					}
+					// Save table mode
+					switch strings.ToLower(m.TableMode) {
+					case "fit":
+						a.cfg.Panel.Table.Mode = appconfig.TableModeFit
+					default:
+						a.cfg.Panel.Table.Mode = appconfig.TableModeScroll
+					}
+					// Save columns mode to objects.columns
+					if strings.EqualFold(m.Columns, "wide") {
+						a.cfg.Objects.Columns = "wide"
+					} else {
+						a.cfg.Objects.Columns = "normal"
+					}
+					// Save objects order
+					a.cfg.Objects.Order = m.ObjectsOrder
+					_ = appconfig.Save(a.cfg)
 				}
-				// Save columns mode to objects.columns
-				if strings.EqualFold(m.Columns, "wide") {
-					a.cfg.Objects.Columns = "wide"
+				if a.activePanel == 0 {
+					ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
+					a.leftPanel.SetTableMode(ctxPanel, m.TableMode)
+					a.leftPanel.SetColumnsMode(ctxPanel, m.Columns)
+					a.leftPanel.SetObjectOrder(ctxPanel, m.ObjectsOrder)
+					a.syncPanelConfig(a.leftPanel)
+					cancelPanel()
+					if a.leftNav != nil {
+						if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
+							rf.Refresh()
+						}
+						ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
+						a.leftPanel.RefreshFolder(ctxRefresh)
+						cancelRefresh()
+					}
 				} else {
-					a.cfg.Objects.Columns = "normal"
-				}
-				// Save objects order
-				a.cfg.Objects.Order = m.ObjectsOrder
-				_ = appconfig.Save(a.cfg)
-			}
-			if a.activePanel == 0 {
-				ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
-				a.leftPanel.SetTableMode(ctxPanel, m.TableMode)
-				a.leftPanel.SetColumnsMode(ctxPanel, m.Columns)
-				a.leftPanel.SetObjectOrder(ctxPanel, m.ObjectsOrder)
-				a.syncPanelConfig(a.leftPanel)
-				cancelPanel()
-				if a.leftNav != nil {
-					if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
-						rf.Refresh()
+					ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
+					a.rightPanel.SetTableMode(ctxPanel, m.TableMode)
+					a.rightPanel.SetColumnsMode(ctxPanel, m.Columns)
+					a.rightPanel.SetObjectOrder(ctxPanel, m.ObjectsOrder)
+					a.syncPanelConfig(a.rightPanel)
+					cancelPanel()
+					if a.rightNav != nil {
+						if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
+							rf.Refresh()
+						}
+						ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
+						a.rightPanel.RefreshFolder(ctxRefresh)
+						cancelRefresh()
 					}
-					ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
-					a.leftPanel.RefreshFolder(ctxRefresh)
-					cancelRefresh()
 				}
-			} else {
-				ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
-				a.rightPanel.SetTableMode(ctxPanel, m.TableMode)
-				a.rightPanel.SetColumnsMode(ctxPanel, m.Columns)
-				a.rightPanel.SetObjectOrder(ctxPanel, m.ObjectsOrder)
-				a.syncPanelConfig(a.rightPanel)
-				cancelPanel()
-				if a.rightNav != nil {
-					if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
-						rf.Refresh()
-					}
-					ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
-					a.rightPanel.RefreshFolder(ctxRefresh)
-					cancelRefresh()
+				if m.Close {
+					a.modalManager.Hide()
 				}
+				return a, nil
 			}
-			if m.Close {
-				a.modalManager.Hide()
+			model, cmd := a.modalManager.Update(msg)
+			a.modalManager = model.(*ModalManager)
+			cmds = append(cmds, cmd)
+			// While a modal is open, still forward non-key messages to the
+			// terminal (process output, window size). Background is snapshotted,
+			// so this stays light and keeps the 2-line terminal fresh.
+			if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
+				tmodel, tcmd := a.terminal.Update(msg)
+				a.terminal = tmodel.(*Terminal)
+				cmds = append(cmds, tcmd)
 			}
-			return a, nil
+			return a, tea.Batch(cmds...)
 		}
-		model, cmd := a.modalManager.Update(msg)
-		a.modalManager = model.(*ModalManager)
-		cmds = append(cmds, cmd)
-		// While a modal is open, still forward non-key messages to the
-		// terminal (process output, window size). Background is snapshotted,
-		// so this stays light and keeps the 2-line terminal fresh.
-		if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
-			tmodel, tcmd := a.terminal.Update(msg)
-			a.terminal = tmodel.(*Terminal)
-			cmds = append(cmds, tcmd)
-		}
-		return a, tea.Batch(cmds...)
 	}
 
 	// Check if terminal process has exited (check on every message)
@@ -677,6 +681,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case PanelSelectionChangedMsg:
+		if panel := msg.Panel; panel != nil {
+			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+			panel.NotifySelection(ctxSel, msg.SelectionID)
+			cancelSel()
+		}
 		return a, nil
 	case PanelModeSelectedMsg:
 		if panel := a.panelByIndex(msg.PanelIndex); panel != nil {

@@ -53,3 +53,26 @@ func TestIndependentPanelNavigation(t *testing.T) {
 		t.Fatalf("left panel path changed to %q", got)
 	}
 }
+
+func TestPanelModeModalSwitchesMode(t *testing.T) {
+	a := NewApp()
+	ctx := t.Context()
+	a.leftPanel.UseFolder(true)
+	a.leftPanel.SetFolder(ctx, mkFolder("root"), false)
+	if cmd := a.showPanelModeModal(0); cmd != nil {
+		if msg := cmd(); msg != nil {
+			a.Update(msg)
+		}
+	}
+	if !a.modalManager.IsModalVisible() {
+		t.Fatalf("mode modal not visible")
+	}
+	// Simulate modal selection callback.
+	a.Update(PanelModeSelectedMsg{PanelIndex: 0, Mode: PanelModeManifest})
+	if a.leftPanel.Mode() != PanelModeManifest {
+		t.Fatalf("panel mode = %v, want manifest", a.leftPanel.Mode())
+	}
+	if a.modalManager.IsModalVisible() {
+		t.Fatalf("mode modal still visible after selection")
+	}
+}
