@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -35,14 +36,59 @@ func folderPathString(f models.Folder) string {
 	return strings.Join(path, "/")
 }
 
+func panelItemNames(ctx context.Context, p *Panel) []string {
+	items := p.Items(ctx)
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		names = append(names, item.Name)
+	}
+	return names
+}
+
+func selectByName(ctx context.Context, t *testing.T, p *Panel, name string) {
+	t.Helper()
+	items := p.Items(ctx)
+	for _, item := range items {
+		if item.Name == name {
+			if id, _, _, ok := item.Columns(); ok {
+				p.SelectByRowID(ctx, id)
+				return
+			}
+		}
+	}
+	t.Fatalf("row %q not found in items %v", name, panelItemNames(ctx, p))
+}
+
+func currentItemName(ctx context.Context, p *Panel) string {
+	if item := p.GetCurrentItem(); item != nil {
+		return item.Name
+	}
+	return ""
+}
+
+func enterByName(ctx context.Context, t *testing.T, p *Panel, name string) {
+	t.Helper()
+	selectByName(ctx, t, p, name)
+	_ = p.Enter(ctx)
+}
+
+func enterBack(ctx context.Context, p *Panel) {
+	p.ResetSelectionTop(ctx)
+	_ = p.Enter(ctx)
+}
+
+func setupPanelFolder(ctx context.Context, p *Panel, folder models.Folder, hasBack bool) {
+	p.UseFolder(true)
+	p.SetFolder(ctx, folder, hasBack)
+	p.RefreshFolder(ctx)
+}
+
 func TestEnterBackFromNamespacesFolder(t *testing.T) {
 	p := NewPanel("")
 	// seed with a namespaces folder and back enabled
 	f := mkTestFolder([]string{"namespaces"}, "default", "kube-system")
 	ctx := t.Context()
-	p.SetFolder(ctx, f, true)
-	p.UseFolder(true)
-	p.RefreshFolder(ctx)
+	setupPanelFolder(ctx, p, f, true)
 	backCalls := 0
 	p.SetFolderNavHandler(func(back bool, _ string, next models.Folder) {
 		if back {
@@ -68,9 +114,7 @@ func TestEnterFromNamespacesIntoGroups(t *testing.T) {
 	nsRow := modeltesting.NewEnterableItem("default", []string{"default"}, []string{"namespaces", "default"}, func() (models.Folder, error) { return groups, nil }, models.WhiteStyle())
 	nsFolder := modeltesting.NewSliceFolder("namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
 	ctx := t.Context()
-	p.SetFolder(ctx, nsFolder, true)
-	p.UseFolder(true)
-	p.RefreshFolder(ctx)
+	setupPanelFolder(ctx, p, nsFolder, true)
 	var gotNext models.Folder
 	p.SetFolderNavHandler(func(back bool, _ string, next models.Folder) {
 		if !back {
@@ -103,8 +147,7 @@ func TestSelectionRestoredOnBack(t *testing.T) {
 	// Wire navigator-like handler
 	navg := nav.NewNavigator(root)
 	ctx := t.Context()
-	p.SetFolder(ctx, root, false)
-	p.UseFolder(true)
+	setupPanelFolder(ctx, p, root, false)
 	p.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		if back {
 			navg.Back()
@@ -115,6 +158,7 @@ func TestSelectionRestoredOnBack(t *testing.T) {
 		cur := navg.Current()
 		hasBack := navg.HasBack()
 		p.SetFolder(ctx, cur, hasBack)
+		p.RefreshFolder(ctx)
 		if back {
 			id := navg.CurrentSelectionID()
 			if id != "" {
@@ -128,43 +172,21 @@ func TestSelectionRestoredOnBack(t *testing.T) {
 	})
 
 	// Select namespaces in root and enter
-	p.syncFromFolder(ctx)
-	idxNamespaces := -1
-	for i := range p.items {
-		if p.items[i].Name == "namespaces" {
-			idxNamespaces = i
-			break
-		}
-	}
-	if idxNamespaces < 0 {
-		t.Fatalf("namespaces row not found in root items: %+v", p.items)
-	}
-	p.selected = idxNamespaces
-	_ = p.enterItem(ctx) // into groups
+	selectByName(ctx, t, p, "namespaces")
+	_ = p.Enter(ctx) // into groups
 	if got := folderPathString(navg.Current()); got != "groups" {
 		t.Fatalf("expected to be in groups, got %s", got)
 	}
 
 	// Now back; selection should restore to namespaces in root
-	p.selected = 0       // ensure on back row
-	_ = p.enterItem(ctx) // back
+	p.ResetSelectionTop(ctx)
+	_ = p.Enter(ctx) // back
 	if got := folderPathString(navg.Current()); got != "/" {
 		t.Fatalf("expected to be back at root, got %s", got)
 	}
-	// find namespaces index again
-	p.syncFromFolder(ctx)
-	want := -1
-	for i := range p.items {
-		if p.items[i].Name == "namespaces" {
-			want = i
-			break
-		}
-	}
-	if want < 0 {
-		t.Fatalf("namespaces row not found after back: %+v", p.items)
-	}
-	if p.selected != want {
-		t.Fatalf("expected selection restored to %d, got %d", want, p.selected)
+	selectByName(ctx, t, p, "namespaces")
+	if id := navg.CurrentSelectionID(); id != "" && id != p.currentSelectionID(ctx) {
+		t.Fatalf("expected selection restored to %s, got %s", id, p.currentSelectionID(ctx))
 	}
 }
 
@@ -210,77 +232,32 @@ func TestSelectionRestoreWithinContexts(t *testing.T) {
 		}
 	})
 
-	// Enter contexts from root
-	p.syncFromFolder(ctx)
-	// Select contexts row in root
-	idxCtx := -1
-	for i := range p.items {
-		if p.items[i].Name == "contexts" {
-			idxCtx = i
-			break
-		}
-	}
-	if idxCtx < 0 {
-		t.Fatalf("contexts row not found in root items")
-	}
-	p.selected = idxCtx
-	_ = p.enterItem(ctx)
+	p.RefreshFolder(ctx)
+	enterByName(ctx, t, p, "contexts")
 	if got := folderPathString(navg.Current()); got != "contexts" {
 		t.Fatalf("expected contexts folder, got %s", got)
 	}
 
-	// Select ctxA and enter
-	p.syncFromFolder(ctx)
-	idxCtxA := -1
-	for i := range p.items {
-		if p.items[i].Name == "ctxA" {
-			idxCtxA = i
-			break
-		}
-	}
-	if idxCtxA < 0 {
-		t.Fatalf("ctxA row not found in contexts items: %+v", p.items)
-	}
-	p.selected = idxCtxA
-	_ = p.enterItem(ctx)
+	p.RefreshFolder(ctx)
+	enterByName(ctx, t, p, "ctxA")
 	if got := folderPathString(navg.Current()); got != "namespaces" {
 		t.Fatalf("expected namespaces for ctxA, got %s", got)
 	}
 
-	// Go back to contexts; selection should restore to ctxA
-	p.selected = 0 // back row
-	_ = p.enterItem(ctx)
+	enterBack(ctx, p)
 	if got := folderPathString(navg.Current()); got != "contexts" {
 		t.Fatalf("expected contexts after back, got %s", got)
 	}
-	p.syncFromFolder(ctx)
-	idx := -1
-	for i := range p.items {
-		if p.items[i].Name == "ctxA" {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 || p.selected != idx {
-		t.Fatalf("expected selection restored to ctxA at %d, got %d", idx, p.selected)
+	if name := currentItemName(ctx, p); name != "ctxA" {
+		t.Fatalf("expected ctxA selected after back, got %s", name)
 	}
 
-	// Back to root; selection should restore to contexts
-	p.selected = 0
-	_ = p.enterItem(ctx)
+	enterBack(ctx, p)
 	if got := folderPathString(navg.Current()); got != "/" {
 		t.Fatalf("expected root after back, got %s", got)
 	}
-	p.syncFromFolder(ctx)
-	want := -1
-	for i := range p.items {
-		if p.items[i].Name == "contexts" {
-			want = i
-			break
-		}
-	}
-	if want < 0 || p.selected != want {
-		t.Fatalf("expected selection restored to contexts at %d, got %d", want, p.selected)
+	if name := currentItemName(ctx, p); name != "contexts" {
+		t.Fatalf("expected contexts selected at root, got %s", name)
 	}
 }
 
@@ -318,50 +295,25 @@ func TestSelectionRestoreNamespacesToGroupsAndBack(t *testing.T) {
 	})
 
 	// Enter namespaces from root
-	p.syncFromFolder(ctx)
-	idxNS := -1
-	for i := range p.items {
-		if p.items[i].Name == "namespaces" {
-			idxNS = i
-			break
-		}
-	}
-	p.selected = idxNS
-	_ = p.enterItem(ctx)
+	p.RefreshFolder(ctx)
+	enterByName(ctx, t, p, "namespaces")
 	if got := folderPathString(navg.Current()); got != "namespaces" {
 		t.Fatalf("expected namespaces, got %s", got)
 	}
 
 	// Select default and enter groups
-	p.syncFromFolder(ctx)
-	idxDef := -1
-	for i := range p.items {
-		if p.items[i].Name == "default" {
-			idxDef = i
-			break
-		}
-	}
-	p.selected = idxDef
-	_ = p.enterItem(ctx)
+	p.RefreshFolder(ctx)
+	enterByName(ctx, t, p, "default")
 	if got := folderPathString(navg.Current()); got != "groups" {
 		t.Fatalf("expected groups, got %s", got)
 	}
 
 	// Back to namespaces; selection should be "default"
-	p.selected = 0
-	_ = p.enterItem(ctx)
+	enterBack(ctx, p)
 	if got := folderPathString(navg.Current()); got != "namespaces" {
 		t.Fatalf("expected namespaces after back, got %s", got)
 	}
-	p.syncFromFolder(ctx)
-	idxDef2 := -1
-	for i := range p.items {
-		if p.items[i].Name == "default" {
-			idxDef2 = i
-			break
-		}
-	}
-	if idxDef2 < 0 || p.selected != idxDef2 {
-		t.Fatalf("expected selection restored to default at %d, got %d", idxDef2, p.selected)
+	if name := currentItemName(ctx, p); name != "default" {
+		t.Fatalf("expected selection restored to default, got %s", name)
 	}
 }

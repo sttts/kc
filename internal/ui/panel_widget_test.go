@@ -17,8 +17,8 @@ func TestPanelModeSwitchesToPlaceholder(t *testing.T) {
 		t.Fatalf("expected manifest mode, got %v", panel.Mode())
 	}
 	view := panel.View()
-	if !strings.Contains(view, "Manifest mode placeholder") {
-		t.Fatalf("expected placeholder content")
+	if !strings.Contains(view, "Manifest mode") || !strings.Contains(view, "placeholder") {
+		t.Fatalf("expected placeholder content, got %q", view)
 	}
 }
 

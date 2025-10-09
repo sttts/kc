@@ -56,11 +56,9 @@ func TestPanelSetFolderUsesServerColumns(t *testing.T) {
 	ctx := t.Context()
 	p.SetDimensions(ctx, 80, 20)
 	p.SetFolder(ctx, ff, false)
-	if p.bt == nil {
-		t.Fatalf("bigtable not initialized")
-	}
-	if len(p.lastColTitles) < 2 {
-		t.Fatalf("expected >=2 columns, got %v", p.lastColTitles)
+	cols := p.ColumnTitles(ctx)
+	if len(cols) < 2 {
+		t.Fatalf("expected >=2 columns, got %v", cols)
 	}
 }
 
@@ -72,14 +70,14 @@ func TestPanelRefreshFolderRebuildsOnColumnChange(t *testing.T) {
 	ctx := t.Context()
 	p.SetDimensions(ctx, 80, 20)
 	p.SetFolder(ctx, ff, false)
-	if len(p.lastColTitles) != 1 {
-		t.Fatalf("expected 1 column initially, got %d", len(p.lastColTitles))
+	if cols := p.ColumnTitles(ctx); len(cols) != 1 {
+		t.Fatalf("expected 1 column initially, got %d", len(cols))
 	}
 	// Change folder columns to simulate server-side table columns arriving
 	ff.cols = []table.Column{{Title: "Name"}, {Title: "Ready"}, {Title: "Status"}}
 	// Trigger refresh; Panel should compare and rebuild
 	p.RefreshFolder(ctx)
-	if want, got := 3, len(p.lastColTitles); got != want {
-		t.Fatalf("expected %d columns after refresh, got %d (%v)", want, got, p.lastColTitles)
+	if cols := p.ColumnTitles(ctx); len(cols) != 3 {
+		t.Fatalf("expected 3 columns after refresh, got %d (%v)", len(cols), cols)
 	}
 }

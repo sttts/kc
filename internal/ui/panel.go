@@ -634,6 +634,9 @@ func (p *Panel) GetCurrentItem() *Item {
 // Items returns the current list items snapshot.
 func (p *Panel) Items(ctx context.Context) []Item {
 	if lw := p.listWidget(ctx); lw != nil {
+		if ctx != nil {
+			lw.RefreshFolder(ctx)
+		}
 		return lw.Items()
 	}
 	return nil
@@ -645,17 +648,4 @@ func (p *Panel) ColumnTitles(ctx context.Context) []string {
 		return lw.ColumnTitles()
 	}
 	return nil
-}
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

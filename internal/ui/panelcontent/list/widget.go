@@ -234,6 +234,7 @@ func (w *Widget) SetFolder(ctx context.Context, f models.Folder, hasBack bool) {
 	} else {
 		w.bt = nil
 	}
+	w.syncFromFolder(ctx)
 }
 
 func (w *Widget) SetFolderNavHandler(h func(back bool, selID string, next models.Folder)) {
@@ -284,6 +285,7 @@ func (w *Widget) RefreshFolder(ctx context.Context) {
 		w.bt.SetList(ctx, w.folder)
 		w.bt.Refresh(ctx)
 	}
+	w.syncFromFolder(ctx)
 }
 
 func (w *Widget) SetResourceViewOptions(showNonEmpty bool, order string) {

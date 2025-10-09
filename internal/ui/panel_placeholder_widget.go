@@ -30,11 +30,17 @@ func (w *placeholderWidget) View(ctx context.Context, frame panelcontent.Frame) 
 	}
 	width := frame.Size.Width
 	if width <= 0 {
-		width = max(1, w.panel.width)
+		width = w.panel.width
+	}
+	if width <= 0 {
+		width = 1
 	}
 	height := frame.Size.Height
 	if height <= 0 {
-		height = max(1, w.panel.height)
+		height = w.panel.height
+	}
+	if height <= 0 {
+		height = 1
 	}
 	content := w.message
 	if content == "" {
