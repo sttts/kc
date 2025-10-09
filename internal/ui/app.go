@@ -779,7 +779,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// In fullscreen mode, let Esc+0 go to terminal
 			case "1":
 				a.escPressed = false
-				return a, a.showHelp() // Esc 1 = F1
+				if caps.HasHelp {
+					return a, a.showHelp() // Esc 1 = F1
+				}
+				return a, nil
 			case "2":
 				a.escPressed = false
 				if panel != nil {
@@ -833,7 +836,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			case "9":
 				a.escPressed = false
-				if panel != nil {
+				if panel != nil && caps.HasContextMenu {
 					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 					cmd := panel.invokeActionIfAllowed(ctx, PanelActionMenu)
 					cancel()
@@ -1464,10 +1467,7 @@ func (a *App) setupPanelInputs() {
 }
 
 func (a *App) panelActionHandlers() PanelActionHandlers {
-	return PanelActionHandlers{
-		PanelActionHelp: func(*Panel) tea.Cmd {
-			return a.showHelp()
-		},
+	handlers := PanelActionHandlers{
 		PanelActionOptions: func(p *Panel) tea.Cmd {
 			return a.showViewOptionsModalForPanel(p)
 		},
@@ -1483,10 +1483,10 @@ func (a *App) panelActionHandlers() PanelActionHandlers {
 		PanelActionDelete: func(p *Panel) tea.Cmd {
 			return a.deleteResourceForPanel(p)
 		},
-		PanelActionMenu: func(p *Panel) tea.Cmd {
-			return a.showContextMenuForPanel(p)
-		},
 	}
+	// Help (F1) and context menu (F9) are intentionally omitted until the
+	// corresponding features are implemented (see showHelp/showContextMenuForPanel).
+	return handlers
 }
 
 func (a *App) panelEnvironment() PanelEnvironment {
@@ -2518,6 +2518,7 @@ func (a *App) goToNamespace(ns string) {
 	if ns == "" {
 		ns = "default"
 	}
+	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace")
 	leftCfg := a.ensurePanelConfig(a.leftPanel)
 	rightCfg := a.ensurePanelConfig(a.rightPanel)
 	a.syncPanelConfig(a.leftPanel)
@@ -2535,48 +2536,47 @@ func (a *App) goToNamespace(ns string) {
 	a.leftNav = navui.NewNavigator(rootLeft)
 	a.rightNav = navui.NewNavigator(rootRight)
 	if a.namespaceExists(ns) {
-		// Left panel: remember selection when entering
-		a.leftNav.SetSelectionID("namespaces")
-		leftNSPath := append(append([]string{}, rootLeft.Path()...), "namespaces")
-		leftNS := models.NewClusterObjectsFolder(depsLeft, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, leftNSPath)
-		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-			defer cancel()
-			_ = leftNS.Len(ctx)
-			return nil
-		}))
-		a.leftNav.Push(leftNS)
-		a.leftNav.SetSelectionID(ns)
-		leftGroupsPath := append(append([]string{}, leftNSPath...), ns)
-		leftGroups := models.NewNamespacedResourcesFolder(depsLeft, ns, leftGroupsPath)
-		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-			defer cancel()
-			_ = leftGroups.Len(ctx)
-			return nil
-		}))
-		a.leftNav.Push(leftGroups)
-		// Right panel: same
-		a.rightNav.SetSelectionID("namespaces")
-		rightNSPath := append(append([]string{}, rootRight.Path()...), "namespaces")
-		rightNS := models.NewClusterObjectsFolder(depsRight, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, rightNSPath)
-		a.enqueueCmd(a.withBusy("Namespaces", 800*time.Millisecond, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-			defer cancel()
-			_ = rightNS.Len(ctx)
-			return nil
-		}))
-		a.rightNav.Push(rightNS)
-		a.rightNav.SetSelectionID(ns)
-		rightGroupsPath := append(append([]string{}, rightNSPath...), ns)
-		rightGroups := models.NewNamespacedResourcesFolder(depsRight, ns, rightGroupsPath)
-		a.enqueueCmd(a.withBusy("Resources", 800*time.Millisecond, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-			defer cancel()
-			_ = rightGroups.Len(ctx)
-			return nil
-		}))
-		a.rightNav.Push(rightGroups)
+		namespaceSteps := []navui.GoToStep{
+			{SelectionID: "namespaces", Enter: true},
+			{SelectionID: ns, Enter: true},
+		}
+		enqueuePreload := func(label string, folder models.Folder) {
+			if folder == nil {
+				return
+			}
+			a.enqueueCmd(a.withBusy(label, 800*time.Millisecond, func() tea.Msg {
+				ctxBusy, cancelBusy := context.WithTimeout(a.ctx, panelContextTimeout)
+				defer cancelBusy()
+				_ = folder.Len(ctxBusy)
+				return nil
+			}))
+		}
+		ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
+		leftResult, err := navui.GoTo(ctxLeft, a.leftNav, namespaceSteps)
+		cancelLeft()
+		if err != nil {
+			log.Error(err, "failed to navigate left panel", "panel", "left", "namespace", ns)
+		} else {
+			if len(leftResult.Entered) > 0 {
+				enqueuePreload("Namespaces", leftResult.Entered[0])
+			}
+			if len(leftResult.Entered) > 1 {
+				enqueuePreload("Resources", leftResult.Entered[1])
+			}
+		}
+		ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
+		rightResult, err := navui.GoTo(ctxRight, a.rightNav, namespaceSteps)
+		cancelRight()
+		if err != nil {
+			log.Error(err, "failed to navigate right panel", "panel", "right", "namespace", ns)
+		} else {
+			if len(rightResult.Entered) > 0 {
+				enqueuePreload("Namespaces", rightResult.Entered[0])
+			}
+			if len(rightResult.Entered) > 1 {
+				enqueuePreload("Resources", rightResult.Entered[1])
+			}
+		}
 	}
 	curL := a.leftNav.Current()
 	hasBackL := a.leftNav.HasBack()

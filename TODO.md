@@ -26,7 +26,7 @@ Hierarchy refactor and tests — ordered
 - [ ] Navigation: move folder implementations into `internal/navigation/folders/` (one type per file) with the shared `ResourcesFolder` and `ObjectsFolder` bases; make `RootFolder` and `ContextRootFolder` embed `ClusterResourcesFolder` and rename `NamespacedGroupsFolder`→`NamespacedResourcesFolder`.
 - [ ] Navigation: make Folders self‑sufficient. Each Folder lazily populates its rows from injected Deps and Enterable rows return the next Folder. Base folders emit a synthetic ".." row whenever their path is non-empty.
 - [ ] Extract UI‑agnostic Folder constructors into `internal/navigation` with a small `Deps` bundle (ResMgr, Store, CtxName). Remove row‑building from the UI.
-- [ ] Programmatic goto (namespaces): implement simple Enter‑driven path stepping for `/namespaces/<ns>` without builders.
+- [x] Programmatic goto (namespaces): implement simple Enter‑driven path stepping for `/namespaces/<ns>` without builders.
 - [ ] Envtest integration tests: start apiserver, seed ns/configmap/secret/node; verify walking Root → Namespaces → Groups → Objects → Keys; Back to parent; cluster‑scoped list. Tests only import navigation/internal/cluster/table (no UI).
 - [ ] Item/view refactor:
   - [x] Introduce `RowItem`/`ObjectItem` hierarchy (NamespaceItem, PodItem, ConfigMapItem, SecretItem, ContextItem, ContextListItem, ResourceGroupItem, ConfigKeyItem, ContainerItem, BackItem) with `ViewContent` + optional `Enter`.
@@ -41,7 +41,7 @@ Detailed next steps (post‑compaction anchors)
   - Groups: `nav.NewNamespacedResourcesFolder(deps, ns, []string{"namespaces", ns})`
   - Objects (namespaced/cluster): `nav.NewNamespacedObjectsFolder(deps, gvr, ns, []string{"namespaces", ns, gvr.Resource})` / `nav.NewClusterObjectsFolder(deps, gvr, []string{gvr.Resource})`
   - Virtual children (pods/configmaps/secrets): use the GVR→child registry; no string comparisons.
-- [ ] Programmatic goto for namespaces without builders:
+- [x] Programmatic goto for namespaces without builders:
   - Parse target `/namespaces/<ns>`; compose Enter steps by scanning rows for the ID and calling `Enter()`.
   - Fallbacks: missing ns ⇒ root. On success, set navigator selection to the `/<ns>` row ID.
 - [ ] Live updates via controller‑runtime cache informers (no custom Store):
