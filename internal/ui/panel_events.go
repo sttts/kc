@@ -13,6 +13,12 @@ type PanelSelectionChangedMsg struct {
 	Path        string
 }
 
+// PanelModeSelectedMsg is emitted when the panel mode chooser confirms a selection.
+type PanelModeSelectedMsg struct {
+	PanelIndex int
+	Mode       PanelViewMode
+}
+
 func (p *Panel) selectionChangedCmd(ctx context.Context) tea.Cmd {
 	if p == nil {
 		return nil

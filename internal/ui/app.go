@@ -238,6 +238,23 @@ func (a *App) panelByIndex(idx int) *Panel {
 	return a.leftPanel
 }
 
+func (a *App) panelAreaMetrics() (panelWidth int, panelHeight int, headerOffset int) {
+	reserved := 3
+	if a.toastActive {
+		reserved++
+	}
+	panelHeight = a.height - reserved
+	if panelHeight < 0 {
+		panelHeight = 0
+	}
+	panelWidth = a.width / 2
+	if panelWidth < 0 {
+		panelWidth = 0
+	}
+	headerOffset = 2
+	return
+}
+
 func (a *App) syncPanelConfig(panel *Panel) {
 	cfg := a.ensurePanelConfig(panel)
 	cfg.Resources.ShowNonEmptyOnly = panel.resShowNonEmpty
@@ -625,6 +642,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case PanelSelectionChangedMsg:
 		return a, nil
+	case PanelModeSelectedMsg:
+		if panel := a.panelByIndex(msg.PanelIndex); panel != nil {
+			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+			modeCmd := panel.SetMode(ctx, msg.Mode)
+			cancel()
+			if modeCmd != nil {
+				cmds = append(cmds, modeCmd)
+			}
+			a.syncPanelConfig(panel)
+			if nav := a.navigatorForPanel(panel); nav != nil {
+				if rf, ok := nav.Current().(interface{ Refresh() }); ok {
+					rf.Refresh()
+				}
+			}
+		}
+		a.modalManager.Hide()
+		return a, tea.Batch(cmds...)
 	case resourceDeletedMsg:
 		if msg.err != nil {
 			if a.toastLogger != nil {
@@ -664,9 +698,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle global shortcuts first
 		switch msg.String() {
 		case "alt+f1", "ctrl+1":
-			return a, a.cyclePanelMode(0)
+			return a, a.showPanelModeModal(0)
 		case "alt+f2", "ctrl+2":
-			return a, a.cyclePanelMode(1)
+			return a, a.showPanelModeModal(1)
 		case "ctrl+o":
 			// Toggle terminal mode
 			a.showTerminal = !a.showTerminal
@@ -820,145 +854,70 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+
 	default:
-		// Mouse and other messages
 		if mm, ok := msg.(tea.MouseMsg); ok {
-			// In fullscreen terminal mode, intercept clicks on the toggle message
 			if a.showTerminal {
-				// Never forward mouse events that occur on the bottom toggle line
 				m := mm.Mouse()
 				if m.Y == a.height-1 {
 					if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
-						// Toggle back to panels on release
 						a.showTerminal = false
 						a.terminal.SetShowPanels(true)
 					}
-					// Swallow all mouse events on the toggle line
 					return a, nil
 				}
-				// Forward all other mouse events to the terminal in fullscreen
 				model, cmd := a.terminal.Update(mm)
 				a.terminal = model.(*Terminal)
 				cmds = append(cmds, cmd)
 				return a, tea.Batch(cmds...)
 			}
-			// Panel mode: only act on specific mouse messages; do NOT forward
-			// any mouse events to the terminal while panels are visible to
-			// avoid escape sequences leaking into the 2‑line terminal view.
-			switch e := mm.(type) {
-			case tea.MouseWheelMsg:
-				m := e.Mouse()
-				target := a.leftPanel
-				if a.activePanel == 1 {
-					target = a.rightPanel
+			m := mm.Mouse()
+			if m.Y == a.height-1 {
+				if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
+					if cmd := a.handleFunctionKeyClick(m.X); cmd != nil {
+						return a, cmd
+					}
 				}
-				ctxWheel, cancelWheel := context.WithTimeout(a.ctx, panelContextTimeout)
-				switch m.Button {
-				case tea.MouseWheelUp:
-					target.moveUp(ctxWheel)
-				case tea.MouseWheelDown:
-					target.moveDown(ctxWheel)
+				return a, nil
+			}
+			if cmd, panel, panelMsg, panelIdx, handled := a.dispatchPanelMouse(mm); handled {
+				if cmd != nil {
+					cmds = append(cmds, cmd)
 				}
-				cancelWheel()
-				return a, tea.Batch(cmds...)
-			case tea.MouseClickMsg:
-				m := e.Mouse()
-				x, y := m.X, m.Y
-				panelHeight := a.height - 3
-				panelWidth := a.width / 2
-				if y < panelHeight {
-					// Click inside panels area
-					if x >= panelWidth {
-						a.activePanel = 1
-					} else {
-						a.activePanel = 0
-					}
-					contentY := y - 2 // 1 for frame top, 1 for header
-					if contentY < 0 {
-						contentY = 0
-					}
-					target := a.leftPanel
-					if a.activePanel == 1 {
-						target = a.rightPanel
-					}
-					// Right-click: open context menu (future wiring)
-					if m.Button == tea.MouseRight {
-						return a, a.showContextMenu()
-					}
-					// Left-click: select row under cursor
-					var clickedID string
-					if target.useFolder && target.folder != nil && target.bt != nil {
-						if id, ok := target.bt.VisibleRowID(contentY); ok {
-							clickedID = id
-							ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-							target.SelectByRowID(ctxSel, id)
-							cancelSel()
-						}
-					} else {
-						idx := target.scrollTop + contentY
-						if idx < 0 {
-							idx = 0
-						}
-						if idx >= len(target.items) {
-							idx = len(target.items) - 1
-						}
-						if idx >= 0 && len(target.items) > 0 {
-							target.selected = idx
-							target.adjustScroll()
-						}
-					}
-					// Double-click detection
-					if clickedID != "" {
+				if panelMsg.Type == PanelMouseClick && panelMsg.Button == tea.MouseLeft && panel != nil {
+					ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+					selectionID := panel.currentSelectionID(ctxSel)
+					cancelSel()
+					if selectionID != "" {
 						now := time.Now()
 						timeout := a.cfg.Input.Mouse.DoubleClickTimeout.Duration
-						if a.lastClickRowID == clickedID && a.lastClickPanel == a.activePanel && now.Sub(a.lastClickTime) <= timeout {
+						if timeout <= 0 {
+							timeout = 300 * time.Millisecond
+						}
+						if a.lastClickRowID == selectionID && a.lastClickPanel == panelIdx && now.Sub(a.lastClickTime) <= timeout {
 							a.lastClickTime = time.Time{}
 							a.lastClickRowID = ""
 							ctxEnter, cancelEnter := context.WithTimeout(a.ctx, panelContextTimeout)
-							if cmd := target.enterItem(ctxEnter); cmd != nil {
-								cancelEnter()
-								return a, cmd
-							}
+							enterCmd := panel.enterItem(ctxEnter)
 							cancelEnter()
+							if enterCmd != nil {
+								return a, enterCmd
+							}
 						} else {
 							a.lastClickTime = now
-							a.lastClickPanel = a.activePanel
-							a.lastClickRowID = clickedID
+							a.lastClickPanel = panelIdx
+							a.lastClickRowID = selectionID
 						}
-					} else {
-						a.lastClickTime = time.Now()
-						a.lastClickPanel = a.activePanel
-						a.lastClickRowID = ""
 					}
-					return a, tea.Batch(cmds...)
 				}
-				// Ignore click on function key bar; act on release instead (below)
-				if y == a.height-1 {
-					return a, tea.Batch(cmds...)
-				}
-				return a, tea.Batch(cmds...)
-			case tea.MouseReleaseMsg:
-				m := e.Mouse()
-				x, y := m.X, m.Y
-				// Function key bar (act on release only)
-				if y == a.height-1 {
-					if cmd := a.handleFunctionKeyClick(x); cmd != nil {
-						return a, cmd
-					}
-					return a, tea.Batch(cmds...)
-				}
-				// Swallow click messages not on bars/panels
-				return a, tea.Batch(cmds...)
-			default:
-				// Mouse motion/release and any other mouse-related events are
-				// swallowed in panel mode.
 				return a, tea.Batch(cmds...)
 			}
+			return a, tea.Batch(cmds...)
 		}
-		// Pass other messages to terminal (e.g., process exit)
 		model, cmd := a.terminal.Update(msg)
 		a.terminal = model.(*Terminal)
 		cmds = append(cmds, cmd)
+
 	}
 
 	return a, tea.Batch(cmds...)
@@ -1435,6 +1394,13 @@ func (a *App) setupModals() {
 	delModal.SetCloseOnSingleEsc(true)
 	a.modalManager.Register("delete_confirm", delModal)
 	a.deleteConfirm = delModel
+
+	for idx := 0; idx < 2; idx++ {
+		modeModel := NewPanelModeModel(idx, []PanelViewMode{PanelModeList}, PanelModeList)
+		modeModal := NewModal("Panel Mode", modeModel)
+		modeModal.SetCloseOnSingleEsc(true)
+		a.modalManager.Register(panelModeModalKey(idx), modeModal)
+	}
 }
 
 func (a *App) setupPanelInputs() {
@@ -1523,6 +1489,100 @@ func (a *App) cyclePanelMode(idx int) tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	return panel.SetMode(ctx, next)
+}
+
+func panelModeModalKey(idx int) string {
+	if idx == 0 {
+		return "panel_mode_left"
+	}
+	return "panel_mode_right"
+}
+
+func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
+	panel := a.panelByIndex(panelIdx)
+	if panel == nil {
+		return nil
+	}
+	modes := panel.AvailableModes()
+	if len(modes) == 0 {
+		modes = []PanelViewMode{PanelModeList}
+	}
+	model := NewPanelModeModel(panelIdx, modes, panel.Mode())
+	key := panelModeModalKey(panelIdx)
+	modal := a.modalManager.modals[key]
+	if modal == nil {
+		modal = NewModal("Panel Mode", model)
+		modal.SetCloseOnSingleEsc(true)
+		a.modalManager.Register(key, modal)
+	} else {
+		modal.SetContent(model)
+	}
+	width := min(max(24, a.width/3), a.width-4)
+	height := min(max(len(modes)+4, 6), a.height-4)
+	model.SetDimensions(width-4, height-2)
+	modal.SetDimensions(a.width, a.height)
+	bg, _ := a.renderMainView()
+	modal.SetWindowed(width, height, bg)
+	modal.SetOnClose(func() tea.Cmd { return nil })
+	a.modalManager.Show(key)
+	return nil
+}
+
+func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseMsg, int, bool) {
+	panelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	m := msg.Mouse()
+	if m.Y >= panelHeight {
+		return nil, nil, PanelMouseMsg{}, 0, false
+	}
+	panelIdx := 0
+	if m.X >= panelWidth {
+		panelIdx = 1
+	}
+	panel := a.panelByIndex(panelIdx)
+	if panel == nil {
+		return nil, nil, PanelMouseMsg{}, panelIdx, false
+	}
+	relRow := m.Y - headerOffset
+	if relRow < 0 {
+		relRow = 0
+	}
+	var panelMsg PanelMouseMsg
+	switch mm := msg.(type) {
+	case tea.MouseWheelMsg:
+		delta := 0
+		switch mm.Button {
+		case tea.MouseWheelUp:
+			delta = -1
+		case tea.MouseWheelDown:
+			delta = 1
+		default:
+			return nil, nil, PanelMouseMsg{}, panelIdx, false
+		}
+		panelMsg = PanelMouseMsg{
+			Type:   PanelMouseWheel,
+			DeltaY: delta,
+		}
+	case tea.MouseClickMsg:
+		panelMsg = PanelMouseMsg{
+			Type:   PanelMouseClick,
+			Row:    relRow,
+			Button: mm.Button,
+		}
+	default:
+		return nil, nil, PanelMouseMsg{}, panelIdx, false
+	}
+	if panelIdx != a.activePanel {
+		a.activePanel = panelIdx
+	}
+	model, cmd := panel.Update(panelMsg)
+	if model != nil {
+		if panelIdx == 0 {
+			a.leftPanel = model.(*Panel)
+		} else {
+			a.rightPanel = model.(*Panel)
+		}
+	}
+	return cmd, panel, panelMsg, panelIdx, true
 }
 
 // Message handlers for function keys

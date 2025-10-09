@@ -23,10 +23,11 @@
   - Optional hooks such as `OnSelectionChanged(Selection)` or `OnThemeChanged(string)` exposed through separate interfaces; the panel shell type-asserts and calls them when relevant.
 - Widgets receive a `WidgetDeps` struct from the factory containing everything they need (cluster/client access, theme resolver, callbacks to query the opposite panel, async runner, etc.).
 - Existing behaviors migrate into dedicated widgets:
-  - **ListWidget** wraps the current folder + BigTable rendering and exposes selection updates back to the shell.
-  - **DescribeWidget** builds a describe view via helpers (see “Shared Services”) and renders it using a `TextViewer`.
-  - **ManifestWidget** reuses the `ViewContent()` contract to display YAML.
-  - **FileWidget** can later embed a navigator without touching the panel shell.
+- **ListWidget** wraps the current folder + BigTable rendering and exposes selection updates back to the shell.
+- **DescribeWidget** builds a describe view via helpers (see “Shared Services”) and renders it using a `TextViewer`.
+- **ManifestWidget** reuses the `ViewContent()` contract to display YAML.
+- **FileWidget** can later embed a navigator without touching the panel shell.
+- The app exposes a modal panel-mode picker (Alt+F1/Alt+F2, Ctrl+1/2) built on panel-provided `AvailableModes`, emitting `PanelModeSelectedMsg` to keep switching logic unified with the widget registry.
 
 ### Mode Controller
 - Implemented in `ui/app.go` to coordinate both panels.
