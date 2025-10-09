@@ -62,11 +62,11 @@ func (m *PanelModeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *PanelModeModel) View() string {
 	base := lipgloss.NewStyle().
-		Background(lipgloss.Color("238")).
-		Foreground(lipgloss.Color("255"))
+		Background(lipgloss.Color(ColorModalBg)).
+		Foreground(lipgloss.Color(ColorModalFg))
 	sel := lipgloss.NewStyle().
-		Background(lipgloss.Cyan).
-		Foreground(lipgloss.Color("0")).
+		Background(lipgloss.Color(ColorModalSelBg)).
+		Foreground(lipgloss.Color(ColorModalFg)).
 		Bold(true)
 	lines := make([]string, len(m.modes))
 	for i, mode := range m.modes {

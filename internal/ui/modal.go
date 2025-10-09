@@ -246,19 +246,38 @@ func (m *Modal) View() string {
 		}
 
 		// Compute inner dimensions and render content
-		winW := min(m.winWidth, m.width)
-		winH := min(m.winHeight, m.height-1) // leave room for footer outside
+		bgWidth, bgHeight := lipgloss.Size(base)
+		if bgWidth == 0 {
+			bgWidth = m.width
+		}
+		if bgHeight == 0 {
+			bgHeight = m.height
+		}
+		availableHeight := max(0, bgHeight-1) // leave room for footer outside
+		winW := min(m.winWidth, bgWidth)
+		if winW <= 0 {
+			winW = bgWidth
+		}
+		winH := min(m.winHeight, max(1, availableHeight))
+		if winH <= 0 {
+			winH = 1
+		}
 		innerW := max(1, winW-2)
 		innerH := max(1, winH-2)
-		windowOffsetX := (m.width - winW) / 2
-		windowOffsetY := (m.height - winH) / 2
-		windowOffsetY-- // default lift for footer clearance
+		windowOffsetX := 0
+		if bgWidth > winW {
+			windowOffsetX = (bgWidth - winW) / 2
+		}
+		windowOffsetY := 0
+		if availableHeight > winH {
+			windowOffsetY = (availableHeight - winH) / 2
+		}
 		if m.windowHasPos {
 			windowOffsetX = m.windowOffsetX
 			windowOffsetY = m.windowOffsetY
 		}
-		windowOffsetX = clampInt(windowOffsetX, 0, max(0, m.width-winW))
-		windowOffsetY = clampInt(windowOffsetY, 0, max(0, m.height-winH))
+		windowOffsetX = clampInt(windowOffsetX, 0, max(0, bgWidth-winW))
+		windowOffsetY = clampInt(windowOffsetY, 0, max(0, availableHeight-winH))
 		m.contentOffsetX = windowOffsetX + 1
 		m.contentOffsetY = windowOffsetY + 1
 		if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
@@ -271,21 +290,19 @@ func (m *Modal) View() string {
 			}
 		}
 
-		// Build window frame with requested dialog styling for settings dialogs:
-		// - Background: light grey
-		// - Foreground: black
-		// - Border: double, black
+		frameBg := lipgloss.Color(ColorModalBg)
+		frameFg := lipgloss.Color(ColorModalFg)
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.DoubleBorder()).
-			BorderForeground(lipgloss.Black).
-			BorderBackground(lipgloss.Color("250")).
-			Background(lipgloss.Color("250")).
+			BorderForeground(frameFg).
+			BorderBackground(frameBg).
+			Background(frameBg).
 			Width(winW).
 			Height(winH)
 
 		labelStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Black).
-			Background(lipgloss.Color("250")).
+			Foreground(frameFg).
+			Background(frameBg).
 			Padding(0, 1)
 		label := labelStyle.Render(m.title)
 		border := boxStyle.GetBorderStyle()
@@ -308,10 +325,10 @@ func (m *Modal) View() string {
 			right := total - left
 			top = topLeft + topBorderStyler(strings.Repeat(border.Top, left)) + label + topBorderStyler(strings.Repeat(border.Top, right)) + topRight
 		}
-		// Render inner content with dialog colors (white on dark cyan)
+		// Render inner content using modal palette.
 		inner = lipgloss.NewStyle().
-			Background(lipgloss.Color("250")).
-			Foreground(lipgloss.Black).
+			Background(frameBg).
+			Foreground(frameFg).
 			Width(innerW).
 			Height(innerH).
 			Render(inner)
@@ -327,8 +344,8 @@ func (m *Modal) View() string {
 		composed := overlay.Composite(
 			winFrame,
 			base,
-			overlay.Center, overlay.Center,
-			0, -1, // lift by 1 to keep footer free
+			overlay.Left, overlay.Top,
+			windowOffsetX, windowOffsetY,
 		)
 		bgLines := strings.Split(composed, "\n")
 		// Footer line
@@ -359,16 +376,18 @@ func (m *Modal) View() string {
 		}
 	}
 	// Build frame with overlay title (match focused panel style)
+	modalBg := lipgloss.Color(ColorModalBg)
+	modalFg := lipgloss.Color(ColorModalFg)
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue).
-		Background(lipgloss.Blue)
+		BorderForeground(modalFg).
+		BorderBackground(modalBg).
+		Background(modalBg)
 
 		// Focused panel title chip style
 	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Black).
-		Background(lipgloss.White).
+		Foreground(modalFg).
+		Background(lipgloss.Color(ColorModalSelBg)).
 		Padding(0, 1)
 	label := labelStyle.Render(m.title)
 	border := boxStyle.GetBorderStyle()

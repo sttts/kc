@@ -1521,13 +1521,26 @@ func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
 	if panelWidth <= 0 {
 		panelWidth = max(20, a.width/2)
 	}
-	width := min(max(24, panelWidth-4), a.width-4)
-	height := min(max(len(modes)+4, 6), panelHeight-2)
-	model.SetDimensions(width-4, height-3)
+	width := panelWidth / 2
+	if width < 24 {
+		width = 24
+	}
+	width = min(width, panelWidth-2)
+	width = min(width, a.width-4)
+	maxContentHeight := max(len(modes)+4, 6)
+	targetHeight := panelHeight / 2
+	if targetHeight < 6 {
+		targetHeight = 6
+	}
+	height := min(maxContentHeight, targetHeight)
+	if height < 6 {
+		height = 6
+	}
+	model.SetDimensions(max(1, width-4), max(1, height-3))
 	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
 	modal.SetWindowed(width, height, bg)
-	offsetX := panelIdx * panelWidth
+	offsetX := panelIdx*panelWidth + max(0, (panelWidth-width)/2)
 	offsetY := headerOffset
 	modal.SetWindowOffset(offsetX, offsetY)
 	modal.SetOnClose(func() tea.Cmd { return nil })
