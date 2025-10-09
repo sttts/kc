@@ -134,3 +134,11 @@ func (s *ThemeSelector) View() string {
 
 // SetOnChange sets a callback invoked when selection changes via navigation.
 func (s *ThemeSelector) SetOnChange(fn func(name string) tea.Cmd) { s.onChange = fn }
+
+// FooterHints advertises key usage for the surrounding modal.
+func (s *ThemeSelector) FooterHints() [][2]string {
+	return [][2]string{
+		{"Enter", "Apply"},
+		{"Esc", "Cancel"},
+	}
+}

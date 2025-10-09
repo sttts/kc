@@ -98,6 +98,14 @@ func (m *PanelModeModel) View() string {
 	return base.Width(m.width).Height(m.height).Render(view)
 }
 
+// FooterHints supplies modal footer hints.
+func (m *PanelModeModel) FooterHints() [][2]string {
+	return [][2]string{
+		{"Enter", "Apply"},
+		{"Esc", "Cancel"},
+	}
+}
+
 func (m *PanelModeModel) SetDimensions(width, height int) {
 	m.width = width
 	m.height = height
