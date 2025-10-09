@@ -1,6 +1,7 @@
 package kubeconfig
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,72 +52,138 @@ func NewManager() *Manager {
 	}
 }
 
-// DiscoverKubeconfigs discovers all kubeconfig files in ~/.kube
+// DiscoverKubeconfigs discovers kubeconfigs from KUBECONFIG and ~/.kube
 func (m *Manager) DiscoverKubeconfigs() error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+	m.kubeconfigs = make([]*Kubeconfig, 0)
+
+	seen := map[string]struct{}{}
+	envVar := strings.TrimSpace(os.Getenv("KUBECONFIG"))
+
+	homeDir, homeErr := os.UserHomeDir()
+
+	if envVar != "" {
+		for _, rawPath := range filepath.SplitList(envVar) {
+			rawPath = strings.TrimSpace(rawPath)
+			if rawPath == "" {
+				continue
+			}
+
+			normalized, err := normalizeKubeconfigPath(rawPath, homeDir)
+			if err != nil {
+				return fmt.Errorf("resolving kubeconfig from KUBECONFIG %q: %w", rawPath, err)
+			}
+
+			if err := m.addKubeconfig(normalized, seen); err != nil {
+				return fmt.Errorf("loading kubeconfig from KUBECONFIG %q: %w", normalized, err)
+			}
+		}
+
+		return m.buildContextsAndClusters()
+	}
+
+	if homeErr != nil {
+		return fmt.Errorf("failed to get home directory: %w", homeErr)
 	}
 
 	kubeDir := filepath.Join(homeDir, ".kube")
-
-	// Check if .kube directory exists
-	if _, err := os.Stat(kubeDir); os.IsNotExist(err) {
-		return fmt.Errorf("kube directory does not exist: %s", kubeDir)
-	}
-
-	// Load the main kubeconfig
 	mainConfigPath := filepath.Join(kubeDir, "config")
-	if _, err := os.Stat(mainConfigPath); err == nil {
-		config, err := clientcmd.LoadFromFile(mainConfigPath)
-		if err != nil {
-			return fmt.Errorf("failed to load main kubeconfig: %w", err)
-		}
 
-		kubeconfig := &Kubeconfig{
-			Path:   mainConfigPath,
-			Config: config,
-		}
-		m.kubeconfigs = append(m.kubeconfigs, kubeconfig)
+	if err := m.addKubeconfig(mainConfigPath, seen); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 
-	// Discover additional kubeconfig files
-	err = filepath.Walk(kubeDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	if _, err := os.Stat(kubeDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("kube directory does not exist: %s", kubeDir)
+		}
+		return fmt.Errorf("failed to stat kube directory: %w", err)
+	}
+
+	err := filepath.Walk(kubeDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
 
-		// Skip directories and hidden files
 		if info.IsDir() || strings.HasPrefix(info.Name(), ".") {
 			return nil
 		}
 
-		// Skip the main config file (already loaded)
 		if path == mainConfigPath {
 			return nil
 		}
 
-		// Try to load as kubeconfig
-		config, err := clientcmd.LoadFromFile(path)
-		if err != nil {
-			// Not a valid kubeconfig, skip
+		if err := m.addKubeconfig(path, seen); err != nil {
+			// Skip files that cannot be parsed as kubeconfigs
 			return nil
 		}
 
-		kubeconfig := &Kubeconfig{
-			Path:   path,
-			Config: config,
-		}
-		m.kubeconfigs = append(m.kubeconfigs, kubeconfig)
-
 		return nil
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to walk kube directory: %w", err)
 	}
 
 	return m.buildContextsAndClusters()
+}
+
+func normalizeKubeconfigPath(path, homeDir string) (string, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", fmt.Errorf("empty kubeconfig path")
+	}
+
+	if strings.HasPrefix(trimmed, "~") {
+		if homeDir == "" {
+			return "", fmt.Errorf("cannot expand ~ without home directory for %q", path)
+		}
+
+		switch trimmed {
+		case "~":
+			trimmed = homeDir
+		default:
+			sep := string(filepath.Separator)
+			if strings.HasPrefix(trimmed, "~"+sep) {
+				trimmed = filepath.Join(homeDir, trimmed[2:])
+			} else if strings.HasPrefix(trimmed, "~/") {
+				trimmed = filepath.Join(homeDir, trimmed[2:])
+			}
+		}
+	}
+
+	absPath, err := filepath.Abs(trimmed)
+	if err != nil {
+		return "", err
+	}
+	return absPath, nil
+}
+
+func (m *Manager) addKubeconfig(path string, seen map[string]struct{}) error {
+	if path == "" {
+		return fmt.Errorf("kubeconfig path is empty")
+	}
+
+	normalized := filepath.Clean(path)
+	absPath, err := filepath.Abs(normalized)
+	if err != nil {
+		return err
+	}
+
+	if _, ok := seen[absPath]; ok {
+		return nil
+	}
+
+	config, err := clientcmd.LoadFromFile(absPath)
+	if err != nil {
+		return err
+	}
+
+	kubeconfig := &Kubeconfig{
+		Path:   absPath,
+		Config: config,
+	}
+	m.kubeconfigs = append(m.kubeconfigs, kubeconfig)
+	seen[absPath] = struct{}{}
+	return nil
 }
 
 // buildContextsAndClusters builds the context and cluster lists from kubeconfigs

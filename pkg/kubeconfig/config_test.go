@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
 )
 
@@ -353,12 +354,8 @@ func TestGetNamespacesForContext(t *testing.T) {
 func TestDiscoverKubeconfigs_NoKubeDir(t *testing.T) {
 	// Create a temporary directory without .kube
 	tempDir := t.TempDir()
-	originalHome := os.Getenv("HOME")
-	defer func() {
-		os.Setenv("HOME", originalHome)
-	}()
-
-	os.Setenv("HOME", tempDir)
+	t.Setenv("HOME", tempDir)
+	t.Setenv("KUBECONFIG", "")
 
 	manager := NewManager()
 	err := manager.DiscoverKubeconfigs()
@@ -377,12 +374,8 @@ func TestDiscoverKubeconfigs_EmptyKubeDir(t *testing.T) {
 		t.Fatalf("Failed to create .kube directory: %v", err)
 	}
 
-	originalHome := os.Getenv("HOME")
-	defer func() {
-		os.Setenv("HOME", originalHome)
-	}()
-
-	os.Setenv("HOME", tempDir)
+	t.Setenv("HOME", tempDir)
+	t.Setenv("KUBECONFIG", "")
 
 	manager := NewManager()
 	err = manager.DiscoverKubeconfigs()
@@ -393,5 +386,82 @@ func TestDiscoverKubeconfigs_EmptyKubeDir(t *testing.T) {
 
 	if len(manager.kubeconfigs) != 0 {
 		t.Errorf("Expected 0 kubeconfigs, got %d", len(manager.kubeconfigs))
+	}
+}
+
+func TestDiscoverKubeconfigs_UsesKubeconfigEnv(t *testing.T) {
+	tempDir := t.TempDir()
+
+	configPath := filepath.Join(tempDir, "envconfig")
+	config := api.Config{
+		CurrentContext: "env-context",
+		Contexts: map[string]*api.Context{
+			"env-context": {
+				Cluster:   "env-cluster",
+				AuthInfo:  "env-user",
+				Namespace: "default",
+			},
+		},
+		Clusters: map[string]*api.Cluster{
+			"env-cluster": {
+				Server: "https://env-cluster",
+			},
+		},
+	}
+
+	if err := clientcmd.WriteToFile(config, configPath); err != nil {
+		t.Fatalf("failed to write kubeconfig: %v", err)
+	}
+
+	t.Setenv("HOME", tempDir)
+	t.Setenv("KUBECONFIG", configPath)
+
+	manager := NewManager()
+	if err := manager.DiscoverKubeconfigs(); err != nil {
+		t.Fatalf("DiscoverKubeconfigs() returned error: %v", err)
+	}
+
+	if len(manager.kubeconfigs) != 1 {
+		t.Fatalf("expected 1 kubeconfig from env, got %d", len(manager.kubeconfigs))
+	}
+
+	if manager.kubeconfigs[0].Config.CurrentContext != "env-context" {
+		t.Fatalf("expected env-context, got %s", manager.kubeconfigs[0].Config.CurrentContext)
+	}
+}
+
+func TestDiscoverKubeconfigs_EnvWithTildeExpansion(t *testing.T) {
+	homeDir := t.TempDir()
+	configPath := filepath.Join(homeDir, "tildeconfig")
+
+	cfg := api.Config{
+		CurrentContext: "tilde-context",
+		Contexts: map[string]*api.Context{
+			"tilde-context": {
+				Cluster:   "tilde-cluster",
+				AuthInfo:  "tilde-user",
+				Namespace: "default",
+			},
+		},
+	}
+
+	if err := clientcmd.WriteToFile(cfg, configPath); err != nil {
+		t.Fatalf("failed to write kubeconfig: %v", err)
+	}
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("KUBECONFIG", "~/tildeconfig")
+
+	manager := NewManager()
+	if err := manager.DiscoverKubeconfigs(); err != nil {
+		t.Fatalf("DiscoverKubeconfigs() returned error: %v", err)
+	}
+
+	if len(manager.kubeconfigs) != 1 {
+		t.Fatalf("expected 1 kubeconfig, got %d", len(manager.kubeconfigs))
+	}
+
+	if got := manager.kubeconfigs[0].Path; got != configPath {
+		t.Fatalf("expected kubeconfig path %s, got %s", configPath, got)
 	}
 }
