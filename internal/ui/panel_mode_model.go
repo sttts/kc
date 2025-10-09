@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss/v2"
 )
 
 // PanelModeModel is a simple selector for panel modes.
@@ -60,23 +61,41 @@ func (m *PanelModeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *PanelModeModel) View() string {
+	base := lipgloss.NewStyle().
+		Background(lipgloss.Color("238")).
+		Foreground(lipgloss.Color("255"))
+	sel := lipgloss.NewStyle().
+		Background(lipgloss.Cyan).
+		Foreground(lipgloss.Color("0")).
+		Bold(true)
 	lines := make([]string, len(m.modes))
 	for i, mode := range m.modes {
 		label := modeLabel(mode)
-		prefix := "  "
-		if i == m.cursor {
-			prefix = "> "
-		}
-		lines[i] = prefix + label
+		line := label
 		if m.width > 0 {
-			lines[i] = trimToWidth(lines[i], m.width)
+			line = trimToWidth(line, m.width)
+		}
+		if i == m.cursor {
+			lines[i] = sel.Render(line)
+		} else {
+			lines[i] = base.Render(line)
 		}
 	}
-	view := strings.Join(lines, "\n")
-	if m.height > 0 && len(lines) < m.height {
-		view += strings.Repeat("\n", m.height-len(lines))
+	start := 0
+	end := len(lines)
+	if m.height > 0 && len(lines) > m.height {
+		if m.cursor < m.height {
+			end = m.height
+		} else {
+			start = m.cursor - m.height + 1
+			end = start + m.height
+		}
 	}
-	return view
+	view := strings.Join(lines[start:end], "\n")
+	if m.height > 0 && (end-start) < m.height {
+		view += strings.Repeat("\n", m.height-(end-start))
+	}
+	return base.Width(m.width).Height(m.height).Render(view)
 }
 
 func (m *PanelModeModel) SetDimensions(width, height int) {

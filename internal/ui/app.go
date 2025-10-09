@@ -1517,12 +1517,19 @@ func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
 	} else {
 		modal.SetContent(model)
 	}
-	width := min(max(24, a.width/3), a.width-4)
-	height := min(max(len(modes)+4, 6), a.height-4)
-	model.SetDimensions(width-4, height-2)
+	panelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	if panelWidth <= 0 {
+		panelWidth = max(20, a.width/2)
+	}
+	width := min(max(24, panelWidth-4), a.width-4)
+	height := min(max(len(modes)+4, 6), panelHeight-2)
+	model.SetDimensions(width-4, height-3)
 	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
 	modal.SetWindowed(width, height, bg)
+	offsetX := panelIdx * panelWidth
+	offsetY := headerOffset
+	modal.SetWindowOffset(offsetX, offsetY)
 	modal.SetOnClose(func() tea.Cmd { return nil })
 	a.modalManager.Show(key)
 	return nil

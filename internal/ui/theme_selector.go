@@ -98,8 +98,8 @@ func (s *ThemeSelector) View() string {
 	// Dialog-specific styling: whole area cyan background with black text;
 	// selected row contrasted as white background with black text.
 	base := lipgloss.NewStyle().
-		Background(lipgloss.White).
-		Foreground(lipgloss.Black)
+		Background(lipgloss.Color("238")).
+		Foreground(lipgloss.Color("255"))
 	sel := lipgloss.NewStyle().
 		Background(lipgloss.Cyan).
 		Foreground(lipgloss.Black)

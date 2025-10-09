@@ -26,6 +26,9 @@ type Modal struct {
 	winHeight      int
 	background     string        // full-screen base to overlay on when windowed
 	backgroundFunc func() string // dynamic background provider
+	windowOffsetX  int
+	windowOffsetY  int
+	windowHasPos   bool
 	contentOffsetX int
 	contentOffsetY int
 	footerHotspots []footerHotspot
@@ -100,11 +103,20 @@ func (m *Modal) SetWindowed(winW, winH int, bg string) {
 	m.background = bg
 	m.contentOffsetX = 0
 	m.contentOffsetY = 0
+	m.windowHasPos = false
 }
 
 // SetWindowedBackgroundProvider sets a function to produce the background
 // view dynamically each render (e.g., for live preview under dialogs).
 func (m *Modal) SetWindowedBackgroundProvider(f func() string) { m.backgroundFunc = f }
+
+// SetWindowOffset positions the window relative to the main view's origin.
+// Only applies when windowed=true.
+func (m *Modal) SetWindowOffset(offsetX, offsetY int) {
+	m.windowOffsetX = offsetX
+	m.windowOffsetY = offsetY
+	m.windowHasPos = true
+}
 
 // Update handles messages and updates the modal state
 func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -239,28 +251,14 @@ func (m *Modal) View() string {
 		innerW := max(1, winW-2)
 		innerH := max(1, winH-2)
 		windowOffsetX := (m.width - winW) / 2
-		if windowOffsetX < 0 {
-			windowOffsetX = 0
-		}
-		maxOffsetX := m.width - winW
-		if maxOffsetX < 0 {
-			maxOffsetX = 0
-		}
-		if windowOffsetX > maxOffsetX {
-			windowOffsetX = maxOffsetX
-		}
 		windowOffsetY := (m.height - winH) / 2
-		windowOffsetY-- // lift window to leave footer line for function keys
-		if windowOffsetY < 0 {
-			windowOffsetY = 0
+		windowOffsetY-- // default lift for footer clearance
+		if m.windowHasPos {
+			windowOffsetX = m.windowOffsetX
+			windowOffsetY = m.windowOffsetY
 		}
-		maxOffsetY := m.height - winH
-		if maxOffsetY < 0 {
-			maxOffsetY = 0
-		}
-		if windowOffsetY > maxOffsetY {
-			windowOffsetY = maxOffsetY
-		}
+		windowOffsetX = clampInt(windowOffsetX, 0, max(0, m.width-winW))
+		windowOffsetY = clampInt(windowOffsetY, 0, max(0, m.height-winH))
 		m.contentOffsetX = windowOffsetX + 1
 		m.contentOffsetY = windowOffsetY + 1
 		if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
@@ -519,6 +517,16 @@ func (m *Modal) buildFooter(includeEsc bool) string {
 		}
 	}
 	return builder.String()
+}
+
+func clampInt(v, minVal, maxVal int) int {
+	if v < minVal {
+		return minVal
+	}
+	if v > maxVal {
+		return maxVal
+	}
+	return v
 }
 
 func keyMsgForLabel(label string) (tea.KeyMsg, bool) {
