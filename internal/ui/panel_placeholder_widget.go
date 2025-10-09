@@ -4,6 +4,7 @@ import (
 	"context"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 // placeholderWidget renders a static message for modes that aren't implemented yet.
@@ -30,7 +31,7 @@ func (w *placeholderWidget) View(ctx context.Context, focused bool) string {
 	if content == "" {
 		content = "Mode not yet available"
 	}
-	style := PanelContentStyle.Width(max(1, w.panel.width)).Height(max(1, w.panel.height))
+	style := uistyles.PanelContentStyle.Width(max(1, w.panel.width)).Height(max(1, w.panel.height))
 	if focused {
 		style = style.Copy().Bold(true)
 	}

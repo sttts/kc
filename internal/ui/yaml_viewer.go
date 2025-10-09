@@ -10,6 +10,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 	tea "github.com/charmbracelet/bubbletea/v2"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 // TextViewer is a scrollable text viewer with Chroma syntax highlighting.
@@ -131,7 +132,7 @@ func (v *TextViewer) View() string {
 	for i, ln := range lines {
 		sliced[i] = sliceANSIByColumns(ln, v.hOffset, v.width)
 	}
-	return PanelContentStyle.Width(v.width).Height(v.height).Render(strings.Join(sliced, "\n"))
+	return uistyles.PanelContentStyle.Width(v.width).Height(v.height).Render(strings.Join(sliced, "\n"))
 }
 
 // FooterHints implements ModalFooterHints to show extra footer actions.

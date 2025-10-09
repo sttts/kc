@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
-	"strings"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 // ObjectOptionsModel controls object list display options (table mode, columns, order).
@@ -122,11 +124,11 @@ func (m *ObjectOptionsModel) View() string {
 		}
 	}
 	rowStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalBg)).
-		Foreground(lipgloss.Color(ColorModalFg))
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg))
 	focusStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalSelBg)).
-		Foreground(lipgloss.Color(ColorModalFg)).
+		Background(lipgloss.Color(uistyles.ColorModalSelBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
 		Bold(true)
 	rows := make([]string, 0, len(labels))
 	for i := range labels {

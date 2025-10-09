@@ -11,6 +11,7 @@ import (
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -231,9 +232,9 @@ func (p *Panel) SetFolder(ctx context.Context, f models.Folder, hasBack bool) {
 		bt.SetMode(ctx, p.tableMode)
 		// Apply panel-aligned styles
 		st := table.DefaultStyles()
-		st.Header = PanelTableHeaderStyle
-		st.Cell = PanelItemStyle
-		st.Selector = PanelItemSelectedStyle                                   // cursor highlight
+		st.Header = uistyles.PanelTableHeaderStyle
+		st.Cell = uistyles.PanelItemStyle
+		st.Selector = uistyles.PanelItemSelectedStyle                          // cursor highlight
 		st.Marked = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Bold(true) // multi-select style
 		// Match outer frame border color (white) for inner verticals
 		st.Border = lipgloss.NewStyle().
@@ -503,9 +504,9 @@ func (p *Panel) RefreshFolder(ctx context.Context) {
 			bt.SetMode(ctx, p.tableMode)
 			p.lastColTitles = titles
 			st := table.DefaultStyles()
-			st.Header = PanelTableHeaderStyle
-			st.Cell = PanelItemStyle
-			st.Selector = PanelItemSelectedStyle
+			st.Header = uistyles.PanelTableHeaderStyle
+			st.Cell = uistyles.PanelItemStyle
+			st.Selector = uistyles.PanelItemSelectedStyle
 			st.Marked = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Bold(true)
 			st.Border = lipgloss.NewStyle().
 				Foreground(lipgloss.White).
@@ -590,7 +591,7 @@ func (p *Panel) renderFooter(ctx context.Context) string {
 		}
 	}
 
-	return PanelFooterStyle.
+	return uistyles.PanelFooterStyle.
 		Width(p.width).
 		Height(1).
 		Align(lipgloss.Left).
@@ -750,7 +751,7 @@ func (p *Panel) renderHeader() string {
 	// Show current path as breadcrumbs
 	headerText := p.ellipsizePath(p.currentPath, p.width)
 
-	headerStyle := PanelHeaderStyle.
+	headerStyle := uistyles.PanelHeaderStyle.
 		Width(p.width).
 		Height(1).
 		Align(lipgloss.Left)
@@ -804,9 +805,9 @@ func (p *Panel) renderListContentFocused(ctx context.Context, isFocused bool) st
 			bt := table.NewBigTable(cols, p.folder, max(1, p.width), max(1, p.height))
 			bt.SetMode(ctx, p.tableMode)
 			st := table.DefaultStyles()
-			st.Header = PanelTableHeaderStyle
-			st.Cell = PanelItemStyle
-			st.Selector = PanelItemSelectedStyle
+			st.Header = uistyles.PanelTableHeaderStyle
+			st.Cell = uistyles.PanelItemStyle
+			st.Selector = uistyles.PanelItemSelectedStyle
 			st.Marked = lipgloss.NewStyle().Foreground(lipgloss.Yellow).Bold(true)
 			st.Border = lipgloss.NewStyle().
 				Foreground(lipgloss.White).
@@ -829,7 +830,7 @@ func (p *Panel) renderListContentFocused(ctx context.Context, isFocused bool) st
 	}
 
 	if len(p.items) == 0 {
-		return PanelContentStyle.
+		return uistyles.PanelContentStyle.
 			Width(p.width).
 			Height(p.height).
 			Align(lipgloss.Center).
@@ -847,10 +848,10 @@ func (p *Panel) renderListContentFocused(ctx context.Context, isFocused bool) st
 		lines = append(lines, p.renderItem(p.items[i], i == p.selected && isFocused))
 	}
 	for len(lines) < visibleHeight {
-		lines = append(lines, PanelContentStyle.Width(p.width).Render(""))
+		lines = append(lines, uistyles.PanelContentStyle.Width(p.width).Render(""))
 	}
 	if len(lines) == 0 {
-		lines = append(lines, PanelContentStyle.Width(p.width).Render(""))
+		lines = append(lines, uistyles.PanelContentStyle.Width(p.width).Render(""))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
@@ -891,9 +892,9 @@ func (p *Panel) renderItem(item Item, selected bool) string {
 	if len(text) > p.width {
 		text = text[:p.width]
 	}
-	style := PanelItemStyle.Width(p.width)
+	style := uistyles.PanelItemStyle.Width(p.width)
 	if selected {
-		style = PanelItemSelectedStyle.Width(p.width)
+		style = uistyles.PanelItemSelectedStyle.Width(p.width)
 	}
 	if item.Selected {
 		style = style.Foreground(lipgloss.Yellow).Bold(true)

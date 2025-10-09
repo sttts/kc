@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -110,7 +111,7 @@ func (rs *ResourceSelector) renderHeader() string {
 		title = "Custom Resource Sets"
 	}
 
-	return ResourceSelectorHeaderStyle.
+	return uistyles.ResourceSelectorHeaderStyle.
 		Width(rs.width).
 		Height(1).
 		Align(lipgloss.Center).
@@ -174,7 +175,7 @@ func (rs *ResourceSelector) renderContent() string {
 // renderFooter renders the footer with help
 func (rs *ResourceSelector) renderFooter() string {
 	help := "Tab: Switch view | Enter: Select | Ctrl+A: Add custom | Ctrl+D: Delete | Ctrl+E: Edit | Esc: Cancel"
-	return ResourceSelectorFooterStyle.
+	return uistyles.ResourceSelectorFooterStyle.
 		Width(rs.width).
 		Height(1).
 		Align(lipgloss.Center).

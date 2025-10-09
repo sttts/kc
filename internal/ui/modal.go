@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/sttts/kc/internal/overlay"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 // Modal represents a modal dialog
@@ -290,8 +291,8 @@ func (m *Modal) View() string {
 			}
 		}
 
-		frameBg := lipgloss.Color(ColorModalBg)
-		frameFg := lipgloss.Color(ColorModalFg)
+		frameBg := lipgloss.Color(uistyles.ColorModalBg)
+		frameFg := lipgloss.Color(uistyles.ColorModalFg)
 		boxStyle := lipgloss.NewStyle().
 			Border(lipgloss.DoubleBorder()).
 			BorderForeground(frameFg).
@@ -356,7 +357,7 @@ func (m *Modal) View() string {
 					bgLines = append(bgLines, "")
 				}
 			}
-			bgLines[m.height-1] = FunctionKeyBarStyle.Width(m.width).Render(footer)
+			bgLines[m.height-1] = uistyles.FunctionKeyBarStyle.Width(m.width).Render(footer)
 		}
 		composed = strings.Join(bgLines, "\n")
 		// Return composed screen without forcing a global background color so
@@ -376,8 +377,8 @@ func (m *Modal) View() string {
 		}
 	}
 	// Build frame with overlay title (match focused panel style)
-	modalBg := lipgloss.Color(ColorModalBg)
-	modalFg := lipgloss.Color(ColorModalFg)
+	modalBg := lipgloss.Color(uistyles.ColorModalBg)
+	modalFg := lipgloss.Color(uistyles.ColorModalFg)
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(modalFg).
@@ -387,7 +388,7 @@ func (m *Modal) View() string {
 		// Focused panel title chip style
 	labelStyle := lipgloss.NewStyle().
 		Foreground(modalFg).
-		Background(lipgloss.Color(ColorModalSelBg)).
+		Background(lipgloss.Color(uistyles.ColorModalSelBg)).
 		Padding(0, 1)
 	label := labelStyle.Render(m.title)
 	border := boxStyle.GetBorderStyle()
@@ -443,7 +444,7 @@ func (m *Modal) View() string {
 	frame := top + "\n" + strings.Join(lines, "\n")
 	// Function key bar outside the frame
 	footer := m.buildFooter(true)
-	footerLine := FunctionKeyBarStyle.Width(m.width).Render(footer)
+	footerLine := uistyles.FunctionKeyBarStyle.Width(m.width).Render(footer)
 	return lipgloss.JoinVertical(lipgloss.Left, frame, footerLine)
 }
 
@@ -517,7 +518,7 @@ func (m *Modal) buildFooter(includeEsc bool) string {
 			builder.WriteString(" ")
 			currentWidth += lipgloss.Width(" ")
 		}
-		segment := FunctionKeyStyle.Render(key) + FunctionKeyDescriptionStyle.Render(label)
+		segment := uistyles.FunctionKeyStyle.Render(key) + uistyles.FunctionKeyDescriptionStyle.Render(label)
 		segWidth := lipgloss.Width(segment)
 		m.footerHotspots = append(m.footerHotspots, footerHotspot{
 			key:   key,

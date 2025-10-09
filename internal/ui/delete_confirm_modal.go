@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 // DeleteConfirmMsg signals the result of the delete confirmation dialog.
@@ -104,8 +105,8 @@ func (m *DeleteConfirmModel) View() string {
 		m.buttonRect[i] = buttonRect{}
 	}
 	bg := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalBg)).
-		Foreground(lipgloss.Color(ColorModalFg)).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
 		Width(innerWidth)
 	title := fmt.Sprintf("Delete %s?", m.target)
 	if m.namespace != "" {
@@ -118,7 +119,7 @@ func (m *DeleteConfirmModel) View() string {
 		m.renderOption("No", buttonWidth, m.focus != 0),
 	}
 	separator := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalBg)).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
 		Render(" ")
 	bodyRow := lipgloss.JoinHorizontal(lipgloss.Center, options[0], separator, options[1])
 	bodyView := bg.Copy().Align(lipgloss.Center).Render(bodyRow)
@@ -140,14 +141,14 @@ func (m *DeleteConfirmModel) View() string {
 
 func (m *DeleteConfirmModel) renderOption(label string, width int, focused bool) string {
 	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorModalFg)).
-		Background(lipgloss.Color(ColorDarkGrey)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
+		Background(lipgloss.Color(uistyles.ColorDarkGrey)).
 		Width(width).
 		Align(lipgloss.Center)
 	if focused {
 		style = style.
-			Foreground(lipgloss.Color(ColorModalFg)).
-			Background(lipgloss.Color(ColorModalSelBg)).
+			Foreground(lipgloss.Color(uistyles.ColorModalFg)).
+			Background(lipgloss.Color(uistyles.ColorModalSelBg)).
 			Bold(true)
 	}
 	return style.Render(label)

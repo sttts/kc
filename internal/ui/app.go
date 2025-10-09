@@ -18,6 +18,7 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
@@ -1251,7 +1252,7 @@ func (a *App) renderFunctionKeys() string {
 	var keys []string
 
 	if a.showTerminal {
-		keys = []string{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")}
+		keys = []string{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels")}
 	} else {
 		panel := a.activePanelRef()
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -1261,11 +1262,11 @@ func (a *App) renderFunctionKeys() string {
 		}
 		cancel()
 		renderKey := func(key, label string, enabled bool) string {
-			desc := FunctionKeyDescriptionStyle
+			desc := uistyles.FunctionKeyDescriptionStyle
 			if !enabled {
-				desc = FunctionKeyDisabledStyle
+				desc = uistyles.FunctionKeyDisabledStyle
 			}
-			return FunctionKeyStyle.Render(key) + desc.Render(label)
+			return uistyles.FunctionKeyStyle.Render(key) + desc.Render(label)
 		}
 
 		keys = []string{
@@ -1278,15 +1279,15 @@ func (a *App) renderFunctionKeys() string {
 			renderKey("F7", "Namespace", caps.CanCreateNS),
 			renderKey("F8", "Delete", caps.CanDelete),
 			renderKey("F9", "Menu", caps.HasContextMenu),
-			FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"),
-			FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"),
+			uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
+			uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
 		}
 	}
 
 	joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
 	title := " Kubernetes Commander "
-	fullWidthStyle := FunctionKeyBarStyle.Width(a.width).Align(lipgloss.Left)
-	titleStyle := FunctionKeyTitleStyle.Align(lipgloss.Center).Width(a.width - lipgloss.Width(joined) - 1)
+	fullWidthStyle := uistyles.FunctionKeyBarStyle.Width(a.width).Align(lipgloss.Left)
+	titleStyle := uistyles.FunctionKeyTitleStyle.Align(lipgloss.Center).Width(a.width - lipgloss.Width(joined) - 1)
 	titleRendered := titleStyle.Render(title)
 	return fullWidthStyle.Render(joined + " " + titleRendered)
 }
@@ -1307,7 +1308,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			enabled bool
 			action  func() tea.Cmd
 		}{
-			{label: FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels"), enabled: true, action: func() tea.Cmd {
+			{label: uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels"), enabled: true, action: func() tea.Cmd {
 				a.showTerminal = false
 				a.terminal.SetShowPanels(true)
 				return nil
@@ -1322,11 +1323,11 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 		}
 		cancel()
 		makeLbl := func(key, label string, enabled bool) string {
-			desc := FunctionKeyDescriptionStyle
+			desc := uistyles.FunctionKeyDescriptionStyle
 			if !enabled {
-				desc = FunctionKeyDisabledStyle
+				desc = uistyles.FunctionKeyDisabledStyle
 			}
-			return FunctionKeyStyle.Render(key) + desc.Render(label)
+			return uistyles.FunctionKeyStyle.Render(key) + desc.Render(label)
 		}
 		invoke := func(action PanelAction) func() tea.Cmd {
 			return func() tea.Cmd {
@@ -1352,9 +1353,9 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			{makeLbl("F6", "Rename/Move", false), false, a.renameMoveItem},
 			{makeLbl("F7", "Namespace", caps.CanCreateNS), caps.CanCreateNS, invoke(PanelActionCreateNamespace)},
 			{makeLbl("F8", "Delete", caps.CanDelete), caps.CanDelete, invoke(PanelActionDelete)},
-			{FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"), caps.HasContextMenu, invoke(PanelActionMenu)},
-			{FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
-			{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
+			{uistyles.FunctionKeyStyle.Render("F9") + uistyles.FunctionKeyDescriptionStyle.Render("Menu"), caps.HasContextMenu, invoke(PanelActionMenu)},
+			{uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
+			{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
 				a.showTerminal = true
 				a.terminal.SetShowPanels(false)
 				return nil
@@ -1384,8 +1385,8 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 // renderToggleMessage renders the toggle message for fullscreen mode
 func (a *App) renderToggleMessage() string {
 	// Create the same layout as function keys
-	key := FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")
-	title := FunctionKeyTitleStyle.Render("Kubernetes Commander")
+	key := uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels")
+	title := uistyles.FunctionKeyTitleStyle.Render("Kubernetes Commander")
 
 	// Calculate the exact spacing needed to push title to the right edge
 	spacing := a.width - len(key) - len(title)
@@ -1396,7 +1397,7 @@ func (a *App) renderToggleMessage() string {
 	content := key + strings.Repeat(" ", spacing) + title
 
 	// Create a full-width container
-	fullWidthStyle := FunctionKeyBarStyle.
+	fullWidthStyle := uistyles.FunctionKeyBarStyle.
 		Width(a.width).
 		Align(lipgloss.Left)
 
@@ -2359,7 +2360,7 @@ func (a *App) createFramedFooter(content string, width int) string {
 		BorderForeground(lipgloss.White).
 		BorderBackground(lipgloss.Blue).
 		Background(lipgloss.Blue).
-		Foreground(lipgloss.Color(ColorWhite)).
+		Foreground(lipgloss.Color(uistyles.ColorWhite)).
 		Width(width).
 		Render(content)
 }

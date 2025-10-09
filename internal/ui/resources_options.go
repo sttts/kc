@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 const (
@@ -200,11 +201,11 @@ func (m *ResourcesOptionsModel) View() string {
 		}
 	}
 	rowStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalBg)).
-		Foreground(lipgloss.Color(ColorModalFg))
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg))
 	focusStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalSelBg)).
-		Foreground(lipgloss.Color(ColorModalFg)).
+		Background(lipgloss.Color(uistyles.ColorModalSelBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
 		Bold(true)
 
 	rows := make([]string, 0, len(labels))

@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"sort"
+	"strings"
+
 	"github.com/alecthomas/chroma/v2/styles"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
-	"sort"
-	"strings"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 // ThemeSelector is a simple list to choose a chroma style.
@@ -96,11 +98,11 @@ func (s *ThemeSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (s *ThemeSelector) View() string {
 	base := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalBg)).
-		Foreground(lipgloss.Color(ColorModalFg))
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg))
 	sel := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalSelBg)).
-		Foreground(lipgloss.Color(ColorModalFg)).
+		Background(lipgloss.Color(uistyles.ColorModalSelBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
 		Bold(true)
 
 	var b strings.Builder

@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -184,8 +185,8 @@ func (m *NamespaceCreateModel) executeButton(idx int) tea.Cmd {
 func (m *NamespaceCreateModel) View() string {
 	innerWidth := max(30, m.width-4)
 	bg := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalBg)).
-		Foreground(lipgloss.Color(ColorModalFg)).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
 		Width(innerWidth)
 
 	header := bg.Copy().
@@ -203,7 +204,7 @@ func (m *NamespaceCreateModel) View() string {
 		m.renderButton("Cancel"),
 	}
 	separator := lipgloss.NewStyle().
-		Background(lipgloss.Color(ColorModalBg)).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
 		Render(" ")
 	buttonRow := lipgloss.JoinHorizontal(lipgloss.Center, buttons[0], separator, buttons[1])
 	buttonRowView := bg.Copy().Align(lipgloss.Center).Render(buttonRow)
@@ -231,7 +232,7 @@ func (m *NamespaceCreateModel) View() string {
 	}
 	if m.err != "" {
 		errLine := bg.Copy().
-			Foreground(lipgloss.Color(ColorModalSelBg)).
+			Foreground(lipgloss.Color(uistyles.ColorModalSelBg)).
 			Render(m.err)
 		lines = append(lines, bg.Copy().Render(""), errLine)
 	}
@@ -240,8 +241,8 @@ func (m *NamespaceCreateModel) View() string {
 
 func (m *NamespaceCreateModel) renderButton(label string) string {
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorModalFg)).
-		Background(lipgloss.Color(ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
 		Padding(0, 3).
 		Align(lipgloss.Center).
 		Render(label)
@@ -252,12 +253,12 @@ func (m *NamespaceCreateModel) renderInput(fieldWidth int) string {
 		fieldWidth = 1
 	}
 	cursorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorWhite)).
-		Background(lipgloss.Color(ColorModalSelBg)).
+		Foreground(lipgloss.Color(uistyles.ColorWhite)).
+		Background(lipgloss.Color(uistyles.ColorModalSelBg)).
 		Bold(true)
 	textStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(ColorWhite)).
-		Background(lipgloss.Color(ColorDarkGrey))
+		Foreground(lipgloss.Color(uistyles.ColorWhite)).
+		Background(lipgloss.Color(uistyles.ColorDarkGrey))
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
