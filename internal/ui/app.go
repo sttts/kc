@@ -61,13 +61,6 @@ type resourceDeletedMsg struct {
 	err    error
 }
 
-type actionCaps struct {
-	canView     bool
-	canEdit     bool
-	canDelete   bool
-	canCreateNS bool
-}
-
 // App represents the main application state
 type App struct {
 	leftPanel    *Panel
@@ -117,13 +110,14 @@ type App struct {
 	toastText   string
 	toastUntil  time.Time
 	// Logger that emits toasts on errors with rate limiting
-	toastLogger    *ToastLogger
-	pendingCmds    []tea.Cmd
-	leftConfig     *appconfig.Config
-	rightConfig    *appconfig.Config
-	namespaceInput *NamespaceCreateModel
-	deleteConfirm  *DeleteConfirmModel
-	pendingDelete  *deleteTarget
+	toastLogger          *ToastLogger
+	pendingCmds          []tea.Cmd
+	leftConfig           *appconfig.Config
+	rightConfig          *appconfig.Config
+	namespaceInput       *NamespaceCreateModel
+	deleteConfirm        *DeleteConfirmModel
+	pendingDelete        *deleteTarget
+	namespaceCreatePanel int
 }
 
 const requestTimeout = 10 * time.Second
@@ -144,7 +138,8 @@ func NewApp() *App {
 		escPressed:   false,
 		viewConfig:   NewViewConfig(),
 		// Invariant: cfg is always non-nil; initialize with defaults
-		cfg: appconfig.Default(),
+		cfg:                  appconfig.Default(),
+		namespaceCreatePanel: -1,
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
@@ -152,6 +147,7 @@ func NewApp() *App {
 
 	// Register modals
 	app.setupModals()
+	app.setupPanelInputs()
 
 	return app
 }
@@ -209,56 +205,30 @@ func (a *App) ensurePanelConfig(panel *Panel) *appconfig.Config {
 	return a.rightConfig
 }
 
-func (a *App) currentActionCaps() actionCaps {
-	var caps actionCaps
-	if a == nil {
-		return caps
-	}
-	if a.showTerminal {
-		return caps
-	}
-	if a.modalManager != nil && a.modalManager.IsModalVisible() {
-		return caps
-	}
-	panel := a.leftPanel
+// activePanelRef returns the currently focused panel.
+func (a *App) activePanelRef() *Panel {
 	if a.activePanel == 1 {
-		panel = a.rightPanel
+		return a.rightPanel
 	}
-	if panel == nil {
-		return caps
-	}
-	if a.currentCtx != nil && panel.GetCurrentPath() == "/namespaces" {
-		caps.canCreateNS = true
-	}
-	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	defer cancel()
-	item, ok := panel.SelectedNavItem(ctx)
-	if !ok || item == nil {
-		return caps
-	}
-	if _, isBack := item.(models.Back); isBack {
-		return caps
-	}
+	return a.leftPanel
+}
 
-	if _, ok := item.(models.Viewable); ok {
-		caps.canView = true
-	} else {
-		type viewContentProvider interface {
-			ViewContent() (string, string, string, string, string, error)
-		}
-		if _, ok := item.(viewContentProvider); ok {
-			caps.canView = true
-		}
+// panelIndex returns 0 for the left panel and 1 for the right panel.
+func (a *App) panelIndex(panel *Panel) int {
+	if panel == nil {
+		return -1
 	}
-	if _, ok := item.(models.ObjectItem); ok {
-		if a.currentCtx != nil && a.currentCtx.Kubeconfig != nil {
-			caps.canEdit = true
-		}
-		if a.cl != nil {
-			caps.canDelete = true
-		}
+	if panel == a.rightPanel {
+		return 1
 	}
-	return caps
+	return 0
+}
+
+func (a *App) navigatorForPanel(panel *Panel) *navui.Navigator {
+	if panel == a.rightPanel {
+		return a.rightNav
+	}
+	return a.leftNav
 }
 
 func (a *App) syncPanelConfig(panel *Panel) {
@@ -591,6 +561,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.namespaceInput != nil {
 				a.namespaceInput.Reset()
 			}
+			if !msg.Confirm {
+				a.namespaceCreatePanel = -1
+			}
 		}
 		if msg.Confirm {
 			if a.cl == nil {
@@ -609,11 +582,29 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				a.enqueueCmd(a.ShowToast(fmt.Sprintf("Create namespace failed: %v", msg.err), 5*time.Second))
 			}
+			a.namespaceCreatePanel = -1
 			return a, nil
 		}
 		a.enqueueCmd(a.ShowToast(fmt.Sprintf("Namespace %s created", msg.name), 3*time.Second))
-		a.refreshPanelAfterEdit(0)
-		a.refreshPanelAfterEdit(1)
+		if a.namespaceCreatePanel == 0 || a.namespaceCreatePanel == 1 {
+			a.refreshPanelAfterEdit(a.namespaceCreatePanel)
+			other := 1 - a.namespaceCreatePanel
+			if other == 0 || other == 1 {
+				var otherPanel *Panel
+				if other == 0 {
+					otherPanel = a.leftPanel
+				} else {
+					otherPanel = a.rightPanel
+				}
+				if otherPanel != nil && otherPanel.GetCurrentPath() == "/namespaces" {
+					a.refreshPanelAfterEdit(other)
+				}
+			}
+		} else {
+			a.refreshPanelAfterEdit(0)
+			a.refreshPanelAfterEdit(1)
+		}
+		a.namespaceCreatePanel = -1
 		return a, nil
 	case DeleteConfirmMsg:
 		if msg.Close {
@@ -697,7 +688,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		} else if a.escPressed {
 			// We're in an escape sequence, check for numbers
-			caps := a.currentActionCaps()
+			panel := a.activePanelRef()
+			caps := a.capabilitiesForPanel(panel)
 			switch keyStr {
 			case "0":
 				a.escPressed = false
@@ -711,17 +703,29 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.showHelp() // Esc 1 = F1
 			case "2":
 				a.escPressed = false
-				return a, a.showViewOptionsModal() // Esc 2 = F2
+				if panel != nil {
+					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+					cmd := panel.invokeActionIfAllowed(ctx, PanelActionOptions)
+					cancel()
+					return a, cmd
+				}
+				return a, nil
 			case "3":
 				a.escPressed = false
-				if caps.canView {
-					return a, a.viewItem()
+				if panel != nil && caps.CanView {
+					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+					cmd := panel.invokeActionIfAllowed(ctx, PanelActionView)
+					cancel()
+					return a, cmd
 				}
 				return a, nil
 			case "4":
 				a.escPressed = false
-				if caps.canEdit {
-					return a, a.editItem()
+				if panel != nil && caps.CanEdit {
+					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+					cmd := panel.invokeActionIfAllowed(ctx, PanelActionEdit)
+					cancel()
+					return a, cmd
 				}
 				return a, nil
 			case "5":
@@ -732,19 +736,31 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.renameMoveItem() // Esc 6 = F6
 			case "7":
 				a.escPressed = false
-				if caps.canCreateNS {
-					return a, a.createNamespace()
+				if panel != nil && caps.CanCreateNS {
+					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+					cmd := panel.invokeActionIfAllowed(ctx, PanelActionCreateNamespace)
+					cancel()
+					return a, cmd
 				}
 				return a, nil
 			case "8":
 				a.escPressed = false
-				if caps.canDelete {
-					return a, a.deleteResource()
+				if panel != nil && caps.CanDelete {
+					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+					cmd := panel.invokeActionIfAllowed(ctx, PanelActionDelete)
+					cancel()
+					return a, cmd
 				}
 				return a, nil
 			case "9":
 				a.escPressed = false
-				return a, a.showContextMenu() // Esc 9 = F9
+				if panel != nil {
+					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+					cmd := panel.invokeActionIfAllowed(ctx, PanelActionMenu)
+					cancel()
+					return a, cmd
+				}
+				return a, nil
 			default:
 				// Not a number, cancel escape sequence
 				a.escPressed = false
@@ -772,10 +788,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.terminal = model.(*Terminal)
 				a.terminal.ClearTyped() // reset typed; next keys route to panels
 				return a, cmd
-			}
-			// Intercept F2/F3/F4 for app-level dialogs/viewers/editors
-			if msg.String() == "f2" {
-				return a, a.showViewOptionsModal()
 			}
 			if msg.String() == "ctrl+w" {
 				// Toggle columns mode (Normal/Wide) on active panel
@@ -809,31 +821,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						a.rightPanel.RefreshFolder(ctx)
 					}
-				}
-				return a, nil
-			}
-			caps := a.currentActionCaps()
-			if msg.String() == "f3" {
-				if caps.canView {
-					return a, a.openViewerForSelection()
-				}
-				return a, nil
-			}
-			if msg.String() == "f4" {
-				if caps.canEdit {
-					return a, a.editSelection()
-				}
-				return a, nil
-			}
-			if msg.String() == "f7" {
-				if caps.canCreateNS {
-					return a, a.createNamespace()
-				}
-				return a, nil
-			}
-			if msg.String() == "f8" {
-				if caps.canDelete {
-					return a, a.deleteResource()
 				}
 				return a, nil
 			}
@@ -1293,7 +1280,13 @@ func (a *App) renderFunctionKeys() string {
 	if a.showTerminal {
 		keys = []string{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Return to panels")}
 	} else {
-		caps := a.currentActionCaps()
+		panel := a.activePanelRef()
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		caps := PanelCapabilities{}
+		if panel != nil {
+			caps = panel.Capabilities(ctx)
+		}
+		cancel()
 		renderKey := func(key, label string, enabled bool) string {
 			desc := FunctionKeyDescriptionStyle
 			if !enabled {
@@ -1303,15 +1296,15 @@ func (a *App) renderFunctionKeys() string {
 		}
 
 		keys = []string{
-			renderKey("F1", "Help", false),
-			renderKey("F2", "Options", true),
-			renderKey("F3", "View", caps.canView),
-			renderKey("F4", "Edit", caps.canEdit),
+			renderKey("F1", "Help", caps.HasHelp),
+			renderKey("F2", "Options", caps.HasOptions),
+			renderKey("F3", "View", caps.CanView),
+			renderKey("F4", "Edit", caps.CanEdit),
 			renderKey("F5", "Copy", false),
 			renderKey("F6", "Rename/Move", false),
-			renderKey("F7", "Namespace", caps.canCreateNS),
-			renderKey("F8", "Delete", caps.canDelete),
-			renderKey("F9", "Menu", false),
+			renderKey("F7", "Namespace", caps.CanCreateNS),
+			renderKey("F8", "Delete", caps.CanDelete),
+			renderKey("F9", "Menu", caps.HasContextMenu),
 			FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"),
 			FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"),
 		}
@@ -1348,7 +1341,13 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			}},
 		}
 	} else {
-		caps := a.currentActionCaps()
+		panel := a.activePanelRef()
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		caps := PanelCapabilities{}
+		if panel != nil {
+			caps = panel.Capabilities(ctx)
+		}
+		cancel()
 		makeLbl := func(key, label string, enabled bool) string {
 			desc := FunctionKeyDescriptionStyle
 			if !enabled {
@@ -1356,20 +1355,31 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			}
 			return FunctionKeyStyle.Render(key) + desc.Render(label)
 		}
+		invoke := func(action PanelAction) func() tea.Cmd {
+			return func() tea.Cmd {
+				if panel == nil {
+					return nil
+				}
+				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+				cmd := panel.invokeActionIfAllowed(ctx, action)
+				cancel()
+				return cmd
+			}
+		}
 		keys = []struct {
 			label   string
 			enabled bool
 			action  func() tea.Cmd
 		}{
-			{makeLbl("F1", "Help", false), false, a.showHelp},
-			{makeLbl("F2", "Options", true), true, a.showViewOptionsModal},
-			{makeLbl("F3", "View", caps.canView), caps.canView, a.openViewerForSelection},
-			{makeLbl("F4", "Edit", caps.canEdit), caps.canEdit, a.editSelection},
+			{makeLbl("F1", "Help", caps.HasHelp), caps.HasHelp, invoke(PanelActionHelp)},
+			{makeLbl("F2", "Options", caps.HasOptions), caps.HasOptions, invoke(PanelActionOptions)},
+			{makeLbl("F3", "View", caps.CanView), caps.CanView, invoke(PanelActionView)},
+			{makeLbl("F4", "Edit", caps.CanEdit), caps.CanEdit, invoke(PanelActionEdit)},
 			{makeLbl("F5", "Copy", false), false, a.copyItem},
 			{makeLbl("F6", "Rename/Move", false), false, a.renameMoveItem},
-			{makeLbl("F7", "Namespace", caps.canCreateNS), caps.canCreateNS, a.createNamespace},
-			{makeLbl("F8", "Delete", caps.canDelete), caps.canDelete, a.deleteResource},
-			{FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"), false, a.showContextMenu},
+			{makeLbl("F7", "Namespace", caps.CanCreateNS), caps.CanCreateNS, invoke(PanelActionCreateNamespace)},
+			{makeLbl("F8", "Delete", caps.CanDelete), caps.CanDelete, invoke(PanelActionDelete)},
+			{FunctionKeyStyle.Render("F9") + FunctionKeyDescriptionStyle.Render("Menu"), caps.HasContextMenu, invoke(PanelActionMenu)},
 			{FunctionKeyStyle.Render("F10") + FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
 			{FunctionKeyStyle.Render("Ctrl+O") + FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
 				a.showTerminal = true
@@ -1448,25 +1458,89 @@ func (a *App) setupModals() {
 	a.deleteConfirm = delModel
 }
 
+func (a *App) setupPanelInputs() {
+	envSupplier := func() PanelEnvironment { return a.panelEnvironment() }
+	if a.leftPanel != nil {
+		a.leftPanel.SetEnvironmentSupplier(envSupplier)
+		a.leftPanel.SetActionHandlers(a.panelActionHandlers())
+	}
+	if a.rightPanel != nil {
+		a.rightPanel.SetEnvironmentSupplier(envSupplier)
+		a.rightPanel.SetActionHandlers(a.panelActionHandlers())
+	}
+}
+
+func (a *App) panelActionHandlers() PanelActionHandlers {
+	return PanelActionHandlers{
+		PanelActionHelp: func(*Panel) tea.Cmd {
+			return a.showHelp()
+		},
+		PanelActionOptions: func(p *Panel) tea.Cmd {
+			return a.showViewOptionsModalForPanel(p)
+		},
+		PanelActionView: func(p *Panel) tea.Cmd {
+			return a.openViewerForPanel(p)
+		},
+		PanelActionEdit: func(p *Panel) tea.Cmd {
+			return a.editSelectionForPanel(p)
+		},
+		PanelActionCreateNamespace: func(p *Panel) tea.Cmd {
+			return a.createNamespaceForPanel(p)
+		},
+		PanelActionDelete: func(p *Panel) tea.Cmd {
+			return a.deleteResourceForPanel(p)
+		},
+		PanelActionMenu: func(p *Panel) tea.Cmd {
+			return a.showContextMenuForPanel(p)
+		},
+	}
+}
+
+func (a *App) panelEnvironment() PanelEnvironment {
+	env := PanelEnvironment{}
+	if a.currentCtx != nil {
+		env.AllowCreateNamespaces = true
+		if a.currentCtx.Kubeconfig != nil {
+			env.AllowEditObjects = true
+		}
+	}
+	if a.cl != nil {
+		env.AllowDeleteObjects = true
+	}
+	return env
+}
+
+func (a *App) capabilitiesForPanel(panel *Panel) PanelCapabilities {
+	if panel == nil {
+		return PanelCapabilities{}
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	return panel.Capabilities(ctx)
+}
+
 // Message handlers for function keys
 // showViewOptionsModal opens the appropriate View Options dialog (Resources or Objects)
 // depending on the active view context.
 func (a *App) showViewOptionsModal() tea.Cmd {
-	// Depending on current view, open Resources or Objects view options.
-	curPanel := a.leftPanel
-	if a.activePanel == 1 {
-		curPanel = a.rightPanel
+	return a.showViewOptionsModalForPanel(a.activePanelRef())
+}
+
+func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
+	if panel == nil {
+		panel = a.activePanelRef()
+	}
+	if panel == nil {
+		return nil
 	}
 
 	// Determine folder context for contextual options.
 	var curFolder models.Folder
-	if a.activePanel == 0 && a.leftNav != nil {
-		curFolder = a.leftNav.Current()
-	} else if a.activePanel == 1 && a.rightNav != nil {
-		curFolder = a.rightNav.Current()
+	if nav := a.navigatorForPanel(panel); nav != nil {
+		curFolder = nav.Current()
 	}
 	if curFolder == nil {
-		curFolder = curPanel.folder
+		curFolder = panel.folder
 	}
 
 	showInclude := false
@@ -1483,8 +1557,8 @@ func (a *App) showViewOptionsModal() tea.Cmd {
 		}
 	}
 
-	showNonEmpty, order := curPanel.ResourceViewOptions()
-	tableMode := curPanel.TableMode()
+	showNonEmpty, order := panel.ResourceViewOptions()
+	tableMode := panel.TableMode()
 	content := NewResourcesOptionsModel(showInclude, showOrder, tableMode, showNonEmpty, order)
 	modal := a.modalManager.modals["resources_options"]
 	if modal == nil {
@@ -1514,15 +1588,18 @@ func (a *App) editResource() tea.Cmd {
 }
 
 func (a *App) createNamespace() tea.Cmd {
+	return a.createNamespaceForPanel(a.activePanelRef())
+}
+
+func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 	if a.currentCtx == nil {
 		if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("No active context for namespace creation"))
 		}
 		return nil
 	}
-	panel := a.leftPanel
-	if a.activePanel == 1 {
-		panel = a.rightPanel
+	if panel == nil {
+		panel = a.activePanelRef()
 	}
 	if panel == nil {
 		return nil
@@ -1533,8 +1610,10 @@ func (a *App) createNamespace() tea.Cmd {
 		}
 		return nil
 	}
+	a.namespaceCreatePanel = a.panelIndex(panel)
 	modal := a.modalManager.modals["namespace_create"]
 	if modal == nil {
+		a.namespaceCreatePanel = -1
 		return nil
 	}
 	if a.namespaceInput == nil {
@@ -1567,11 +1646,17 @@ func (a *App) createNamespace() tea.Cmd {
 }
 
 func (a *App) deleteResource() tea.Cmd {
-	panelIdx := 0
-	panel := a.leftPanel
-	if a.activePanel == 1 {
-		panelIdx = 1
-		panel = a.rightPanel
+	return a.deleteResourceForPanel(a.activePanelRef())
+}
+
+func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
+	panelIdx := a.activePanel
+	if panel == nil {
+		panel = a.activePanelRef()
+	} else {
+		if idx := a.panelIndex(panel); idx >= 0 {
+			panelIdx = idx
+		}
 	}
 	if panel == nil {
 		return nil
@@ -1632,6 +1717,10 @@ func (a *App) deleteResource() tea.Cmd {
 }
 
 func (a *App) showContextMenu() tea.Cmd {
+	return a.showContextMenuForPanel(a.activePanelRef())
+}
+
+func (a *App) showContextMenuForPanel(_ *Panel) tea.Cmd {
 	// TODO: Implement context menu
 	return nil
 }
@@ -1686,25 +1775,25 @@ func (a *App) showHelp() tea.Cmd {
 }
 
 func (a *App) viewItem() tea.Cmd {
-	return a.openViewerForSelection()
+	return a.openViewerForPanel(a.activePanelRef())
 }
 
 func (a *App) editItem() tea.Cmd {
-	return a.editSelection()
+	return a.editSelectionForPanel(a.activePanelRef())
 }
 
 // openViewerForSelection opens the focused item's viewer when available.
 func (a *App) openViewerForSelection() tea.Cmd {
-	p := a.leftPanel
-	if a.activePanel == 1 {
-		p = a.rightPanel
-	}
-	if p == nil {
+	return a.openViewerForPanel(a.activePanelRef())
+}
+
+func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
+	if panel == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
-	item, ok := p.SelectedNavItem(ctx)
+	item, ok := panel.SelectedNavItem(ctx)
 	if !ok || item == nil {
 		return nil
 	}
@@ -1741,7 +1830,7 @@ func (a *App) openViewerForSelection() tea.Cmd {
 	}
 	var onEdit func() tea.Cmd
 	if _, ok := item.(models.ObjectItem); ok {
-		onEdit = func() tea.Cmd { return a.editSelection() }
+		onEdit = func() tea.Cmd { return a.editSelectionForPanel(panel) }
 	}
 	viewer := NewTextViewer(title, body, lang, mime, filename, theme, onEdit, nil, func() tea.Cmd {
 		a.modalManager.Hide()
@@ -1823,11 +1912,17 @@ func (a *App) showThemeSelector(v *TextViewer) tea.Cmd {
 
 // editSelection triggers kubectl edit for the selected object.
 func (a *App) editSelection() tea.Cmd {
-	panel := a.leftPanel
-	panelIdx := 0
-	if a.activePanel == 1 {
-		panel = a.rightPanel
-		panelIdx = 1
+	return a.editSelectionForPanel(a.activePanelRef())
+}
+
+func (a *App) editSelectionForPanel(panel *Panel) tea.Cmd {
+	panelIdx := a.activePanel
+	if panel == nil {
+		panel = a.activePanelRef()
+	} else {
+		if idx := a.panelIndex(panel); idx >= 0 {
+			panelIdx = idx
+		}
 	}
 	if panel == nil {
 		return nil

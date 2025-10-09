@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ type Modal struct {
 	backgroundFunc func() string // dynamic background provider
 	contentOffsetX int
 	contentOffsetY int
+	footerHotspots []footerHotspot
 }
 
 // RedrawTickMsg is emitted periodically to force a re-render while a
@@ -164,6 +166,10 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+	case tea.MouseMsg:
+		if model, cmd, handled := m.handleFooterMouse(msg); handled {
+			return model, cmd
+		}
 	case EscTimeoutMsg:
 		if m.escPressed {
 			// Timeout expired without second ESC; cancel sequence.
@@ -197,6 +203,7 @@ func (m *Modal) View() string {
 	if !m.visible {
 		return ""
 	}
+	m.footerHotspots = m.footerHotspots[:0]
 	// Fullscreen modal styled like panel
 	// Reserve 1 line for overlay header and 1 terminal line for the function key bar outside the frame.
 	// The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
@@ -327,15 +334,7 @@ func (m *Modal) View() string {
 		)
 		bgLines := strings.Split(composed, "\n")
 		// Footer line
-		footer := ""
-		if provider, ok := m.content.(ModalFooterHints); ok {
-			for i, kv := range provider.FooterHints() {
-				if i > 0 {
-					footer += " "
-				}
-				footer += FunctionKeyStyle.Render(kv[0]) + FunctionKeyDescriptionStyle.Render(kv[1])
-			}
-		}
+		footer := m.buildFooter(false)
 		if m.height > 0 {
 			if len(bgLines) < m.height {
 				for len(bgLines) < m.height {
@@ -426,19 +425,7 @@ func (m *Modal) View() string {
 	lines := strings.Split(bottom, "\n")
 	frame := top + "\n" + strings.Join(lines, "\n")
 	// Function key bar outside the frame
-	footer := ""
-	if m.closeOnSingleEsc {
-		footer = FunctionKeyStyle.Render("Esc") + FunctionKeyDescriptionStyle.Render("Close")
-	}
-	if provider, ok := m.content.(ModalFooterHints); ok {
-		for _, kv := range provider.FooterHints() {
-			key, label := kv[0], kv[1]
-			if footer != "" {
-				footer += " "
-			}
-			footer += FunctionKeyStyle.Render(key) + FunctionKeyDescriptionStyle.Render(label)
-		}
-	}
+	footer := m.buildFooter(true)
 	footerLine := FunctionKeyBarStyle.Width(m.width).Render(footer)
 	return lipgloss.JoinVertical(lipgloss.Left, frame, footerLine)
 }
@@ -461,6 +448,190 @@ func shiftMouseMsg(msg tea.MouseMsg, dx, dy int) tea.MouseMsg {
 		return tea.MouseMotionMsg(mouse)
 	default:
 		return msg
+	}
+}
+
+type footerHotspot struct {
+	key   string
+	start int
+	end   int
+}
+
+func (m *Modal) handleFooterMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
+	mouse := msg.Mouse()
+	if mouse.Button != tea.MouseLeft {
+		return nil, nil, false
+	}
+	if mouse.Y != m.height-1 {
+		return nil, nil, false
+	}
+	// Swallow clicks on footer to prevent fallthrough to content.
+	if _, ok := msg.(tea.MouseClickMsg); ok {
+		return m, nil, true
+	}
+	if _, ok := msg.(tea.MouseReleaseMsg); !ok {
+		return m, nil, true
+	}
+	key := m.keyAtFooterColumn(mouse.X)
+	if key == "" {
+		return m, nil, true
+	}
+	if km, ok := keyMsgForLabel(key); ok {
+		model, cmd := m.Update(km)
+		return model.(*Modal), cmd, true
+	}
+	return m, nil, true
+}
+
+func (m *Modal) keyAtFooterColumn(x int) string {
+	for _, hs := range m.footerHotspots {
+		if x >= hs.start && x < hs.end {
+			return hs.key
+		}
+	}
+	return ""
+}
+
+func (m *Modal) buildFooter(includeEsc bool) string {
+	var builder strings.Builder
+	currentWidth := 0
+	appendHint := func(key, label string) {
+		if builder.Len() > 0 {
+			builder.WriteString(" ")
+			currentWidth += lipgloss.Width(" ")
+		}
+		segment := FunctionKeyStyle.Render(key) + FunctionKeyDescriptionStyle.Render(label)
+		segWidth := lipgloss.Width(segment)
+		m.footerHotspots = append(m.footerHotspots, footerHotspot{
+			key:   key,
+			start: currentWidth,
+			end:   currentWidth + segWidth,
+		})
+		builder.WriteString(segment)
+		currentWidth += segWidth
+	}
+	if includeEsc && m.closeOnSingleEsc {
+		appendHint("Esc", "Close")
+	}
+	if provider, ok := m.content.(ModalFooterHints); ok {
+		for _, kv := range provider.FooterHints() {
+			appendHint(kv[0], kv[1])
+		}
+	}
+	return builder.String()
+}
+
+func keyMsgForLabel(label string) (tea.KeyMsg, bool) {
+	if label == "" {
+		return nil, false
+	}
+	lower := strings.ToLower(label)
+	switch lower {
+	case "esc":
+		return tea.KeyPressMsg{Code: tea.KeyEsc}, true
+	case "enter":
+		return tea.KeyPressMsg{Code: tea.KeyEnter}, true
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}, true
+	}
+	if strings.HasPrefix(lower, "f") && len(label) > 1 {
+		if n, err := strconv.Atoi(label[1:]); err == nil {
+			if key, ok := functionKeyConstant(n); ok {
+				return tea.KeyPressMsg{Code: key}, true
+			}
+		}
+	}
+	if strings.Contains(lower, "+") {
+		parts := strings.Split(label, "+")
+		if len(parts) < 2 {
+			return nil, false
+		}
+		mod := tea.KeyMod(0)
+		for i := 0; i < len(parts)-1; i++ {
+			switch strings.ToLower(parts[i]) {
+			case "ctrl", "control":
+				mod |= tea.ModCtrl
+			case "alt":
+				mod |= tea.ModAlt
+			case "shift":
+				mod |= tea.ModShift
+			case "meta":
+				mod |= tea.ModMeta
+			case "super":
+				mod |= tea.ModSuper
+			case "hyper":
+				mod |= tea.ModHyper
+			}
+		}
+		finalPart := parts[len(parts)-1]
+		finalLower := strings.ToLower(finalPart)
+		switch finalLower {
+		case "esc":
+			return tea.KeyPressMsg{Code: tea.KeyEsc, Mod: mod}, true
+		case "enter":
+			return tea.KeyPressMsg{Code: tea.KeyEnter, Mod: mod}, true
+		}
+		runes := []rune(finalLower)
+		if len(runes) == 1 {
+			return tea.KeyPressMsg{Code: runes[0], Text: string(runes[0]), Mod: mod}, true
+		}
+		return nil, false
+	}
+	return nil, false
+}
+
+func functionKeyConstant(n int) (rune, bool) {
+	switch n {
+	case 1:
+		return tea.KeyF1, true
+	case 2:
+		return tea.KeyF2, true
+	case 3:
+		return tea.KeyF3, true
+	case 4:
+		return tea.KeyF4, true
+	case 5:
+		return tea.KeyF5, true
+	case 6:
+		return tea.KeyF6, true
+	case 7:
+		return tea.KeyF7, true
+	case 8:
+		return tea.KeyF8, true
+	case 9:
+		return tea.KeyF9, true
+	case 10:
+		return tea.KeyF10, true
+	case 11:
+		return tea.KeyF11, true
+	case 12:
+		return tea.KeyF12, true
+	case 13:
+		return tea.KeyF13, true
+	case 14:
+		return tea.KeyF14, true
+	case 15:
+		return tea.KeyF15, true
+	case 16:
+		return tea.KeyF16, true
+	case 17:
+		return tea.KeyF17, true
+	case 18:
+		return tea.KeyF18, true
+	case 19:
+		return tea.KeyF19, true
+	case 20:
+		return tea.KeyF20, true
+	case 21:
+		return tea.KeyF21, true
+	case 22:
+		return tea.KeyF22, true
+	case 23:
+		return tea.KeyF23, true
+	case 24:
+		return tea.KeyF24, true
+	default:
+		return 0, false
 	}
 }
 

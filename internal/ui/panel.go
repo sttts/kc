@@ -51,6 +51,8 @@ type Panel struct {
 	lastColTitles   []string
 	columnsMode     string // "normal" or "wide"
 	objOrder        string // "name", "-name", "creation", "-creation"
+	actionHandlers  PanelActionHandlers
+	envSupplier     PanelEnvironmentSupplier
 }
 
 const panelContextTimeout = 250 * time.Millisecond
@@ -322,6 +324,14 @@ func (p *Panel) selectedRowID(ctx context.Context) string {
 // synthetic back entry. Returns false when no concrete item is selected.
 func (p *Panel) SelectedNavItem(ctx context.Context) (models.Item, bool) {
 	if !p.useFolder || p.folder == nil {
+		if current := p.GetCurrentItem(); current != nil && current.Item != nil {
+			if back, ok := current.Item.(models.Back); ok && back.IsBack() {
+				return nil, false
+			}
+			if navItem, ok := current.Item.(models.Item); ok {
+				return navItem, true
+			}
+		}
 		return nil, false
 	}
 	p.syncFromFolder(ctx)
@@ -584,19 +594,21 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "+", "-":
 			return p, p.showGlobPatternDialog(msg.String())
 
-		// Function keys (handled by app)
+		// Function keys handled through action handlers
+		case "f1":
+			return p, p.invokeActionIfAllowed(ctx, PanelActionHelp)
 		case "f2":
-			return p, p.showResourceSelector()
+			return p, p.invokeActionIfAllowed(ctx, PanelActionOptions)
 		case "f3":
-			return p, p.viewItem()
+			return p, p.invokeActionIfAllowed(ctx, PanelActionView)
 		case "f4":
-			return p, p.editItem()
+			return p, p.invokeActionIfAllowed(ctx, PanelActionEdit)
 		case "f7":
-			return p, p.createNamespace()
+			return p, p.invokeActionIfAllowed(ctx, PanelActionCreateNamespace)
 		case "f8":
-			return p, p.deleteItem()
+			return p, p.invokeActionIfAllowed(ctx, PanelActionDelete)
 		case "f9":
-			return p, p.showContextMenu()
+			return p, p.invokeActionIfAllowed(ctx, PanelActionMenu)
 		}
 	}
 
@@ -1027,33 +1039,39 @@ func (p *Panel) refresh() tea.Cmd {
 }
 
 func (p *Panel) showResourceSelector() tea.Cmd {
-	// TODO: Implement resource selector
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	return p.invokeActionIfAllowed(ctx, PanelActionOptions)
 }
 
 func (p *Panel) viewItem() tea.Cmd {
-	// TODO: Implement view functionality
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	return p.invokeActionIfAllowed(ctx, PanelActionView)
 }
 
 func (p *Panel) editItem() tea.Cmd {
-	// TODO: Implement edit functionality
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	return p.invokeActionIfAllowed(ctx, PanelActionEdit)
 }
 
 func (p *Panel) createNamespace() tea.Cmd {
-	// TODO: Implement namespace creation
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	return p.invokeActionIfAllowed(ctx, PanelActionCreateNamespace)
 }
 
 func (p *Panel) deleteItem() tea.Cmd {
-	// TODO: Implement delete functionality
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	return p.invokeActionIfAllowed(ctx, PanelActionDelete)
 }
 
 func (p *Panel) showContextMenu() tea.Cmd {
-	// TODO: Implement context menu
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
+	defer cancel()
+	return p.invokeActionIfAllowed(ctx, PanelActionMenu)
 }
 
 func (p *Panel) showGlobPatternDialog(key string) tea.Cmd {
