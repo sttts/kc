@@ -8,7 +8,7 @@ import (
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 )
 
-func TestPanelModeSwitchesToPlaceholder(t *testing.T) {
+func TestPanelModeSwitchesToManifest(t *testing.T) {
 	panel := NewPanel("test")
 	ctx := context.Background()
 	panel.SetDimensions(ctx, 20, 5)
@@ -17,8 +17,8 @@ func TestPanelModeSwitchesToPlaceholder(t *testing.T) {
 		t.Fatalf("expected manifest mode, got %v", panel.Mode())
 	}
 	view := panel.View()
-	if !strings.Contains(view, "Manifest mode") || !strings.Contains(view, "placeholder") {
-		t.Fatalf("expected placeholder content, got %q", view)
+	if !strings.Contains(view, "Manifest") {
+		t.Fatalf("expected manifest content, got %q", view)
 	}
 }
 

@@ -112,7 +112,8 @@ func panelResourceNames(ctx context.Context, panel *Panel) []string {
 	}
 	names := make([]string, 0, len(items))
 	for _, item := range items {
-		names = append(names, item.Name)
+		name := strings.TrimPrefix(item.Name, "/")
+		names = append(names, name)
 	}
 	return names
 }

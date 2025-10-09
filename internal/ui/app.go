@@ -18,6 +18,7 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
+	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
@@ -1451,7 +1452,7 @@ func (a *App) setupPanelInputs() {
 			return newPlaceholderWidget(p, fmt.Sprintf("%s describe view coming soon", name))
 		})
 		panel.RegisterMode(PanelModeManifest, func(p *Panel) PanelWidget {
-			return newPlaceholderWidget(p, fmt.Sprintf("%s manifest view coming soon", name))
+			return manifestwidget.New(p.manifestWidgetDeps())
 		})
 		panel.RegisterMode(PanelModeFile, func(p *Panel) PanelWidget {
 			return newPlaceholderWidget(p, fmt.Sprintf("%s file view coming soon", name))

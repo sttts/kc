@@ -12,6 +12,7 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	listwidget "github.com/sttts/kc/internal/ui/panelcontent/list"
+	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -56,7 +57,7 @@ func NewPanel(title string) *Panel {
 		return newPlaceholderWidget(panel, "Describe mode placeholder")
 	})
 	p.RegisterMode(PanelModeManifest, func(panel *Panel) panelcontent.Widget {
-		return newPlaceholderWidget(panel, "Manifest mode placeholder")
+		return manifestwidget.New(panel.manifestWidgetDeps())
 	})
 	p.RegisterMode(PanelModeFile, func(panel *Panel) panelcontent.Widget {
 		return newPlaceholderWidget(panel, "File mode placeholder")
@@ -69,6 +70,19 @@ func (p *Panel) listWidgetDeps() panelcontent.WidgetDeps {
 		InvokeAction:     p.invokeWidgetAction,
 		Path:             func() string { return p.currentPath },
 		SelectionChanged: p.widgetSelectionChanged,
+		SelectedItem: func(ctx context.Context) (interface{}, bool) {
+			return p.SelectedNavItem(ctx)
+		},
+	}
+}
+
+func (p *Panel) manifestWidgetDeps() panelcontent.WidgetDeps {
+	return panelcontent.WidgetDeps{
+		InvokeAction: p.invokeWidgetAction,
+		Path:         func() string { return p.currentPath },
+		SelectedItem: func(ctx context.Context) (interface{}, bool) {
+			return p.SelectedNavItem(ctx)
+		},
 	}
 }
 
@@ -117,6 +131,7 @@ func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Sel
 	panel := p
 	path := sel.Path
 	id := sel.ID
+	p.notifySelectionListeners(ctx, sel)
 	return func() tea.Msg {
 		return PanelSelectionChangedMsg{
 			Panel:       panel,
@@ -229,6 +244,7 @@ func (p *Panel) ResetSelectionTop(ctx context.Context) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.ResetSelection(ctx)
 	}
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.currentSelectionID(ctx), Path: p.currentPath})
 }
 
 // SetFolder enables folder-backed rendering using the new navigation package.
@@ -238,6 +254,7 @@ func (p *Panel) SetFolder(ctx context.Context, f models.Folder, hasBack bool) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.SetFolder(ctx, f, hasBack)
 	}
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.currentSelectionID(ctx), Path: p.currentPath})
 }
 
 // UseFolder toggles folder-backed rendering.
@@ -245,6 +262,7 @@ func (p *Panel) UseFolder(on bool) {
 	if lw := p.listWidget(nil); lw != nil {
 		lw.UseFolder(on)
 	}
+	p.widgetSelectionChanged(nil, panelcontent.Selection{ID: p.lastSelectionID, Path: p.currentPath})
 }
 
 // ClearFolder disables folder-backed rendering and clears current folder.
@@ -252,6 +270,7 @@ func (p *Panel) ClearFolder() {
 	if lw := p.listWidget(nil); lw != nil {
 		lw.ClearFolder()
 	}
+	p.widgetSelectionChanged(nil, panelcontent.Selection{ID: "", Path: p.currentPath})
 }
 
 // Folder returns the active folder if the list widget is folder-backed.
@@ -326,6 +345,7 @@ func (p *Panel) SelectByRowID(ctx context.Context, id string) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.SelectByRowID(ctx, id)
 	}
+	p.notifySelectionListeners(ctx, panelcontent.Selection{ID: id, Path: p.currentPath})
 }
 
 func (p *Panel) currentSelectionID(ctx context.Context) string {
@@ -359,6 +379,7 @@ func (p *Panel) RefreshFolder(ctx context.Context) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.RefreshFolder(ctx)
 	}
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.currentSelectionID(ctx), Path: p.currentPath})
 }
 
 // SetNamespacesDataSource wires a namespaces data source for live listings.
@@ -648,4 +669,15 @@ func (p *Panel) ColumnTitles(ctx context.Context) []string {
 		return lw.ColumnTitles()
 	}
 	return nil
+}
+
+func (p *Panel) notifySelectionListeners(ctx context.Context, sel panelcontent.Selection) {
+	for mode, widget := range p.widgets {
+		if widget == nil || mode == PanelModeList {
+			continue
+		}
+		if listener, ok := widget.(panelcontent.SelectionListener); ok {
+			listener.OnSelectionChanged(ctx, sel)
+		}
+	}
 }

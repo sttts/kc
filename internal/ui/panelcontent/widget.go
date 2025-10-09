@@ -36,6 +36,7 @@ type WidgetDeps struct {
 	InvokeAction     func(context.Context, Action) tea.Cmd
 	Path             func() string
 	SelectionChanged func(context.Context, Selection) tea.Cmd
+	SelectedItem     func(context.Context) (interface{}, bool)
 }
 
 // Selection represents the widget's current selection identity.
@@ -57,6 +58,11 @@ type ItemProvider interface {
 // FooterProvider widgets can render a footer row via the panel shell.
 type FooterProvider interface {
 	Footer(context.Context, int) string
+}
+
+// SelectionListener widgets opt in to selection change notifications.
+type SelectionListener interface {
+	OnSelectionChanged(context.Context, Selection)
 }
 
 // Action identifies panel-level shortcuts widgets may invoke.
