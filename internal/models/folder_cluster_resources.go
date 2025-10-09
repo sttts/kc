@@ -31,7 +31,7 @@ func (f *ClusterResourcesFolder) populate(ctx context.Context) ([]table.Row, err
 }
 
 func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, error) {
-	cfg := f.Deps.AppConfig
+	_, order, favorites := f.viewSettings()
 	infos, err := f.Deps.Cl.GetResourceInfos()
 	if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 		gvr := schema.GroupVersionResource{Group: info.GVK.Group, Version: info.GVK.Version, Resource: info.Resource}
 		entries = append(entries, resourceEntry{info: info, gvr: gvr})
 	}
-	sortResourceEntries(entries, cfg.Resources.Order, favoritesMap(cfg.Resources.Favorites))
+	sortResourceEntries(entries, order, favoritesMap(favorites))
 	specs := make([]resourceGroupSpec, 0, len(entries))
 	nameStyle := WhiteStyle()
 	for _, entry := range entries {

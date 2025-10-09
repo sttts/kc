@@ -224,6 +224,15 @@ func (a *App) panelIndex(panel *Panel) int {
 	return 0
 }
 
+func applyResourceOptionsToFolder(folder models.Folder, show bool, order appconfig.ResourcesViewOrder, favorites []string) {
+	if folder == nil {
+		return
+	}
+	if configurable, ok := folder.(models.ResourceViewConfigurable); ok {
+		configurable.ApplyResourceViewOptions(show, order, favorites)
+	}
+}
+
 func (a *App) navigatorForPanel(panel *Panel) *navui.Navigator {
 	if panel == a.rightPanel {
 		return a.rightNav
@@ -263,6 +272,25 @@ func (a *App) syncPanelConfig(panel *Panel) {
 	cfg.Objects.Order = panel.objOrder
 	cfg.Objects.Columns = panel.columnsMode
 	cfg.Panel.Table.Mode = appconfig.TableMode(panel.TableMode())
+}
+
+func (a *App) applyResourceOptions(panel *Panel) {
+	if panel == nil {
+		return
+	}
+	show, orderStr := panel.ResourceViewOptions()
+	order := appconfig.ResourcesViewOrder(orderStr)
+	cfg := a.ensurePanelConfig(panel)
+	var favorites []string
+	if cfg != nil {
+		favorites = cfg.Resources.Favorites
+	}
+	applyResourceOptionsToFolder(panel.folder, show, order, favorites)
+	if nav := a.navigatorForPanel(panel); nav != nil {
+		if cur := nav.Current(); cur != nil {
+			applyResourceOptionsToFolder(cur, show, order, favorites)
+		}
+	}
 }
 
 func (a *App) aggregatedKubeConfig(current string) clientcmdapi.Config {
@@ -398,6 +426,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				a.cfg.Panel.Table.Mode = appconfig.TableMode(m.TableMode)
 				_ = appconfig.Save(a.cfg)
+				a.applyResourceOptions(a.leftPanel)
+				a.applyResourceOptions(a.rightPanel)
 			}
 			if m.Accept {
 				// Apply to active panel only; do not persist
@@ -409,6 +439,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						a.leftPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
 					}
 					a.syncPanelConfig(a.leftPanel)
+					a.applyResourceOptions(a.leftPanel)
 				} else {
 					ctxTable, cancelTable := context.WithTimeout(a.ctx, panelContextTimeout)
 					a.rightPanel.SetTableMode(ctxTable, m.TableMode)
@@ -417,6 +448,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						a.rightPanel.SetResourceViewOptions(m.ShowNonEmptyOnly, m.Order)
 					}
 					a.syncPanelConfig(a.rightPanel)
+					a.applyResourceOptions(a.rightPanel)
 				}
 				// Refresh only the active panel's folder
 				if a.activePanel == 0 && a.leftNav != nil {
@@ -2447,6 +2479,8 @@ func (a *App) initData(ctx context.Context) error {
 	if a.cfg != nil {
 		a.leftPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
 		a.rightPanel.SetResourceViewOptions(a.cfg.Resources.ShowNonEmptyOnly, string(a.cfg.Resources.Order))
+		a.applyResourceOptions(a.leftPanel)
+		a.applyResourceOptions(a.rightPanel)
 		// Initialize table mode from config defaults
 		ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
 		a.leftPanel.SetTableMode(ctxLeft, string(a.cfg.Panel.Table.Mode))
@@ -2559,6 +2593,8 @@ func (a *App) goToNamespace(ns string) {
 	a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
 	a.leftPanel.UseFolder(true)
 	a.rightPanel.UseFolder(true)
+	a.applyResourceOptions(a.leftPanel)
+	a.applyResourceOptions(a.rightPanel)
 	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		a.activePanel = 0
 		a.handleFolderNav(back, selID, next)
@@ -2593,6 +2629,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 	var panelSet func(context.Context, models.Folder, bool)
 	var panelSelectByID func(context.Context, string)
 	var panelReset func(context.Context)
+	var panelRef *Panel
 	if a.activePanel == 0 {
 		cfg := a.ensurePanelConfig(a.leftPanel)
 		a.syncPanelConfig(a.leftPanel)
@@ -2607,6 +2644,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		}
 		panelSelectByID = func(ctx context.Context, id string) { a.leftPanel.SelectByRowID(ctx, id) }
 		panelReset = func(ctx context.Context) { a.leftPanel.ResetSelectionTop(ctx) }
+		panelRef = a.leftPanel
 	} else {
 		cfg := a.ensurePanelConfig(a.rightPanel)
 		a.syncPanelConfig(a.rightPanel)
@@ -2621,6 +2659,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		}
 		panelSelectByID = func(ctx context.Context, id string) { a.rightPanel.SelectByRowID(ctx, id) }
 		panelReset = func(ctx context.Context) { a.rightPanel.ResetSelectionTop(ctx) }
+		panelRef = a.rightPanel
 	}
 	if back {
 		nav.Back()
@@ -2663,6 +2702,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		panelReset(ctxReset)
 		cancelReset()
 	}
+	a.applyResourceOptions(panelRef)
 }
 
 // namespaceExists returns true if the namespace exists in the current cluster.

@@ -10,6 +10,7 @@ import (
 	kccluster "github.com/sttts/kc/internal/cluster"
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/pkg/appconfig"
+	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -19,6 +20,15 @@ type ResourcesFolder struct {
 	*BaseFolder
 	items     map[string]*ResourceGroupItem
 	lastSpecs map[string]resourceGroupSignature
+	overrides *resourceViewOptions
+}
+
+type resourceViewOptions struct {
+	showNonEmpty *bool
+	order        appconfig.ResourcesViewOrder
+	hasOrder     bool
+	favorites    []string
+	hasFavorites bool
 }
 
 // NewResourcesFolder constructs a ResourcesFolder with default columns and caller-provided metadata.
@@ -28,6 +38,64 @@ func NewResourcesFolder(base *BaseFolder) *ResourcesFolder {
 		BaseFolder: base,
 		items:      make(map[string]*ResourceGroupItem),
 		lastSpecs:  make(map[string]resourceGroupSignature),
+	}
+}
+
+func (f *ResourcesFolder) viewSettings() (bool, appconfig.ResourcesViewOrder, []string) {
+	show := true
+	order := appconfig.OrderAlpha
+	var favorites []string
+	if cfg := f.Deps.AppConfig; cfg != nil {
+		show = cfg.Resources.ShowNonEmptyOnly
+		order = cfg.Resources.Order
+		favorites = cfg.Resources.Favorites
+	}
+	if f.overrides != nil {
+		if f.overrides.showNonEmpty != nil {
+			show = *f.overrides.showNonEmpty
+		}
+		if f.overrides.hasOrder {
+			order = f.overrides.order
+		}
+		if f.overrides.hasFavorites {
+			favorites = f.overrides.favorites
+		}
+	}
+	return show, order, favorites
+}
+
+func (f *ResourcesFolder) ApplyResourceViewOptions(showNonEmpty bool, order appconfig.ResourcesViewOrder, favorites []string) {
+	if f == nil {
+		return
+	}
+	if f.overrides == nil {
+		f.overrides = &resourceViewOptions{}
+	}
+	ov := f.overrides
+	changed := false
+	if ov.showNonEmpty == nil || *ov.showNonEmpty != showNonEmpty {
+		val := showNonEmpty
+		ov.showNonEmpty = &val
+		changed = true
+	}
+	if !ov.hasOrder || ov.order != order {
+		ov.order = order
+		ov.hasOrder = true
+		changed = true
+	}
+	if favorites != nil {
+		if !ov.hasFavorites || !slices.Equal(ov.favorites, favorites) {
+			ov.favorites = append([]string(nil), favorites...)
+			ov.hasFavorites = true
+			changed = true
+		}
+	} else if ov.hasFavorites {
+		ov.hasFavorites = false
+		ov.favorites = nil
+		changed = true
+	}
+	if changed {
+		f.Refresh()
 	}
 }
 
@@ -45,13 +113,12 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		return nil
 	}
 
-	cfg := f.Deps.AppConfig
-	showNonEmpty := cfg.Resources.ShowNonEmptyOnly
+	showNonEmpty, _, _ := f.viewSettings()
 	rows := make([]table.Row, 0, len(specs))
 	seen := make(map[string]*ResourceGroupItem, len(specs))
 	sigs := make(map[string]resourceGroupSignature, len(specs))
 	changed := len(specs) != len(f.lastSpecs)
-	for _, spec := range specs {
+	for idx, spec := range specs {
 		item, created := f.ensureResourceGroupItem(spec)
 		if item == nil {
 			continue
@@ -65,7 +132,7 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		if showNonEmpty && item.Empty() {
 			visible = false
 		}
-		sig := makeResourceGroupSignature(spec, visible)
+		sig := makeResourceGroupSignature(spec, visible, idx)
 		sigs[spec.id] = sig
 		if !changed {
 			prev, ok := f.lastSpecs[spec.id]
@@ -132,11 +199,20 @@ func verbsInclude(verbs []string, want string) bool {
 func sortResourceEntries(entries []resourceEntry, order appconfig.ResourcesViewOrder, fav map[string]bool) {
 	switch order {
 	case appconfig.OrderGroup:
-		sort.Slice(entries, func(i, j int) bool {
-			gi, gj := entries[i].info.GVK.Group, entries[j].info.GVK.Group
-			if gi == gj {
+		sort.SliceStable(entries, func(i, j int) bool {
+			groupI := entries[i].info.GVK.Group
+			groupJ := entries[j].info.GVK.Group
+			if groupI == groupJ {
 				return entries[i].info.Resource < entries[j].info.Resource
 			}
+			if groupI == "" {
+				return true
+			}
+			if groupJ == "" {
+				return false
+			}
+			gi := groupVersionString(groupI, entries[i].info.GVK.Version)
+			gj := groupVersionString(groupJ, entries[j].info.GVK.Version)
 			return gi < gj
 		})
 	case appconfig.OrderFavorites:
@@ -146,7 +222,7 @@ func sortResourceEntries(entries []resourceEntry, order appconfig.ResourcesViewO
 			}
 			return fav[strings.ToLower(res)]
 		}
-		sort.Slice(entries, func(i, j int) bool {
+		sort.SliceStable(entries, func(i, j int) bool {
 			fi, fj := isFav(entries[i].info.Resource), isFav(entries[j].info.Resource)
 			if fi != fj {
 				return fi
@@ -154,7 +230,7 @@ func sortResourceEntries(entries []resourceEntry, order appconfig.ResourcesViewO
 			return entries[i].info.Resource < entries[j].info.Resource
 		})
 	default:
-		sort.Slice(entries, func(i, j int) bool { return entries[i].info.Resource < entries[j].info.Resource })
+		sort.SliceStable(entries, func(i, j int) bool { return entries[i].info.Resource < entries[j].info.Resource })
 	}
 }
 
@@ -199,9 +275,10 @@ type resourceGroupSignature struct {
 	pathHash  string
 	visible   bool
 	detail    string
+	index     int
 }
 
-func makeResourceGroupSignature(spec resourceGroupSpec, visible bool) resourceGroupSignature {
+func makeResourceGroupSignature(spec resourceGroupSpec, visible bool, index int) resourceGroupSignature {
 	return resourceGroupSignature{
 		gvr:       spec.gvr,
 		namespace: spec.namespace,
@@ -210,6 +287,7 @@ func makeResourceGroupSignature(spec resourceGroupSpec, visible bool) resourceGr
 		pathHash:  joinStrings(spec.path),
 		visible:   visible,
 		detail:    spec.detail,
+		index:     index,
 	}
 }
 

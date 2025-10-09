@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss/v2"
 	table "github.com/sttts/kc/internal/table"
+	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -58,6 +59,11 @@ type KeyFolder interface {
 type Back interface {
 	Item
 	IsBack() bool
+}
+
+// ResourceViewConfigurable allows folders to customize resource view toggles at runtime.
+type ResourceViewConfigurable interface {
+	ApplyResourceViewOptions(showNonEmpty bool, order appconfig.ResourcesViewOrder, favorites []string)
 }
 
 // BackItem renders the synthetic ".." row.
