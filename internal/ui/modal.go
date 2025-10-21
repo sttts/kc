@@ -33,7 +33,18 @@ type Modal struct {
 	contentOffsetX int
 	contentOffsetY int
 	footerHotspots []footerHotspot
+	mode           ModalMode
 }
+
+// ModalMode selects the rendering style for a modal.
+type ModalMode int
+
+const (
+	// ModalModeStacked renders the grey stacked modal overlay.
+	ModalModeStacked ModalMode = iota
+	// ModalModeFullscreen renders the blue fullscreen modal used by the viewer.
+	ModalModeFullscreen
+)
 
 // RedrawTickMsg is emitted periodically to force a re-render while a
 // windowed modal with a dynamic background is visible (e.g., for live
@@ -59,6 +70,7 @@ func NewModal(title string, content tea.Model) *Modal {
 		content:          content,
 		visible:          false,
 		closeOnSingleEsc: true,
+		mode:             ModalModeStacked,
 	}
 }
 
@@ -118,6 +130,9 @@ func (m *Modal) SetWindowOffset(offsetX, offsetY int) {
 	m.windowOffsetY = offsetY
 	m.windowHasPos = true
 }
+
+// SetMode configures the modal presentation style.
+func (m *Modal) SetMode(mode ModalMode) { m.mode = mode }
 
 // Update handles messages and updates the modal state
 func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -222,10 +237,8 @@ func (m *Modal) View() string {
 	// The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
 	contentW := max(1, m.width-2)
 	contentH := max(1, m.height-3)
-	// For YAML viewers, drop left/right borders for easier copy/paste and allow full width content.
-	// Full-width content for viewers: detect via RequestTheme capability (viewers implement it)
-	_, isViewer := m.content.(interface{ RequestTheme() tea.Cmd })
-	if isViewer {
+	fullscreen := m.mode == ModalModeFullscreen
+	if fullscreen {
 		contentW = m.width
 		// Viewers do not draw a bottom border; give them one extra row of
 		// interior height so content reaches the footer line.
@@ -379,17 +392,26 @@ func (m *Modal) View() string {
 	// Build frame with overlay title (match focused panel style)
 	modalBg := lipgloss.Color(uistyles.ColorModalBg)
 	modalFg := lipgloss.Color(uistyles.ColorModalFg)
+	if fullscreen {
+		modalBg = lipgloss.Blue
+		modalFg = lipgloss.White
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(modalFg).
 		BorderBackground(modalBg).
 		Background(modalBg)
 
-		// Focused panel title chip style
 	labelStyle := lipgloss.NewStyle().
 		Foreground(modalFg).
 		Background(lipgloss.Color(uistyles.ColorModalSelBg)).
 		Padding(0, 1)
+	if fullscreen {
+		labelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Black).
+			Background(lipgloss.Color(uistyles.ColorModalBg)).
+			Padding(0, 1)
+	}
 	label := labelStyle.Render(m.title)
 	border := boxStyle.GetBorderStyle()
 	topBorderStyler := lipgloss.NewStyle().
@@ -403,7 +425,7 @@ func (m *Modal) View() string {
 	topRune := border.Top
 	tl := border.TopLeft
 	tr := border.TopRight
-	if isViewer {
+	if fullscreen {
 		tl, tr = topRune, topRune
 	}
 	topLeft := topBorderStyler(tl)
@@ -427,12 +449,12 @@ func (m *Modal) View() string {
 		Width(m.width).
 		// Reserve one terminal line for the footer outside the frame
 		Height(m.height - 2)
-	if isViewer {
+	if fullscreen {
 		// Remove vertical borders and bottom border for viewers.
 		bottomSty = bottomSty.BorderLeft(false).BorderRight(false).BorderBottom(false)
 	}
 	bottom := bottomSty.Render(inner)
-	if isViewer {
+	if fullscreen {
 		m.contentOffsetX = 0
 	} else {
 		m.contentOffsetX = 1

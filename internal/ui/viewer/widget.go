@@ -9,6 +9,7 @@ import (
 	"github.com/alecthomas/chroma/v2/styles"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
 // Metadata describes the highlighted content.
@@ -111,18 +112,15 @@ func (w *Widget) Update(msg tea.Msg) (tea.Cmd, bool) {
 func (w *Widget) View(frame Frame) string {
 	w.Resize(frame.Width, frame.Height)
 	lines := w.visibleLines()
-	lineStyle := lipgloss.NewStyle().Width(max(1, frame.Width))
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+	body := strings.Join(lines, "\n")
+	style := uistyles.PanelContentStyle.Width(max(1, frame.Width)).Height(max(1, frame.Height))
 	if frame.Focused {
-		lineStyle = lineStyle.Bold(true)
+		style = style.Bold(true)
 	}
-	rendered := make([]string, len(lines))
-	for i, line := range lines {
-		rendered[i] = lineStyle.Render(line)
-	}
-	if len(rendered) == 0 {
-		return lineStyle.Render("")
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, rendered...)
+	return style.Render(body)
 }
 
 // Footer returns viewer status (title/position) rendered into a footer row.
@@ -155,13 +153,13 @@ func (w *Widget) highlight() {
 	}
 	var rendered string
 	if w.theme == "turbo-pascal" {
-		rendered = formatTurboPascalANSI(iterator)
+		rendered = highlightFallback(iterator)
 	} else {
 		style := styles.Get(w.theme)
 		if style == nil {
 			style = styles.Monokai
 		}
-		rendered = formatTTY16mWithPanelBG(style, iterator)
+		rendered = renderTokensWithStyle(style, iterator)
 	}
 	rendered = strings.TrimRight(rendered, "\n")
 	w.lines = strings.Split(rendered, "\n")
@@ -271,9 +269,10 @@ func (w *Widget) visibleLines() []string {
 	result := make([]string, w.page())
 	for i := range result {
 		if i < len(segment) {
-			result[i] = trimANSI(segment[i], w.hOffset, w.width)
+			line := trimANSI(segment[i], w.hOffset, w.width)
+			result[i] = applyPanelBackground(line, w.width)
 		} else {
-			result[i] = ""
+			result[i] = applyPanelBackground("", w.width)
 		}
 	}
 	return result
@@ -353,4 +352,25 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func applyPanelBackground(line string, width int) string {
+	const bg = "\033[44m"
+	const reset = "\033[0m"
+	if width <= 0 {
+		return bg + reset
+	}
+	if !strings.HasPrefix(line, bg) {
+		line = bg + line
+	}
+	hasReset := strings.HasSuffix(line, reset)
+	if hasReset {
+		line = strings.TrimSuffix(line, reset)
+	}
+	displayWidth := lipgloss.Width(line)
+	if displayWidth < width {
+		line += strings.Repeat(" ", width-displayWidth)
+	}
+	line += reset
+	return line
 }

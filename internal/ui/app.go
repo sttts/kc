@@ -1999,6 +1999,7 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 		modalTitle = "/" + title
 	}
 	modal := NewModal(modalTitle, viewer)
+	modal.SetMode(ModalModeFullscreen)
 	modal.SetDimensions(a.width, a.height)
 	modal.SetCloseOnSingleEsc(false)
 	a.modalManager.Register("yaml_viewer", modal)

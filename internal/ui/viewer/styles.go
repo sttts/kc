@@ -34,7 +34,7 @@ func ensureCustomStyles() {
 	})
 }
 
-func formatTurboPascalANSI(it chroma.Iterator) string {
+func highlightFallback(it chroma.Iterator) string {
 	var buf bytes.Buffer
 	buf.WriteString("\033[44m")
 	prevWasColon := false
@@ -107,7 +107,7 @@ func formatTurboPascalANSI(it chroma.Iterator) string {
 	return buf.String()
 }
 
-func formatTTY16mWithPanelBG(style *chroma.Style, it chroma.Iterator) string {
+func renderTokensWithStyle(style *chroma.Style, it chroma.Iterator) string {
 	var buf bytes.Buffer
 	buf.WriteString("\033[44m")
 	for token := it(); token != chroma.EOF; token = it() {
