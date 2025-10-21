@@ -32,7 +32,7 @@ Hierarchy refactor and tests — ordered
   - [x] Introduce `RowItem`/`ObjectItem` hierarchy (NamespaceItem, PodItem, ConfigMapItem, SecretItem, ContextItem, ContextListItem, ResourceGroupItem, ConfigKeyItem, ContainerItem, BackItem) with `ViewContent` + optional `Enter`.
   - [x] Extend `Folder`/`BaseFolder` with `ItemByID` and update `populate` implementations to construct concrete items instead of generic `SimpleItem`/`EnterableItem`.
   - [x] Update `panel.go` and `app.go` to drop path heuristics and rely on `ItemByID` + `Viewable` when enabling F3.
-  - [ ] Ensure `ViewContent` metadata feeds `TextViewer` (lang/mime/filename) and remove legacy `viewpkg.ViewProvider` plumbing.
+  - [x] Ensure `ViewContent` metadata feeds `TextViewer` (lang/mime/filename) and remove legacy `viewpkg.ViewProvider` plumbing.
 
 Detailed next steps (post‑compaction anchors)
 - [ ] Replace legacy folder builders in `internal/ui/app.go` (buildNamespacesFolder/buildNamespacedResourcesFolder/buildNamespacedObjectsFolder/buildClusterObjectsFolder) with the new self‑sufficient folders:
