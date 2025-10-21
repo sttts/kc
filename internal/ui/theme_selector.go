@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
+	"github.com/sttts/kc/internal/ui/viewer"
 )
 
 // ThemeSelector is a simple list to choose a chroma style.
@@ -22,7 +23,7 @@ type ThemeSelector struct {
 
 func NewThemeSelector(onApply func(name string) tea.Cmd) *ThemeSelector {
 	// Ensure custom styles (e.g., turbo-pascal) are registered before fetching names
-	registerCustomStylesOnce()
+	viewer.EnsureStyles()
 	// Curated list to keep selection compact while useful.
 	curated := []string{
 		"turbo-pascal", // custom style resembling Turbo Pascal colors

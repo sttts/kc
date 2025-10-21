@@ -40,8 +40,8 @@ type RowList struct {
 
 - `metav1.TableRow` carries the raw cells, object snippet, and row conditions straight from the server.
 - `Columns` records the server’s column definitions so callers can interpret the values without custom logic.
-- `ObjectMeta` is reconstructed from the embedded object (when available) so controller-runtime keys (`namespace/name`) work as
-  expected.
+- `ObjectMeta` is reconstructed from the embedded metadata so controller-runtime keys (`namespace/name`) work as expected, while
+  the embedded object payload is discarded to avoid keeping full manifests in memory.
 - `Row`/`RowList` implement a `TableTarget()` accessor; callers must set the underlying GVK via `NewRowList(gvk)` or
   `Row.SetTableTarget(gvk)` before calling the cache so the adapter knows which resource to query.
 
@@ -50,7 +50,7 @@ type RowList struct {
 1. The caller constructs a `RowList` via `tablecache.NewRowList(gvk)` (or sets the target GVK manually) and passes it to the cache
    `List`/`Get` call.
 2. `tablecache` resolves the resource using the shared RESTMapper and issues list/watch/GET requests with the table `Accept`
-   headers and `includeObject=Object` to pull the embedded metadata.
+   headers and `includeObject=metadata` so only metadata travels with each row.
 3. The server returns a `metav1.Table`; `tablecache` converts it into `RowList`/`Row` so downstream code receives typed objects
    without having to parse raw tables.
 4. For non-table objects, the wrapper simply delegates to controller-runtime’s default cache implementation.

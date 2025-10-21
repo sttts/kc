@@ -78,6 +78,9 @@ func TestReaderListTables(t *testing.T) {
 	if len(row.TableRow.Cells) == 0 || row.TableRow.Cells[0] != "pod-a" {
 		t.Fatalf("expected first cell pod-a, got %v", row.TableRow.Cells)
 	}
+	if row.TableRow.Object.Object != nil || len(row.TableRow.Object.Raw) != 0 {
+		t.Fatalf("expected embedded object to be stripped, got %+v", row.TableRow.Object)
+	}
 
 	if list.TableTarget() != target {
 		t.Fatalf("expected list target %v", target)
@@ -176,6 +179,9 @@ func TestRESTTableFetcherListUnknownGroupVersion(t *testing.T) {
 		if got := req.URL.Query().Get("labelSelector"); got != "env=dev" {
 			t.Fatalf("expected labelSelector env=dev, got %q", got)
 		}
+		if got := req.URL.Query().Get("includeObject"); got != string(metav1.IncludeMetadata) {
+			t.Fatalf("expected includeObject=metadata, got %q", got)
+		}
 	default:
 		t.Fatal("expected request to be sent to server")
 	}
@@ -220,6 +226,9 @@ func TestReaderWatchTables(t *testing.T) {
 			}
 			if row.TableTarget() != target {
 				t.Fatalf("expected row target %v", target)
+			}
+			if row.TableRow.Object.Object != nil || len(row.TableRow.Object.Raw) != 0 {
+				t.Fatalf("expected embedded object to be stripped, got %+v", row.TableRow.Object)
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatal("timed out waiting for watch event")
@@ -278,13 +287,13 @@ func buildTestTable(t *testing.T) *metav1.Table {
 
 	rows := make([]metav1.TableRow, len(pods))
 	for i := range pods {
-		raw, err := json.Marshal(&pods[i])
-		if err != nil {
-			t.Fatalf("marshal pod: %v", err)
+		meta := &metav1.PartialObjectMetadata{
+			TypeMeta:   pods[i].TypeMeta,
+			ObjectMeta: pods[i].ObjectMeta,
 		}
 		rows[i] = metav1.TableRow{
 			Cells:  []interface{}{pods[i].Name},
-			Object: runtime.RawExtension{Raw: raw},
+			Object: runtime.RawExtension{Object: meta},
 		}
 	}
 

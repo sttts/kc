@@ -27,8 +27,6 @@ const (
 	tableWatchAcceptHeader = "application/json;as=Table;g=meta.k8s.io;v=v1;watch=true, application/json"
 )
 
-var tableOptions = &metav1.TableOptions{IncludeObject: metav1.IncludeObject}
-
 var errRequireFallback = errors.New("tablecache: require fallback watch")
 
 // Reader decorates a controller-runtime reader so that table-aware lists and watches are materialized as Row objects.
@@ -224,6 +222,18 @@ func convertTable(table *metav1.Table, target schema.GroupVersionKind) (*RowList
 			return nil, err
 		}
 		row.ObjectMeta = meta
+		if row.Name == "" && len(row.TableRow.Cells) > 0 {
+			if cell, ok := row.TableRow.Cells[0].(string); ok {
+				row.Name = strings.TrimPrefix(cell, "/")
+			}
+		}
+		if row.Namespace == "" && len(row.TableRow.Cells) > 1 {
+			if cell, ok := row.TableRow.Cells[1].(string); ok {
+				row.Namespace = cell
+			}
+		}
+		// Drop the embedded object to avoid holding full manifests in memory; viewers fetch on demand.
+		row.TableRow.Object = runtime.RawExtension{}
 		list.Items = append(list.Items, *row)
 	}
 
@@ -282,7 +292,7 @@ func (r *Reader) objectEventConverter(ctx context.Context, mapping *meta.RESTMap
 		copy(row.Columns, fallbackColumns)
 		row.TableRow = metav1.TableRow{
 			Cells:  []interface{}{row.Name, row.Namespace},
-			Object: runtime.RawExtension{Object: obj.DeepCopyObject()},
+			Object: runtime.RawExtension{},
 		}
 
 		return []watch.Event{{Type: evt.Type, Object: row}}, nil
@@ -436,7 +446,7 @@ func (f *restTableFetcher) ListTable(ctx context.Context, mapping *meta.RESTMapp
 		req = req.Namespace(namespace)
 	}
 
-	req.Param("includeObject", string(metav1.IncludeObject))
+	req.Param("includeObject", string(metav1.IncludeMetadata))
 	req.SpecificallyVersionedParams(&opts, f.paramCodec, metav1.SchemeGroupVersion)
 	req.SetHeader("Accept", tableListAcceptHeader)
 
@@ -457,7 +467,7 @@ func (f *restTableFetcher) WatchTable(ctx context.Context, mapping *meta.RESTMap
 		req = req.Namespace(namespace)
 	}
 
-	req.Param("includeObject", string(metav1.IncludeObject))
+	req.Param("includeObject", string(metav1.IncludeMetadata))
 	req.SpecificallyVersionedParams(&opts, f.paramCodec, metav1.SchemeGroupVersion)
 	req.SetHeader("Accept", tableWatchAcceptHeader)
 
@@ -474,7 +484,7 @@ func (f *restTableFetcher) GetTable(ctx context.Context, mapping *meta.RESTMappi
 		req = req.Namespace(namespace)
 	}
 	req = req.Name(name)
-	req.Param("includeObject", string(metav1.IncludeObject))
+	req.Param("includeObject", string(metav1.IncludeMetadata))
 	req.SetHeader("Accept", tableListAcceptHeader)
 
 	table := &metav1.Table{}
