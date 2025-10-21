@@ -2480,7 +2480,7 @@ func (a *App) initData(ctx context.Context) error {
 	// Prepare app context and cluster pool; cluster will be started via pool.Get
 	a.cancel()
 	a.ctx, a.cancel = context.WithCancel(ctx)
-	a.clPool = kccluster.NewPool(2 * time.Minute)
+	a.clPool = kccluster.NewPool(a.cfg.Kubernetes.Clusters.TTL.Duration)
 	log.Info("starting cluster pool")
 	a.clPool.Start()
 	k := kccluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
