@@ -18,6 +18,7 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -1165,11 +1166,13 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// contentHeight already equals (panelHeight-2), so subtract one more to account for the frame's top/bottom.
 	ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
 	a.leftPanel.SetDimensions(ctxLeft, contentWidth, contentHeight-2)
+	leftInfo := a.leftPanel.FrameInfo(ctxLeft)
 	leftContentView := a.leftPanel.ViewContentOnlyFocused(ctxLeft, a.activePanel == 0)
 	leftFooterView := a.leftPanel.GetFooter(ctxLeft)
 	cancelLeft()
 	ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
 	a.rightPanel.SetDimensions(ctxRight, contentWidth, contentHeight-2)
+	rightInfo := a.rightPanel.FrameInfo(ctxRight)
 	rightContentView := a.rightPanel.ViewContentOnlyFocused(ctxRight, a.activePanel == 1)
 	rightFooterView := a.rightPanel.GetFooter(ctxRight)
 	cancelRight()
@@ -1179,8 +1182,16 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	frameHeight := panelHeight - footerHeight
 
 	// Create frames with proper dimensions, passing focus state
-	leftFramed := a.createFrameWithOverlayTitle(leftContentView, a.leftPanel.GetCurrentPath(), panelWidth, frameHeight, a.activePanel == 0)
-	rightFramed := a.createFrameWithOverlayTitle(rightContentView, a.rightPanel.GetCurrentPath(), panelWidth, frameHeight, a.activePanel == 1)
+	leftTitle := leftInfo.Breadcrumb
+	if leftTitle == "" {
+		leftTitle = a.leftPanel.GetCurrentPath()
+	}
+	rightTitle := rightInfo.Breadcrumb
+	if rightTitle == "" {
+		rightTitle = a.rightPanel.GetCurrentPath()
+	}
+	leftFramed := a.createFrameWithOverlayTitle(leftContentView, leftInfo, leftTitle, panelWidth, frameHeight, a.activePanel == 0)
+	rightFramed := a.createFrameWithOverlayTitle(rightContentView, rightInfo, rightTitle, panelWidth, frameHeight, a.activePanel == 1)
 
 	// Create framed footers with T-junction connection
 	leftFooter := a.createFramedFooter(leftFooterView, panelWidth)
@@ -2432,7 +2443,10 @@ func (a *App) renameMoveItem() tea.Cmd {
 
 // createFrameWithOverlayTitle creates a frame with title overlaid on the top border
 // Based on the approach from https://gist.github.com/meowgorithm/1777377a43373f563476a2bcb7d89306
-func (a *App) createFrameWithOverlayTitle(content, title string, width, height int, isFocused bool) string {
+func (a *App) createFrameWithOverlayTitle(content string, info panelcontent.FrameInfo, title string, width, height int, isFocused bool) string {
+	if info.Breadcrumb != "" {
+		title = info.Breadcrumb
+	}
 	if title == "" {
 		// No title, just return regular frame
 		return lipgloss.NewStyle().
@@ -2535,25 +2549,50 @@ func (a *App) createFrameWithOverlayTitle(content, title string, width, height i
 		top = topLeft + leftGap + renderedLabel + rightGap + topRight
 	}
 
-	// Render the rest of the box without the top border
 	bottom := boxStyle.Copy().
 		BorderTop(false).
 		Width(width).
 		Height(height - 1). // Subtract 1 since we're manually adding the top
 		Render(content)
 
-	// Replace the two corner characters at the TOP of the footer with T-junction characters
 	lines := strings.Split(bottom, "\n")
 	if len(lines) >= 2 {
-		// The bottom border line (last line) - replace └ with ├ and ┘ with ┤
-		bottomLine := lines[len(lines)-1]
-		bottomLine = strings.Replace(bottomLine, "└", "├", 1)
-		bottomLine = strings.Replace(bottomLine, "┘", "┤", 1)
-		lines[len(lines)-1] = bottomLine
+		last := len(lines) - 1
+		lines[last] = strings.Replace(lines[last], "└", "├", 1)
+		lines[last] = strings.Replace(lines[last], "┘", "┤", 1)
 	}
 
-	// Combine the custom top with the box
-	return top + "\n" + strings.Join(lines, "\n")
+	frame := top + "\n" + strings.Join(lines, "\n")
+
+	topIndicator := strings.TrimSpace(info.TopIndicator)
+	if topIndicator == "" {
+		topIndicator = border.Top
+	}
+	frame = overlay.Composite(topBorderStyler(topIndicator), frame, overlay.Right, overlay.Top, -1, 0)
+
+	bottomIndicator := strings.TrimSpace(info.BottomIndicator)
+	if bottomIndicator == "" {
+		bottomIndicator = border.Bottom
+	}
+	bottomBorderStyler := lipgloss.NewStyle().
+		Foreground(boxStyle.GetBorderBottomForeground()).
+		Background(boxStyle.GetBorderBottomBackground()).
+		Render
+	frame = overlay.Composite(bottomBorderStyler(bottomIndicator), frame, overlay.Right, overlay.Bottom, -1, 0)
+
+	if info.SuppressFooter {
+		status := strings.TrimSpace(info.FooterStatus)
+		if status != "" {
+			status = truncateStringToWidth(status, width-2)
+			statusStyled := uistyles.PanelFooterStyle.Copy().
+				Width(lipgloss.Width(status)).
+				Align(lipgloss.Left).
+				Render(status)
+			frame = overlay.Composite(statusStyled, frame, overlay.Right, overlay.Bottom, -1-lipgloss.Width(statusStyled), 0)
+		}
+	}
+
+	return frame
 }
 
 // createFramedFooter creates a framed footer with T-junction characters at the top

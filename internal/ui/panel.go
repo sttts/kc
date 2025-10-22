@@ -489,9 +489,10 @@ func (p *Panel) View() string {
 	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
 	defer cancel()
 
-	header := p.renderHeader()
+	info := p.frameInfo(ctx)
+	header := p.renderHeader(info.Breadcrumb)
 	content := p.renderContent(ctx)
-	footer := p.renderFooter(ctx)
+	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -505,19 +506,23 @@ func (p *Panel) View() string {
 func (p *Panel) ViewWithoutHeader() string {
 	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
 	defer cancel()
-	return p.viewWithoutHeaderWithContext(ctx, false)
+	info := p.frameInfo(ctx)
+	content := p.renderContent(ctx)
+	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		content,
+		footer,
+	)
 }
 
 // ViewWithoutHeaderFocused renders the panel content and footer with focus state
 func (p *Panel) ViewWithoutHeaderFocused(isFocused bool) string {
 	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
 	defer cancel()
-	return p.viewWithoutHeaderWithContext(ctx, isFocused)
-}
-
-func (p *Panel) viewWithoutHeaderWithContext(ctx context.Context, isFocused bool) string {
+	info := p.frameInfo(ctx)
 	content := p.renderContentFocused(ctx, isFocused)
-	footer := p.renderFooter(ctx)
+	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		content,
@@ -541,7 +546,8 @@ func (p *Panel) SetCurrentPath(path string) { p.currentPath = path }
 
 // GetFooter returns the rendered footer for external use
 func (p *Panel) GetFooter(ctx context.Context) string {
-	return p.renderFooter(ctx)
+	info := p.frameInfo(ctx)
+	return p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 }
 
 // SetDimensions sets the panel dimensions
@@ -554,16 +560,47 @@ func (p *Panel) SetDimensions(ctx context.Context, width, height int) {
 }
 
 // renderHeader renders the panel header
-func (p *Panel) renderHeader() string {
-	// Show current path as breadcrumbs
-	headerText := p.ellipsizePath(p.currentPath, p.width)
+func (p *Panel) frameInfo(ctx context.Context) panelcontent.FrameInfo {
+	info := panelcontent.FrameInfo{
+		Breadcrumb:      p.currentPath,
+		TopIndicator:    "─",
+		BottomIndicator: "─",
+	}
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		if provider, ok := widget.(panelcontent.FrameInfoProvider); ok {
+			fi := provider.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: p.width})
+			if fi.Breadcrumb != "" {
+				info.Breadcrumb = fi.Breadcrumb
+			}
+			if fi.TopIndicator != "" {
+				info.TopIndicator = fi.TopIndicator
+			}
+			if fi.BottomIndicator != "" {
+				info.BottomIndicator = fi.BottomIndicator
+			}
+			info.FooterStatus = fi.FooterStatus
+			if fi.SuppressFooter {
+				info.SuppressFooter = true
+			}
+		}
+	}
+	return info
+}
 
-	headerStyle := uistyles.PanelHeaderStyle.
+// FrameInfo exposes computed frame decoration data for external callers.
+func (p *Panel) FrameInfo(ctx context.Context) panelcontent.FrameInfo {
+	return p.frameInfo(ctx)
+}
+
+func (p *Panel) renderHeader(breadcrumb string) string {
+	if breadcrumb == "" {
+		breadcrumb = "/"
+	}
+	return uistyles.PanelHeaderStyle.Copy().
 		Width(p.width).
 		Height(1).
-		Align(lipgloss.Left)
-
-	return headerStyle.Render(headerText)
+		Align(lipgloss.Left).
+		Render(p.ellipsizePath(breadcrumb, p.width))
 }
 
 // ellipsizePath shortens long breadcrumbs from the left by components, prefixing with "...".
@@ -617,17 +654,64 @@ func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string
 	return ""
 }
 
-func (p *Panel) renderFooter(ctx context.Context) string {
+func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) string {
+	if suppress {
+		return ""
+	}
+	status = strings.TrimSpace(status)
+	lines := []string{}
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if fp, ok := widget.(panelcontent.FooterProvider); ok {
-			return fp.Footer(ctx, p.width)
+			if base := fp.Footer(ctx, p.width); base != "" {
+				lines = strings.Split(strings.TrimRight(base, "\n"), "\n")
+			}
 		}
 	}
-	return uistyles.PanelFooterStyle.
-		Width(p.width).
-		Height(1).
-		Align(lipgloss.Left).
-		Render("")
+	if len(lines) == 0 {
+		if status == "" {
+			return ""
+		}
+		lines = []string{""}
+	}
+	styled := make([]string, len(lines))
+	for i, line := range lines {
+		style := uistyles.PanelFooterStyle.Copy().
+			Width(p.width).
+			Height(1)
+		if i == 0 && status != "" {
+			status = truncateStringToWidth(status, p.width-1)
+			statusWidth := lipgloss.Width(status)
+			left := truncateStringToWidth(line, p.width-statusWidth-1)
+			padding := p.width - lipgloss.Width(left) - statusWidth
+			if padding < 1 {
+				padding = 1
+			}
+			styled[i] = style.Render(left + strings.Repeat(" ", padding) + status)
+		} else {
+			styled[i] = style.Align(lipgloss.Left).Render(line)
+		}
+	}
+	return strings.Join(styled, "\n")
+}
+
+func truncateStringToWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= maxWidth {
+		return s
+	}
+	var b strings.Builder
+	width := 0
+	for _, r := range s {
+		w := lipgloss.Width(string(r))
+		if width+w > maxWidth {
+			break
+		}
+		width += w
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // renderItem renders a single item

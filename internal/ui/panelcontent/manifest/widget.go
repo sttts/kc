@@ -2,6 +2,9 @@ package manifest
 
 import (
 	"context"
+	"fmt"
+	"math"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
@@ -54,8 +57,48 @@ func (w *Widget) SetFocus(context.Context, bool) {}
 
 func (w *Widget) Teardown(context.Context) {}
 
-func (w *Widget) Footer(ctx context.Context, width int) string {
-	return w.viewer.Footer(width)
+func (w *Widget) Footer(context.Context, int) string { return "" }
+
+func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
+	info := panelcontent.FrameInfo{
+		SuppressFooter:  true,
+		TopIndicator:    "─",
+		BottomIndicator: "─",
+	}
+	breadcrumb := ""
+	if w.sel.Item != nil {
+		if path := w.sel.Item.Path(); len(path) > 0 {
+			breadcrumb = "/" + strings.Join(path, "/")
+		}
+		if breadcrumb == "" {
+			breadcrumb = w.sel.Path
+		}
+	}
+	if breadcrumb == "" && w.deps.Path != nil {
+		breadcrumb = w.deps.Path()
+	}
+	if breadcrumb != "" {
+		info.Breadcrumb = breadcrumb
+	}
+	current, total := w.viewer.Position()
+	if total > 0 {
+		above, below := w.viewer.ScrollIndicators()
+		if above {
+			info.TopIndicator = "^"
+		}
+		if below {
+			info.BottomIndicator = "v"
+		}
+		percent := int(math.Round(float64(current) * 100 / float64(total)))
+		if percent < 0 {
+			percent = 0
+		}
+		if percent > 100 {
+			percent = 100
+		}
+		info.FooterStatus = fmt.Sprintf("%d/%d • %d%%", current, total, percent)
+	}
+	return info
 }
 
 // OnSelectionChanged refreshes the manifest for the provided selection.
