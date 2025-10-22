@@ -36,9 +36,15 @@ type ScrollingConfig struct {
 	Horizontal HorizontalConfig `json:"horizontal"`
 }
 
+type PanelWidthConfig struct {
+	LeftPercent  int `json:"leftPercent"`
+	RightPercent int `json:"rightPercent"`
+}
+
 type PanelConfig struct {
-	Scrolling ScrollingConfig `json:"scrolling"`
-	Table     TableConfig     `json:"table"`
+	Scrolling ScrollingConfig  `json:"scrolling"`
+	Table     TableConfig      `json:"table"`
+	Width     PanelWidthConfig `json:"width"`
 }
 
 type MouseConfig struct {
@@ -116,8 +122,12 @@ type TableConfig struct {
 
 func Default() *Config {
 	return &Config{
-		Viewer:     ViewerConfig{Theme: "dracula"},
-		Panel:      PanelConfig{Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}}, Table: TableConfig{Mode: TableModeScroll}},
+		Viewer: ViewerConfig{Theme: "dracula"},
+		Panel: PanelConfig{
+			Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}},
+			Table:     TableConfig{Mode: TableModeScroll},
+			Width:     PanelWidthConfig{LeftPercent: 50, RightPercent: 50},
+		},
 		Input:      InputConfig{Mouse: MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}}},
 		Kubernetes: KubernetesConfig{Clusters: ClustersConfig{TTL: metav1.Duration{Duration: 2 * time.Minute}}},
 		Resources: ResourcesViewConfig{
@@ -169,6 +179,7 @@ func Load() (*Config, error) {
 		if cfg.Panel.Table.Mode != TableModeFit && cfg.Panel.Table.Mode != TableModeScroll {
 			cfg.Panel.Table.Mode = TableModeScroll
 		}
+		normalizePanelWidth(&cfg.Panel.Width)
 		if cfg.Kubernetes.Clusters.TTL.Duration == 0 {
 			cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute}
 		}
@@ -285,6 +296,7 @@ func Load() (*Config, error) {
 	if cfg.Panel.Table.Mode != TableModeFit && cfg.Panel.Table.Mode != TableModeScroll {
 		cfg.Panel.Table.Mode = TableModeScroll
 	}
+	normalizePanelWidth(&cfg.Panel.Width)
 	if cfg.Kubernetes.Clusters.TTL.Duration == 0 {
 		cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute}
 	}
@@ -371,9 +383,43 @@ func Save(cfg *Config) error {
 	} else {
 		out.Objects.Columns = ColumnsModeNormal
 	}
+	normalizePanelWidth(&out.Panel.Width)
 	data, err := yaml.Marshal(&out)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(p, data, 0o644)
+}
+
+func normalizePanelWidth(width *PanelWidthConfig) {
+	if width == nil {
+		return
+	}
+	left := clampPercent(width.LeftPercent)
+	right := clampPercent(width.RightPercent)
+
+	switch {
+	case left == 0 && right == 0:
+		left = 50
+		right = 50
+	case left == 0 && right != 0:
+		left = clampPercent(100 - right)
+	case left != 0 && right == 0:
+		right = clampPercent(100 - left)
+	default:
+		right = clampPercent(100 - left)
+	}
+
+	width.LeftPercent = clampPercent(left)
+	width.RightPercent = clampPercent(right)
+}
+
+func clampPercent(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
 }

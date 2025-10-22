@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -11,16 +12,18 @@ import (
 // ViewOptionsCommittedMsg aggregates the selections made in the sectioned view
 // options dialog.
 type ViewOptionsCommittedMsg struct {
-	PanelIndex   int
-	PanelMode    PanelViewMode
-	SetPanelMode bool
-	TableMode    string
-	HasTableMode bool
-	Resources    *ViewOptionsResourcesPayload
-	Objects      *ViewOptionsObjectsPayload
-	SaveDefault  bool
-	Accept       bool
-	Close        bool
+	PanelIndex        int
+	PanelMode         PanelViewMode
+	SetPanelMode      bool
+	PanelWidthPercent int
+	SetPanelWidth     bool
+	TableMode         string
+	HasTableMode      bool
+	Resources         *ViewOptionsResourcesPayload
+	Objects           *ViewOptionsObjectsPayload
+	SaveDefault       bool
+	Accept            bool
+	Close             bool
 }
 
 // ViewOptionsResourcesPayload carries Resources section toggles.
@@ -43,8 +46,9 @@ type ViewOptionsObjectsPayload struct {
 type ViewOptionsConfig struct {
 	PanelIndex int
 
-	PanelModes      []PanelViewMode
-	ActivePanelMode PanelViewMode
+	PanelModes        []PanelViewMode
+	ActivePanelMode   PanelViewMode
+	PanelWidthPercent int
 
 	TableMode string
 
@@ -80,6 +84,7 @@ type viewOptionKind int
 
 const (
 	viewOptionPanelMode viewOptionKind = iota
+	viewOptionPanelWidth
 	viewOptionIncludeEmpty
 	viewOptionResourceOrder
 	viewOptionResourceTableMode
@@ -106,8 +111,10 @@ type ViewOptionsModel struct {
 	focus   int
 	scroll  int
 
-	panelModes     []PanelViewMode
-	panelModeIndex int
+	panelModes      []PanelViewMode
+	panelModeIndex  int
+	hasPanelWidth   bool
+	panelWidthIndex int
 
 	tableModeIndex int
 	hasTableMode   bool
@@ -146,6 +153,14 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 		kind:   viewOptionEntryOption,
 		option: viewOptionPanelMode,
 	})
+	model.hasPanelWidth = cfg.PanelWidthPercent >= 0
+	if model.hasPanelWidth {
+		model.panelWidthIndex = viewWidthIndexFor(cfg.PanelWidthPercent)
+		model.entries = append(model.entries, viewOptionEntry{
+			kind:   viewOptionEntryOption,
+			option: viewOptionPanelWidth,
+		})
+	}
 
 	if cfg.Resources != nil {
 		model.resources.enabled = true
@@ -255,6 +270,30 @@ func resourceOrderIndexFor(order string) int {
 		}
 	}
 	return 0
+}
+
+func viewWidthIndexFor(percent int) int {
+	options := panelWidthPercentOptions
+	if len(options) == 0 {
+		return 0
+	}
+	best := 0
+	bestDelta := absInt(options[0] - percent)
+	for i := 1; i < len(options); i++ {
+		delta := absInt(options[i] - percent)
+		if delta < bestDelta {
+			best = i
+			bestDelta = delta
+		}
+	}
+	return best
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func objectColumnsIndexFor(columns string) int {
@@ -397,6 +436,25 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 		} else {
 			m.panelModeIndex = (m.panelModeIndex + 1) % len(m.panelModes)
 		}
+	case viewOptionPanelWidth:
+		options := panelWidthPercentOptions
+		if !m.hasPanelWidth || len(options) == 0 {
+			return
+		}
+		switch {
+		case delta < 0:
+			if m.panelWidthIndex > 0 {
+				m.panelWidthIndex--
+			}
+		case delta > 0:
+			if m.panelWidthIndex < len(options)-1 {
+				m.panelWidthIndex++
+			}
+		default:
+			if m.panelWidthIndex < len(options)-1 {
+				m.panelWidthIndex++
+			}
+		}
 	case viewOptionIncludeEmpty:
 		m.resources.include = !m.resources.include
 	case viewOptionResourceOrder:
@@ -448,9 +506,17 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 
 func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 	msg := ViewOptionsCommittedMsg{
-		PanelIndex:   m.panelIdx,
-		SetPanelMode: true,
-		PanelMode:    m.panelModes[m.panelModeIndex],
+		PanelIndex:    m.panelIdx,
+		SetPanelMode:  true,
+		PanelMode:     m.panelModes[m.panelModeIndex],
+		SetPanelWidth: m.hasPanelWidth,
+		PanelWidthPercent: func() int {
+			options := panelWidthPercentOptions
+			if !m.hasPanelWidth || len(options) == 0 {
+				return 0
+			}
+			return options[m.panelWidthIndex]
+		}(),
 		TableMode:    tableModeKeys[m.tableModeIndex],
 		HasTableMode: m.hasTableMode,
 		SaveDefault:  save,
@@ -484,6 +550,12 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, stri
 	switch opt {
 	case viewOptionPanelMode:
 		return "Panel mode", modeLabel(m.panelModes[m.panelModeIndex])
+	case viewOptionPanelWidth:
+		options := panelWidthPercentOptions
+		if !m.hasPanelWidth || len(options) == 0 {
+			return "Panel width", ""
+		}
+		return "Panel width", fmt.Sprintf("%d%%", options[m.panelWidthIndex])
 	case viewOptionIncludeEmpty:
 		val := "No"
 		if m.resources.include {

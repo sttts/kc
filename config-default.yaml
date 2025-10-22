@@ -5,6 +5,9 @@ panel:
   scrolling:
     horizontal:
       step: 4
+  width:
+    leftPercent: 50
+    rightPercent: 50
 
 input:
   mouse:

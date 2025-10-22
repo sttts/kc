@@ -50,6 +50,7 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 		if out.Panel.Scrolling.Horizontal.Step == 0 {
 			out.Panel.Scrolling.Horizontal.Step = 4
 		}
+		normalizePanelWidth(&out.Panel.Width)
 		if out.Input.Mouse.DoubleClickTimeout.Duration == 0 {
 			out.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: Default().Input.Mouse.DoubleClickTimeout.Duration}
 		}
@@ -77,6 +78,12 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	}
 	if a.Panel.Scrolling.Horizontal.Step != b.Panel.Scrolling.Horizontal.Step {
 		t.Fatalf("panel.scrolling.horizontal.step mismatch: yaml=%d code=%d", a.Panel.Scrolling.Horizontal.Step, b.Panel.Scrolling.Horizontal.Step)
+	}
+	if a.Panel.Width.LeftPercent != b.Panel.Width.LeftPercent {
+		t.Fatalf("panel.width.leftPercent mismatch: yaml=%d code=%d", a.Panel.Width.LeftPercent, b.Panel.Width.LeftPercent)
+	}
+	if a.Panel.Width.RightPercent != b.Panel.Width.RightPercent {
+		t.Fatalf("panel.width.rightPercent mismatch: yaml=%d code=%d", a.Panel.Width.RightPercent, b.Panel.Width.RightPercent)
 	}
 	if a.Input.Mouse.DoubleClickTimeout.Duration != b.Input.Mouse.DoubleClickTimeout.Duration {
 		t.Fatalf("input.mouse.doubleClickTimeout mismatch: yaml=%v code=%v", a.Input.Mouse.DoubleClickTimeout.Duration, b.Input.Mouse.DoubleClickTimeout.Duration)

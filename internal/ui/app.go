@@ -112,17 +112,21 @@ type App struct {
 	toastText   string
 	toastUntil  time.Time
 	// Logger that emits toasts on errors with rate limiting
-	toastLogger          *ToastLogger
-	pendingCmds          []tea.Cmd
-	leftConfig           *appconfig.Config
-	rightConfig          *appconfig.Config
-	namespaceInput       *NamespaceCreateModel
-	deleteConfirm        *DeleteConfirmModel
-	pendingDelete        *deleteTarget
-	namespaceCreatePanel int
+	toastLogger            *ToastLogger
+	pendingCmds            []tea.Cmd
+	leftConfig             *appconfig.Config
+	rightConfig            *appconfig.Config
+	namespaceInput         *NamespaceCreateModel
+	deleteConfirm          *DeleteConfirmModel
+	pendingDelete          *deleteTarget
+	namespaceCreatePanel   int
+	leftPanelWidthPercent  int
+	rightPanelWidthPercent int
 }
 
 const requestTimeout = 10 * time.Second
+
+var panelWidthPercentOptions = []int{25, 33, 50, 66, 75, 100}
 
 // Invariant: a.cfg is always non-nil. NewApp initializes it with defaults and
 // Init() loads and overwrites with persisted config, never leaving it nil.
@@ -140,8 +144,10 @@ func NewApp() *App {
 		escPressed:   false,
 		viewConfig:   NewViewConfig(),
 		// Invariant: cfg is always non-nil; initialize with defaults
-		cfg:                  appconfig.Default(),
-		namespaceCreatePanel: -1,
+		cfg:                    appconfig.Default(),
+		namespaceCreatePanel:   -1,
+		leftPanelWidthPercent:  50,
+		rightPanelWidthPercent: 50,
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
@@ -162,6 +168,9 @@ func (a *App) Init() tea.Cmd {
 		cfg = appconfig.Default()
 	}
 	a.cfg = cfg
+	leftPercent, rightPercent := normalizePanelWidthPercents(cfg.Panel.Width.LeftPercent, cfg.Panel.Width.RightPercent)
+	a.leftPanelWidthPercent = leftPercent
+	a.rightPanelWidthPercent = rightPercent
 	a.leftConfig = cloneConfig(cfg)
 	a.rightConfig = cloneConfig(cfg)
 	return tea.Batch(
@@ -262,7 +271,7 @@ func (a *App) panelIndexFor(panel *Panel) (int, bool) {
 	return -1, false
 }
 
-func (a *App) panelAreaMetrics() (panelWidth int, panelHeight int, headerOffset int) {
+func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int, headerOffset int) {
 	reserved := 3
 	if a.toastActive {
 		reserved++
@@ -271,12 +280,138 @@ func (a *App) panelAreaMetrics() (panelWidth int, panelHeight int, headerOffset 
 	if panelHeight < 0 {
 		panelHeight = 0
 	}
-	panelWidth = a.width / 2
-	if panelWidth < 0 {
-		panelWidth = 0
-	}
+	leftWidth, rightWidth = a.panelWidthsFor(a.width)
 	headerOffset = 2
 	return
+}
+
+func (a *App) panelWidthPercentFor(panelIdx int) int {
+	if panelIdx == 1 {
+		return clampPercent(a.rightPanelWidthPercent)
+	}
+	return clampPercent(a.leftPanelWidthPercent)
+}
+
+func (a *App) panelWidthsFor(total int) (int, int) {
+	if total <= 0 {
+		return 0, 0
+	}
+	leftPercent, rightPercent := normalizePanelWidthPercents(a.leftPanelWidthPercent, a.rightPanelWidthPercent)
+	if leftPercent >= 100 {
+		return total, 0
+	}
+	if rightPercent >= 100 {
+		return 0, total
+	}
+	left := 0
+	if leftPercent > 0 {
+		left = (total*leftPercent + 50) / 100
+		if left <= 0 {
+			left = 1
+		}
+		if left >= total {
+			left = total - 1
+		}
+	}
+	right := total - left
+	if rightPercent == 0 {
+		right = 0
+	} else if right <= 0 {
+		right = 1
+		if left > 0 {
+			left = total - right
+		}
+	}
+	if left < 0 {
+		left = 0
+	}
+	if right < 0 {
+		right = 0
+	}
+	return left, total - left
+}
+
+func (a *App) setPanelWidthPercent(panelIdx int, percent int) {
+	percent = clampPercent(percent)
+	switch panelIdx {
+	case 1:
+		left, right := normalizePanelWidthPercents(100-percent, percent)
+		a.leftPanelWidthPercent = left
+		a.rightPanelWidthPercent = right
+	default:
+		left, right := normalizePanelWidthPercents(percent, 100-percent)
+		a.leftPanelWidthPercent = left
+		a.rightPanelWidthPercent = right
+	}
+	if a.leftConfig != nil {
+		a.leftConfig.Panel.Width.LeftPercent = a.leftPanelWidthPercent
+		a.leftConfig.Panel.Width.RightPercent = a.rightPanelWidthPercent
+	}
+	if a.rightConfig != nil {
+		a.rightConfig.Panel.Width.LeftPercent = a.leftPanelWidthPercent
+		a.rightConfig.Panel.Width.RightPercent = a.rightPanelWidthPercent
+	}
+	if a.leftPanelWidthPercent == 0 && a.rightPanelWidthPercent == 100 {
+		a.activePanel = 1
+	} else if a.leftPanelWidthPercent == 100 && a.rightPanelWidthPercent == 0 {
+		a.activePanel = 0
+	}
+}
+
+var panelWidthCycle = panelWidthPercentOptions
+
+func nextPanelWidthPercent(current int) int {
+	if len(panelWidthCycle) == 0 {
+		return current
+	}
+	for _, candidate := range panelWidthCycle {
+		if candidate > current {
+			return candidate
+		}
+	}
+	return panelWidthCycle[len(panelWidthCycle)-1]
+}
+
+func (a *App) cyclePanelWidth(panelIdx int) {
+	current := a.panelWidthPercentFor(panelIdx)
+	next := nextPanelWidthPercent(current)
+	if next == current {
+		return
+	}
+	a.setPanelWidthPercent(panelIdx, next)
+}
+
+func normalizePanelWidthPercents(left, right int) (int, int) {
+	left = clampPercent(left)
+	right = clampPercent(right)
+	switch {
+	case left == 0 && right == 0:
+		left, right = 50, 50
+	case left == 0:
+		left = clampPercent(100 - right)
+		right = clampPercent(right)
+	default:
+		if left >= 100 {
+			left, right = 100, 0
+		} else {
+			right = clampPercent(100 - left)
+		}
+	}
+	if right >= 100 {
+		left = 0
+		right = 100
+	}
+	return left, right
+}
+
+func clampPercent(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
 }
 
 func (a *App) syncPanelConfig(panel *Panel) {
@@ -438,6 +573,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if panel != nil {
 					currentTableMode = panel.TableMode()
 				}
+				widthSavePending := false
+				saveHandled := false
+				if m.SetPanelWidth && (m.Accept || m.SaveDefault) {
+					targetPercent := clampPercent(m.PanelWidthPercent)
+					a.setPanelWidthPercent(targetIdx, targetPercent)
+					if m.SaveDefault {
+						if a.cfg == nil {
+							a.cfg = appconfig.Default()
+						}
+						a.cfg.Panel.Width.LeftPercent = a.leftPanelWidthPercent
+						a.cfg.Panel.Width.RightPercent = a.rightPanelWidthPercent
+						widthSavePending = true
+					}
+				}
 				if m.Resources != nil && (m.Accept || m.SaveDefault) {
 					tableMode := currentTableMode
 					if m.HasTableMode {
@@ -459,6 +608,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.Close {
 						closedBySubMsg = true
 					}
+					if m.SaveDefault {
+						saveHandled = true
+					}
 				}
 				if m.Objects != nil && (m.Accept || m.SaveDefault) {
 					tableMode := currentTableMode
@@ -479,6 +631,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.Close {
 						closedBySubMsg = true
 					}
+					if m.SaveDefault {
+						saveHandled = true
+					}
+				}
+				if widthSavePending && !saveHandled {
+					_ = appconfig.Save(a.cfg)
 				}
 				if m.Close && !closedBySubMsg {
 					a.modalManager.Hide()
@@ -816,9 +974,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle global shortcuts first
 		switch msg.String() {
 		case "alt+f1", "ctrl+1":
+			leftWidth, _, _, _ := a.panelAreaMetrics()
+			if leftWidth <= 0 {
+				return a, nil
+			}
 			return a, a.showViewOptionsModalForPanel(a.panelByIndex(0))
 		case "alt+f2", "ctrl+2":
+			_, rightWidth, _, _ := a.panelAreaMetrics()
+			if rightWidth <= 0 {
+				return a, nil
+			}
 			return a, a.showViewOptionsModalForPanel(a.panelByIndex(1))
+		case "alt+w":
+			a.cyclePanelWidth(a.activePanel)
+			return a, nil
 		case "ctrl+o":
 			// Toggle terminal mode
 			a.showTerminal = !a.showTerminal
@@ -828,7 +997,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 
 		case "tab":
-			// Switch between panels
+			leftWidth, rightWidth, _, _ := a.panelAreaMetrics()
+			if leftWidth <= 0 && rightWidth <= 0 {
+				return a, nil
+			}
+			if leftWidth <= 0 {
+				a.activePanel = 1
+				return a, nil
+			}
+			if rightWidth <= 0 {
+				a.activePanel = 0
+				return a, nil
+			}
+			// Switch between panels when both are visible
 			a.activePanel = (a.activePanel + 1) % 2
 			return a, nil
 
@@ -928,6 +1109,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cancel()
 					return a, cmd
 				}
+				return a, nil
+			case "w":
+				a.escPressed = false
+				a.cyclePanelWidth(a.activePanel)
 				return a, nil
 			default:
 				// Not a number, cancel escape sequence
@@ -1148,30 +1333,42 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Reserve space for: terminal (2) + function keys (1)
 	reserved := 3
 	panelHeight := a.height - reserved
-	panelWidth := a.width / 2 // No separator needed
-
 	if panelHeight < 3 {
 		panelHeight = 3
 	}
-	if panelWidth < 2 {
-		panelWidth = 2
-	}
+	leftPanelWidth, rightPanelWidth := a.panelWidthsFor(a.width)
 
-	renderPanel := func(panel *Panel, focused bool) string {
+	renderPanel := func(panel *Panel, width int, focused bool) string {
+		if width <= 0 {
+			return ""
+		}
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 		defer cancel()
-		return panel.Render(ctx, panelWidth, panelHeight, focused)
+		return panel.Render(ctx, width, panelHeight, focused)
 	}
 
-	leftPanel := renderPanel(a.leftPanel, a.activePanel == 0)
-	rightPanel := renderPanel(a.rightPanel, a.activePanel == 1)
+	leftPanel := ""
+	if leftPanelWidth > 0 {
+		leftPanel = renderPanel(a.leftPanel, leftPanelWidth, a.activePanel == 0)
+	}
+	rightPanel := ""
+	if rightPanelWidth > 0 {
+		rightPanel = renderPanel(a.rightPanel, rightPanelWidth, a.activePanel == 1)
+	}
 
-	// Combine panels without separator
-	panels := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		leftPanel,
-		rightPanel,
-	)
+	var panels string
+	switch {
+	case leftPanelWidth <= 0:
+		panels = rightPanel
+	case rightPanelWidth <= 0:
+		panels = leftPanel
+	default:
+		panels = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			leftPanel,
+			rightPanel,
+		)
+	}
 
 	// Add terminal (2 lines)
 	terminalView, terminalCursor := a.renderTerminalArea()
@@ -1470,10 +1667,11 @@ func (a *App) renderToggleMessage() string {
 func (a *App) setupModals() {
 	// Resources options modal (content set dynamically on open)
 	viewOpts := NewViewOptionsModel(ViewOptionsConfig{
-		PanelIndex:      0,
-		PanelModes:      []PanelViewMode{PanelModeList},
-		ActivePanelMode: PanelModeList,
-		TableMode:       "scroll",
+		PanelIndex:        0,
+		PanelModes:        []PanelViewMode{PanelModeList},
+		ActivePanelMode:   PanelModeList,
+		PanelWidthPercent: a.leftPanelWidthPercent,
+		TableMode:         "scroll",
 	})
 	viewModal := NewModal("View Options", viewOpts)
 	a.modalManager.Register("view_options", viewModal)
@@ -1616,9 +1814,16 @@ func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
 	} else {
 		modal.SetContent(model)
 	}
-	panelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	leftPanelWidth, rightPanelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	panelWidth := leftPanelWidth
+	panelOffset := 0
+	if panelIdx == 1 {
+		panelWidth = rightPanelWidth
+		panelOffset = leftPanelWidth
+	}
 	if panelWidth <= 0 {
-		panelWidth = max(20, a.width/2)
+		panelWidth = max(20, max(a.width/2, a.width))
+		panelOffset = 0
 	}
 	width := panelWidth / 2
 	if width < 24 {
@@ -1639,7 +1844,7 @@ func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
 	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
 	modal.SetWindowed(width, height, bg)
-	offsetX := panelIdx*panelWidth + max(0, (panelWidth-width)/2)
+	offsetX := panelOffset + max(0, (panelWidth-width)/2)
 	offsetY := headerOffset
 	modal.SetWindowOffset(offsetX, offsetY)
 	modal.SetOnClose(func() tea.Cmd { return nil })
@@ -1648,13 +1853,15 @@ func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
 }
 
 func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseMsg, int, bool) {
-	panelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	leftPanelWidth, rightPanelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
 	m := msg.Mouse()
 	if m.Y >= panelHeight {
 		return nil, nil, PanelMouseMsg{}, 0, false
 	}
 	panelIdx := 0
-	if m.X >= panelWidth {
+	if leftPanelWidth <= 0 && rightPanelWidth > 0 {
+		panelIdx = 1
+	} else if rightPanelWidth > 0 && leftPanelWidth > 0 && m.X >= leftPanelWidth {
 		panelIdx = 1
 	}
 	panel := a.panelByIndex(panelIdx)
@@ -1788,12 +1995,13 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 	}
 
 	content := NewViewOptionsModel(ViewOptionsConfig{
-		PanelIndex:      panelIdx,
-		PanelModes:      panel.AvailableModes(),
-		ActivePanelMode: panel.Mode(),
-		TableMode:       tableMode,
-		Resources:       resConfig,
-		Objects:         objConfig,
+		PanelIndex:        panelIdx,
+		PanelModes:        panel.AvailableModes(),
+		ActivePanelMode:   panel.Mode(),
+		PanelWidthPercent: a.panelWidthPercentFor(panelIdx),
+		TableMode:         tableMode,
+		Resources:         resConfig,
+		Objects:           objConfig,
 	})
 
 	modal := a.modalManager.modals["view_options"]
@@ -1812,9 +2020,16 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 }
 
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int) {
-	panelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	leftPanelWidth, rightPanelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	panelWidth := leftPanelWidth
+	panelOffset := 0
+	if panelIdx == 1 {
+		panelWidth = rightPanelWidth
+		panelOffset = leftPanelWidth
+	}
 	if panelWidth <= 0 {
-		panelWidth = max(24, a.width/2)
+		panelWidth = max(24, max(a.width/2, a.width))
+		panelOffset = 0
 	}
 	winW := panelWidth / 2
 	if winW < 36 {
@@ -1858,7 +2073,7 @@ func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, pa
 		setter.SetDimensions(max(1, winW-2), max(1, winH-2))
 	}
 
-	offsetX := panelIdx*panelWidth + max(0, (panelWidth-winW)/2)
+	offsetX := panelOffset + max(0, (panelWidth-winW)/2)
 	panelUsable := max(0, panelHeight-headerOffset-1)
 	offsetY := headerOffset
 	if panelUsable > winH {
