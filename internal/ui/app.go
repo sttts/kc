@@ -18,7 +18,6 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
-	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -1151,55 +1150,21 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	panelHeight := a.height - reserved
 	panelWidth := a.width / 2 // No separator needed
 
-	// Set dimensions for panel content (accounting for borders)
-	// Each panel needs 2 characters width and 2 lines height for borders
-	contentWidth := panelWidth - 2
-	contentHeight := panelHeight - 2
-	if contentWidth < 0 {
-		contentWidth = 1
+	if panelHeight < 3 {
+		panelHeight = 3
 	}
-	if contentHeight < 0 {
-		contentHeight = 1
+	if panelWidth < 2 {
+		panelWidth = 2
 	}
 
-	// Panel content height must match the frame interior (frameHeight-2).
-	// contentHeight already equals (panelHeight-2), so subtract one more to account for the frame's top/bottom.
-	ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.leftPanel.SetDimensions(ctxLeft, contentWidth, contentHeight-2)
-	leftInfo := a.leftPanel.FrameInfo(ctxLeft)
-	leftContentView := a.leftPanel.ViewContentOnlyFocused(ctxLeft, a.activePanel == 0)
-	leftFooterView := a.leftPanel.GetFooter(ctxLeft)
-	cancelLeft()
-	ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.rightPanel.SetDimensions(ctxRight, contentWidth, contentHeight-2)
-	rightInfo := a.rightPanel.FrameInfo(ctxRight)
-	rightContentView := a.rightPanel.ViewContentOnlyFocused(ctxRight, a.activePanel == 1)
-	rightFooterView := a.rightPanel.GetFooter(ctxRight)
-	cancelRight()
-
-	// Calculate heights for frame and footer
-	footerHeight := 2
-	frameHeight := panelHeight - footerHeight
-
-	// Create frames with proper dimensions, passing focus state
-	leftTitle := leftInfo.Breadcrumb
-	if leftTitle == "" {
-		leftTitle = a.leftPanel.GetCurrentPath()
+	renderPanel := func(panel *Panel, focused bool) string {
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		defer cancel()
+		return panel.Render(ctx, panelWidth, panelHeight, focused)
 	}
-	rightTitle := rightInfo.Breadcrumb
-	if rightTitle == "" {
-		rightTitle = a.rightPanel.GetCurrentPath()
-	}
-	leftFramed := a.createFrameWithOverlayTitle(leftContentView, leftInfo, leftTitle, panelWidth, frameHeight, a.activePanel == 0)
-	rightFramed := a.createFrameWithOverlayTitle(rightContentView, rightInfo, rightTitle, panelWidth, frameHeight, a.activePanel == 1)
 
-	// Create framed footers with T-junction connection
-	leftFooter := a.createFramedFooter(leftFooterView, panelWidth)
-	rightFooter := a.createFramedFooter(rightFooterView, panelWidth)
-
-	// Combine frame and footer for each panel
-	leftPanel := lipgloss.JoinVertical(lipgloss.Top, leftFramed, leftFooter)
-	rightPanel := lipgloss.JoinVertical(lipgloss.Top, rightFramed, rightFooter)
+	leftPanel := renderPanel(a.leftPanel, a.activePanel == 0)
+	rightPanel := renderPanel(a.rightPanel, a.activePanel == 1)
 
 	// Combine panels without separator
 	panels := lipgloss.JoinHorizontal(
@@ -2439,199 +2404,6 @@ func (a *App) copyItem() tea.Cmd {
 func (a *App) renameMoveItem() tea.Cmd {
 	// TODO: Implement rename/move functionality (F6)
 	return nil
-}
-
-// createFrameWithOverlayTitle creates a frame with title overlaid on the top border
-// Based on the approach from https://gist.github.com/meowgorithm/1777377a43373f563476a2bcb7d89306
-func (a *App) createFrameWithOverlayTitle(content string, info panelcontent.FrameInfo, title string, width, height int, isFocused bool) string {
-	if info.Breadcrumb != "" {
-		title = info.Breadcrumb
-	}
-	if title == "" {
-		// No title, just return regular frame
-		return lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
-			BorderForeground(lipgloss.White).
-			Background(lipgloss.Blue).
-			Width(width).
-			Height(height).
-			Render(content)
-	}
-
-	// Create the box style
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue).
-		Background(lipgloss.Blue).
-		Width(width).
-		Height(height)
-
-	// Create label style for the title based on focus state
-	var labelStyle lipgloss.Style
-	if isFocused {
-		// Focused panel: grey background, black text
-		labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Black).
-			Background(lipgloss.White).
-			Padding(0, 1)
-	} else {
-		// Unfocused panel: dark blue background, grey text
-		labelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.White).
-			Background(lipgloss.Blue).
-			Padding(0, 1)
-	}
-
-	// Get border properties
-	border := boxStyle.GetBorderStyle()
-	topBorderStyler := lipgloss.NewStyle().
-		Foreground(boxStyle.GetBorderTopForeground()).
-		Background(boxStyle.GetBorderTopBackground()).
-		Render
-
-	topLeft := topBorderStyler(border.TopLeft)
-	topRight := topBorderStyler(border.TopRight)
-	// Ellipsize breadcrumb-style titles from the left (replace leading
-	// components with ".../") until it fits between the top corners.
-	// Measure using the rendered width (accounts for padding).
-	ellipsize := func(text string, maxW int) string {
-		// Fast path: fits
-		if lipgloss.Width(labelStyle.Render(text)) <= maxW {
-			return text
-		}
-		// Minimal fallback
-		if maxW <= lipgloss.Width(labelStyle.Render("...")) {
-			return "..."
-		}
-		parts := strings.Split(text, "/")
-		segs := make([]string, 0, len(parts))
-		for _, p := range parts {
-			if p != "" {
-				segs = append(segs, p)
-			}
-		}
-		acc := ""
-		for i := len(segs) - 1; i >= 0; i-- {
-			candidate := "/" + segs[i] + acc
-			test := "..." + candidate
-			if lipgloss.Width(labelStyle.Render(test)) <= maxW {
-				acc = candidate
-			} else {
-				break
-			}
-		}
-		if acc == "" {
-			return "..."
-		}
-		return "..." + acc
-	}
-
-	// Calculate centered positioning for the title
-	availableSpace := width - lipgloss.Width(topLeft+topRight)
-	title = ellipsize(title, availableSpace)
-	renderedLabel := labelStyle.Render(title)
-	labelWidth := lipgloss.Width(renderedLabel)
-
-	var top string
-	if labelWidth >= availableSpace {
-		// Title exactly fills or equals available space; position flush-left between corners
-		gap := strings.Repeat(border.Top, max(0, availableSpace-labelWidth))
-		top = topLeft + renderedLabel + topBorderStyler(gap) + topRight
-	} else {
-		// Center the title
-		totalBorderNeeded := availableSpace - labelWidth
-		leftBorder := totalBorderNeeded / 2
-		rightBorder := totalBorderNeeded - leftBorder
-
-		leftGap := topBorderStyler(strings.Repeat(border.Top, leftBorder))
-		rightGap := topBorderStyler(strings.Repeat(border.Top, rightBorder))
-		top = topLeft + leftGap + renderedLabel + rightGap + topRight
-	}
-
-	// Render the rest of the box without the top border
-	bottom := boxStyle.Copy().
-		BorderTop(false).
-		Width(width).
-		Height(height - 1). // Subtract 1 since we're manually adding the top
-		Render(content)
-
-	// Replace the two corner characters at the TOP of the footer with T-junction characters
-	lines := strings.Split(bottom, "\n")
-	if len(lines) >= 2 {
-		// The bottom border line (last line) - replace └ with ├ and ┘ with ┤
-		bottomLine := lines[len(lines)-1]
-		bottomLine = strings.Replace(bottomLine, "└", "├", 1)
-		bottomLine = strings.Replace(bottomLine, "┘", "┤", 1)
-		lines[len(lines)-1] = bottomLine
-	}
-
-	// Combine the custom top with the box
-	frame := top + "\n" + strings.Join(lines, "\n")
-
-	topIndicator := strings.TrimSpace(info.TopIndicator)
-	if topIndicator == "" {
-		topIndicator = border.Top
-	}
-	topIndicator = topBorderStyler(topIndicator)
-	frame = overlay.Composite(topIndicator, frame, overlay.Right, overlay.Top, -1, 0)
-
-	bottomIndicator := strings.TrimSpace(info.BottomIndicator)
-	if bottomIndicator == "" {
-		bottomIndicator = border.Bottom
-	}
-	bottomIndicator = lipgloss.NewStyle().
-		Foreground(boxStyle.GetBorderBottomForeground()).
-		Background(boxStyle.GetBorderBottomBackground()).
-		Render(bottomIndicator)
-	frame = overlay.Composite(bottomIndicator, frame, overlay.Right, overlay.Bottom, -1, 0)
-
-	if info.SuppressFooter {
-		status := strings.TrimSpace(info.FooterStatus)
-		if status != "" {
-			status = truncateStringToWidth(status, width-2)
-			statusOverlay := uistyles.PanelFooterStyle.Copy().
-				Width(lipgloss.Width(status)).
-				Align(lipgloss.Left).
-				Render(status)
-			frame = overlay.Composite(statusOverlay, frame, overlay.Right, overlay.Bottom, -(lipgloss.Width(statusOverlay) + 1), 0)
-		}
-	}
-
-	return frame
-}
-
-// createFramedFooter creates a framed footer with T-junction characters at the top
-func (a *App) createFramedFooter(content string, width int) string {
-	return lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderTop(false). // No top border since it connects to the main frame
-		BorderForeground(lipgloss.White).
-		BorderBackground(lipgloss.Blue).
-		Background(lipgloss.Blue).
-		Foreground(lipgloss.Color(uistyles.ColorWhite)).
-		Width(width).
-		Render(content)
-}
-
-func truncateStringToWidth(s string, maxWidth int) string {
-	if maxWidth <= 0 {
-		return ""
-	}
-	if lipgloss.Width(s) <= maxWidth {
-		return s
-	}
-	var b strings.Builder
-	width := 0
-	for _, r := range s {
-		w := lipgloss.Width(string(r))
-		if width+w > maxWidth {
-			break
-		}
-		width += w
-		b.WriteRune(r)
-	}
-	return b.String()
 }
 
 // Run starts the application

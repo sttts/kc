@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
+	"github.com/sttts/kc/internal/overlay"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	listwidget "github.com/sttts/kc/internal/ui/panelcontent/list"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
@@ -549,6 +550,77 @@ func (p *Panel) ViewContentOnlyFocused(ctx context.Context, isFocused bool) stri
 	return p.renderContentFocused(ctx, isFocused)
 }
 
+// Render draws the fully framed panel, including optional footer, using the provided dimensions.
+func (p *Panel) Render(ctx context.Context, width, height int, focused bool) string {
+	if width <= 0 {
+		width = 1
+	}
+	if height <= 0 {
+		height = 1
+	}
+	if ctx == nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), panelContextTimeout)
+		defer cancel()
+	}
+
+	contentWidth := max(1, width-2)
+	frameHeight := max(2, height)
+	contentHeight := max(1, frameHeight-2)
+
+	var (
+		footerFrame  string
+		footerHeight int
+		info         panelcontent.FrameInfo
+	)
+
+	for i := 0; i < 3; i++ {
+		p.SetDimensions(ctx, contentWidth, contentHeight)
+		info = p.frameInfo(ctx)
+		footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+		footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
+		if footerHeight >= height {
+			footerFrame = ""
+			footerHeight = 0
+		}
+
+		newFrameHeight := max(2, height-footerHeight)
+		newContentHeight := max(1, newFrameHeight-2)
+		if newFrameHeight == frameHeight && newContentHeight == contentHeight {
+			frameHeight = newFrameHeight
+			contentHeight = newContentHeight
+			break
+		}
+		frameHeight = newFrameHeight
+		contentHeight = newContentHeight
+	}
+
+	// Ensure final dimensions are applied before rendering.
+	p.SetDimensions(ctx, contentWidth, contentHeight)
+	info = p.frameInfo(ctx)
+	footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+	footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
+	if footerHeight >= height {
+		footerFrame = ""
+		footerHeight = 0
+	}
+	frameHeight = max(2, height-footerHeight)
+	contentHeight = max(1, frameHeight-2)
+	p.SetDimensions(ctx, contentWidth, contentHeight)
+	info = p.frameInfo(ctx)
+
+	title := info.Breadcrumb
+	if title == "" {
+		title = p.currentPath
+	}
+	contentView := p.renderContentFocused(ctx, focused)
+	frame := p.renderFrame(contentView, info, title, width, frameHeight, focused, footerFrame != "")
+	if footerFrame != "" {
+		return lipgloss.JoinVertical(lipgloss.Top, frame, footerFrame)
+	}
+	return frame
+}
+
 // GetCurrentPath returns the current path for breadcrumbs
 func (p *Panel) GetCurrentPath() string {
 	return p.currentPath
@@ -722,6 +794,160 @@ func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) 
 	return strings.Join(styled, "\n")
 }
 
+func (p *Panel) renderFramedFooter(content string, width int) (string, int) {
+	if strings.TrimSpace(content) == "" {
+		return "", 0
+	}
+	frame := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderTop(false).
+		BorderForeground(lipgloss.White).
+		BorderBackground(lipgloss.Blue).
+		Background(lipgloss.Blue).
+		Foreground(lipgloss.Color(uistyles.ColorWhite)).
+		Width(width).
+		Render(content)
+	return frame, lipgloss.Height(frame)
+}
+
+func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title string, width, height int, focused bool, hasFooter bool) string {
+	if title == "" {
+		title = "/"
+	}
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.White).
+		BorderBackground(lipgloss.Blue).
+		Background(lipgloss.Blue).
+		Width(width).
+		Height(height)
+
+	var labelStyle lipgloss.Style
+	if focused {
+		labelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Black).
+			Background(lipgloss.White).
+			Padding(0, 1)
+	} else {
+		labelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.White).
+			Background(lipgloss.Blue).
+			Padding(0, 1)
+	}
+
+	border := boxStyle.GetBorderStyle()
+	topBorderStyler := lipgloss.NewStyle().
+		Foreground(boxStyle.GetBorderTopForeground()).
+		Background(boxStyle.GetBorderTopBackground()).
+		Render
+
+	topLeft := topBorderStyler(border.TopLeft)
+	topRight := topBorderStyler(border.TopRight)
+
+	availableSpace := width - lipgloss.Width(topLeft+topRight)
+	title = p.ellipsizeBreadcrumbTitle(labelStyle, title, availableSpace)
+	renderedLabel := labelStyle.Render(title)
+	labelWidth := lipgloss.Width(renderedLabel)
+
+	var top string
+	if labelWidth >= availableSpace {
+		gap := strings.Repeat(border.Top, max(0, availableSpace-labelWidth))
+		top = topLeft + renderedLabel + topBorderStyler(gap) + topRight
+	} else {
+		totalBorderNeeded := availableSpace - labelWidth
+		leftBorder := totalBorderNeeded / 2
+		rightBorder := totalBorderNeeded - leftBorder
+		leftGap := topBorderStyler(strings.Repeat(border.Top, leftBorder))
+		rightGap := topBorderStyler(strings.Repeat(border.Top, rightBorder))
+		top = topLeft + leftGap + renderedLabel + rightGap + topRight
+	}
+
+	bottom := boxStyle.Copy().
+		BorderTop(false).
+		Width(width).
+		Height(height - 1).
+		Render(content)
+
+	// Adjust bottom corners only when a footer is attached.
+	if hasFooter {
+		lines := strings.Split(bottom, "\n")
+		if len(lines) > 0 {
+			bottomLine := lines[len(lines)-1]
+			bottomLine = strings.Replace(bottomLine, "└", "├", 1)
+			bottomLine = strings.Replace(bottomLine, "┘", "┤", 1)
+			lines[len(lines)-1] = bottomLine
+			bottom = strings.Join(lines, "\n")
+		}
+	}
+
+	frame := top + "\n" + bottom
+
+	topIndicator := strings.TrimSpace(info.TopIndicator)
+	if topIndicator == "" {
+		topIndicator = border.Top
+	}
+	topIndicator = topBorderStyler(topIndicator)
+	frame = overlay.Composite(topIndicator, frame, overlay.Right, overlay.Top, -1, 0)
+
+	bottomIndicator := strings.TrimSpace(info.BottomIndicator)
+	if bottomIndicator == "" {
+		bottomIndicator = border.Bottom
+	}
+	bottomIndicator = lipgloss.NewStyle().
+		Foreground(boxStyle.GetBorderBottomForeground()).
+		Background(boxStyle.GetBorderBottomBackground()).
+		Render(bottomIndicator)
+	frame = overlay.Composite(bottomIndicator, frame, overlay.Right, overlay.Bottom, -1, 0)
+
+	if info.SuppressFooter {
+		status := strings.TrimSpace(info.FooterStatus)
+		if status != "" {
+			status = truncateStringToWidth(status, width-2)
+			statusOverlay := uistyles.PanelFooterStyle.Copy().
+				Width(lipgloss.Width(status)).
+				Align(lipgloss.Left).
+				Render(status)
+			frame = overlay.Composite(statusOverlay, frame, overlay.Right, overlay.Bottom, -(lipgloss.Width(statusOverlay) + 1), 0)
+		}
+	}
+
+	return frame
+}
+
+func (p *Panel) ellipsizeBreadcrumbTitle(labelStyle lipgloss.Style, title string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if lipgloss.Width(labelStyle.Render(title)) <= maxWidth {
+		return title
+	}
+	if lipgloss.Width(labelStyle.Render("...")) > maxWidth {
+		return "..."
+	}
+	parts := strings.Split(title, "/")
+	segs := make([]string, 0, len(parts))
+	for _, seg := range parts {
+		if seg != "" {
+			segs = append(segs, seg)
+		}
+	}
+	acc := ""
+	for i := len(segs) - 1; i >= 0; i-- {
+		candidate := "/" + segs[i] + acc
+		test := "..." + candidate
+		if lipgloss.Width(labelStyle.Render(test)) <= maxWidth {
+			acc = candidate
+		} else {
+			break
+		}
+	}
+	if acc == "" {
+		return "..."
+	}
+	return "..." + acc
+}
+
 func truncateToWidth(s string, maxWidth int) string {
 	if maxWidth <= 0 {
 		return ""
@@ -740,6 +966,33 @@ func truncateToWidth(s string, maxWidth int) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+func truncateStringToWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= maxWidth {
+		return s
+	}
+	var b strings.Builder
+	width := 0
+	for _, r := range s {
+		w := lipgloss.Width(string(r))
+		if width+w > maxWidth {
+			break
+		}
+		width += w
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // renderItem renders a single item
