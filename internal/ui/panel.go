@@ -490,9 +490,17 @@ func (p *Panel) View() string {
 	defer cancel()
 
 	info := p.frameInfo(ctx)
-	header := p.renderHeader(info.Breadcrumb)
+	header := p.renderHeader(info.Breadcrumb, info.HeaderStatus)
 	content := p.renderContent(ctx)
-	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+	footer := p.renderFooter(ctx, info.SuppressFooter)
+
+	if footer == "" {
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			header,
+			content,
+		)
+	}
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -508,7 +516,10 @@ func (p *Panel) ViewWithoutHeader() string {
 	defer cancel()
 	info := p.frameInfo(ctx)
 	content := p.renderContent(ctx)
-	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+	footer := p.renderFooter(ctx, info.SuppressFooter)
+	if footer == "" {
+		return content
+	}
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		content,
@@ -522,7 +533,10 @@ func (p *Panel) ViewWithoutHeaderFocused(isFocused bool) string {
 	defer cancel()
 	info := p.frameInfo(ctx)
 	content := p.renderContentFocused(ctx, isFocused)
-	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+	footer := p.renderFooter(ctx, info.SuppressFooter)
+	if footer == "" {
+		return content
+	}
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		content,
@@ -547,7 +561,7 @@ func (p *Panel) SetCurrentPath(path string) { p.currentPath = path }
 // GetFooter returns the rendered footer for external use
 func (p *Panel) GetFooter(ctx context.Context) string {
 	info := p.frameInfo(ctx)
-	return p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+	return p.renderFooter(ctx, info.SuppressFooter)
 }
 
 // SetDimensions sets the panel dimensions
@@ -559,27 +573,19 @@ func (p *Panel) SetDimensions(ctx context.Context, width, height int) {
 	}
 }
 
-// renderHeader renders the panel header
 func (p *Panel) frameInfo(ctx context.Context) panelcontent.FrameInfo {
 	info := panelcontent.FrameInfo{
-		Breadcrumb:      p.currentPath,
-		TopIndicator:    "─",
-		BottomIndicator: "─",
+		Breadcrumb: p.currentPath,
 	}
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if provider, ok := widget.(panelcontent.FrameInfoProvider); ok {
-			fi := provider.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: p.width})
-			if fi.Breadcrumb != "" {
-				info.Breadcrumb = fi.Breadcrumb
+			wi := provider.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: p.width})
+			if wi.Breadcrumb != "" {
+				info.Breadcrumb = wi.Breadcrumb
 			}
-			if fi.TopIndicator != "" {
-				info.TopIndicator = fi.TopIndicator
-			}
-			if fi.BottomIndicator != "" {
-				info.BottomIndicator = fi.BottomIndicator
-			}
-			info.FooterStatus = fi.FooterStatus
-			if fi.SuppressFooter {
+			info.HeaderStatus = wi.HeaderStatus
+			info.FooterStatus = wi.FooterStatus
+			if wi.SuppressFooter {
 				info.SuppressFooter = true
 			}
 		}
@@ -587,20 +593,44 @@ func (p *Panel) frameInfo(ctx context.Context) panelcontent.FrameInfo {
 	return info
 }
 
-// FrameInfo exposes computed frame decoration data for external callers.
+// FrameInfo exposes frame metadata for external rendering.
 func (p *Panel) FrameInfo(ctx context.Context) panelcontent.FrameInfo {
 	return p.frameInfo(ctx)
 }
 
-func (p *Panel) renderHeader(breadcrumb string) string {
+// renderHeader renders the panel header
+func (p *Panel) renderHeader(breadcrumb, status string) string {
 	if breadcrumb == "" {
 		breadcrumb = "/"
 	}
-	return uistyles.PanelHeaderStyle.Copy().
+	headerStyle := uistyles.PanelHeaderStyle.
 		Width(p.width).
-		Height(1).
-		Align(lipgloss.Left).
-		Render(p.ellipsizePath(breadcrumb, p.width))
+		Height(1)
+
+	left := p.ellipsizePath(breadcrumb, p.width)
+	if status == "" {
+		return headerStyle.Align(lipgloss.Left).Render(left)
+	}
+
+	statusWidth := lipgloss.Width(status)
+	if statusWidth >= p.width {
+		status = truncateToWidth(status, p.width-1)
+		statusWidth = lipgloss.Width(status)
+	}
+	if statusWidth < 0 {
+		statusWidth = 0
+	}
+	available := p.width - statusWidth - 1
+	if available < 0 {
+		available = 0
+	}
+	left = p.ellipsizePath(breadcrumb, available)
+	padding := p.width - lipgloss.Width(left) - statusWidth
+	if padding < 1 {
+		padding = 1
+	}
+	line := left + strings.Repeat(" ", padding) + status
+	return headerStyle.Render(line)
 }
 
 // ellipsizePath shortens long breadcrumbs from the left by components, prefixing with "...".
@@ -654,47 +684,31 @@ func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string
 	return ""
 }
 
-func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) string {
+func (p *Panel) renderFooter(ctx context.Context, suppress bool) string {
 	if suppress {
 		return ""
 	}
-	status = strings.TrimSpace(status)
-	lines := []string{}
+	renderedFooter := ""
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if fp, ok := widget.(panelcontent.FooterProvider); ok {
-			if base := fp.Footer(ctx, p.width); base != "" {
-				lines = strings.Split(strings.TrimRight(base, "\n"), "\n")
-			}
+			renderedFooter = fp.Footer(ctx, p.width)
 		}
 	}
+	lines := strings.Split(strings.TrimRight(renderedFooter, "\n"), "\n")
 	if len(lines) == 0 {
-		if status == "" {
-			return ""
-		}
 		lines = []string{""}
 	}
-	styled := make([]string, len(lines))
-	for i, line := range lines {
-		style := uistyles.PanelFooterStyle.Copy().
+	for i := range lines {
+		lines[i] = uistyles.PanelFooterStyle.Copy().
 			Width(p.width).
-			Height(1)
-		if i == 0 && status != "" {
-			status = truncateStringToWidth(status, p.width-1)
-			statusWidth := lipgloss.Width(status)
-			left := truncateStringToWidth(line, p.width-statusWidth-1)
-			padding := p.width - lipgloss.Width(left) - statusWidth
-			if padding < 1 {
-				padding = 1
-			}
-			styled[i] = style.Render(left + strings.Repeat(" ", padding) + status)
-		} else {
-			styled[i] = style.Align(lipgloss.Left).Render(line)
-		}
+			Height(1).
+			Align(lipgloss.Left).
+			Render(lines[i])
 	}
-	return strings.Join(styled, "\n")
+	return strings.Join(lines, "\n")
 }
 
-func truncateStringToWidth(s string, maxWidth int) string {
+func truncateToWidth(s string, maxWidth int) string {
 	if maxWidth <= 0 {
 		return ""
 	}

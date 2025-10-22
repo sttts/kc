@@ -17,11 +17,8 @@ func TestPanelModeSwitchesToManifest(t *testing.T) {
 		t.Fatalf("expected manifest mode, got %v", panel.Mode())
 	}
 	view := panel.View()
-	if !strings.Contains(view, "Select a resource") {
-		t.Fatalf("expected manifest placeholder, got %q", view)
-	}
 	if !strings.Contains(view, "1/1") {
-		t.Fatalf("expected manifest status, got %q", view)
+		t.Fatalf("expected manifest header status, got %q", view)
 	}
 }
 

@@ -215,21 +215,30 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 			percent = 100
 		}
 	}
-	info.TopIndicator = "─"
+	topMore := false
 	for i := 0; i < visibleStart; i++ {
 		if ordinals[i] > 0 {
-			info.TopIndicator = "^"
+			topMore = true
 			break
 		}
 	}
-	info.BottomIndicator = "─"
+	bottomMore := false
 	for i := visibleEnd; i < len(ordinals); i++ {
 		if ordinals[i] > 0 {
-			info.BottomIndicator = "v"
+			bottomMore = true
 			break
 		}
 	}
-	info.FooterStatus = fmt.Sprintf("%d/%d • %d%%", current, totalReal, percent)
+	topIndicator := "─"
+	if topMore {
+		topIndicator = "^"
+	}
+	info.HeaderStatus = topIndicator
+	bottomIndicator := "─"
+	if bottomMore {
+		bottomIndicator = "v"
+	}
+	info.FooterStatus = fmt.Sprintf("%d/%d • %d%% %s", current, totalReal, percent, bottomIndicator)
 	return info
 }
 

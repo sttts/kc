@@ -139,7 +139,7 @@ func (w *Widget) Footer(width int) string {
 // Metadata returns the current content metadata.
 func (w *Widget) Metadata() Metadata { return w.metadata }
 
-// Position returns the one-based index of the last visible line and total line count.
+// Position reports the visible progress (bottom row index) and total lines.
 func (w *Widget) Position() (current int, total int) {
 	total = len(w.lines)
 	if total == 0 {
@@ -153,16 +153,6 @@ func (w *Widget) Position() (current int, total int) {
 		end = 1
 	}
 	return end, total
-}
-
-// ScrollIndicators reports whether additional content exists above or below the viewport.
-func (w *Widget) ScrollIndicators() (bool, bool) {
-	if len(w.lines) == 0 {
-		return false, false
-	}
-	above := w.offset > 0
-	below := w.offset+w.page() < len(w.lines)
-	return above, below
 }
 
 func (w *Widget) highlight() {

@@ -62,23 +62,22 @@ type FooterProvider interface {
 	Footer(context.Context, int) string
 }
 
-// FrameInfoProvider allows widgets to expose frame status details.
+// FrameInfoProvider allows widgets to customize panel frame rendering.
 type FrameInfoProvider interface {
 	FrameInfo(context.Context, FrameInfoRequest) FrameInfo
 }
 
-// FrameInfoRequest supplies sizing info for frame decoration.
+// FrameInfoRequest supplies frame rendering context.
 type FrameInfoRequest struct {
 	Width int
 }
 
-// FrameInfo describes breadcrumb overrides and header/footer annotations.
+// FrameInfo describes breadcrumb overrides and status strings.
 type FrameInfo struct {
-	Breadcrumb      string
-	TopIndicator    string
-	BottomIndicator string
-	FooterStatus    string
-	SuppressFooter  bool
+	Breadcrumb     string
+	HeaderStatus   string
+	FooterStatus   string
+	SuppressFooter bool
 }
 
 // SelectionListener widgets opt in to selection change notifications.

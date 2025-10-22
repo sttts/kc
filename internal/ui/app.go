@@ -2549,47 +2549,44 @@ func (a *App) createFrameWithOverlayTitle(content string, info panelcontent.Fram
 		top = topLeft + leftGap + renderedLabel + rightGap + topRight
 	}
 
+	// Render the rest of the box without the top border
 	bottom := boxStyle.Copy().
 		BorderTop(false).
 		Width(width).
 		Height(height - 1). // Subtract 1 since we're manually adding the top
 		Render(content)
 
+	// Replace the two corner characters at the TOP of the footer with T-junction characters
 	lines := strings.Split(bottom, "\n")
 	if len(lines) >= 2 {
-		last := len(lines) - 1
-		lines[last] = strings.Replace(lines[last], "└", "├", 1)
-		lines[last] = strings.Replace(lines[last], "┘", "┤", 1)
+		// The bottom border line (last line) - replace └ with ├ and ┘ with ┤
+		bottomLine := lines[len(lines)-1]
+		bottomLine = strings.Replace(bottomLine, "└", "├", 1)
+		bottomLine = strings.Replace(bottomLine, "┘", "┤", 1)
+		lines[len(lines)-1] = bottomLine
 	}
 
+	// Combine the custom top with the box
 	frame := top + "\n" + strings.Join(lines, "\n")
 
-	topIndicator := strings.TrimSpace(info.TopIndicator)
-	if topIndicator == "" {
-		topIndicator = border.Top
+	headerStatus := strings.TrimSpace(info.HeaderStatus)
+	if headerStatus != "" {
+		headerStatus = truncateStringToWidth(headerStatus, width-2)
+		headerOverlay := uistyles.PanelFooterStyle.Copy().
+			Width(lipgloss.Width(headerStatus)).
+			Align(lipgloss.Right).
+			Render(headerStatus)
+		frame = overlay.Composite(headerOverlay, frame, overlay.Right, overlay.Top, -1, 0)
 	}
-	frame = overlay.Composite(topBorderStyler(topIndicator), frame, overlay.Right, overlay.Top, -1, 0)
 
-	bottomIndicator := strings.TrimSpace(info.BottomIndicator)
-	if bottomIndicator == "" {
-		bottomIndicator = border.Bottom
-	}
-	bottomBorderStyler := lipgloss.NewStyle().
-		Foreground(boxStyle.GetBorderBottomForeground()).
-		Background(boxStyle.GetBorderBottomBackground()).
-		Render
-	frame = overlay.Composite(bottomBorderStyler(bottomIndicator), frame, overlay.Right, overlay.Bottom, -1, 0)
-
-	if info.SuppressFooter {
-		status := strings.TrimSpace(info.FooterStatus)
-		if status != "" {
-			status = truncateStringToWidth(status, width-2)
-			statusStyled := uistyles.PanelFooterStyle.Copy().
-				Width(lipgloss.Width(status)).
-				Align(lipgloss.Left).
-				Render(status)
-			frame = overlay.Composite(statusStyled, frame, overlay.Right, overlay.Bottom, -1-lipgloss.Width(statusStyled), 0)
-		}
+	bottomStatus := strings.TrimSpace(info.FooterStatus)
+	if bottomStatus != "" {
+		bottomStatus = truncateStringToWidth(bottomStatus, width-2)
+		bottomOverlay := uistyles.PanelFooterStyle.Copy().
+			Width(lipgloss.Width(bottomStatus)).
+			Align(lipgloss.Right).
+			Render(bottomStatus)
+		frame = overlay.Composite(bottomOverlay, frame, overlay.Right, overlay.Bottom, -1, 0)
 	}
 
 	return frame
@@ -2606,6 +2603,26 @@ func (a *App) createFramedFooter(content string, width int) string {
 		Foreground(lipgloss.Color(uistyles.ColorWhite)).
 		Width(width).
 		Render(content)
+}
+
+func truncateStringToWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= maxWidth {
+		return s
+	}
+	var b strings.Builder
+	width := 0
+	for _, r := range s {
+		w := lipgloss.Width(string(r))
+		if width+w > maxWidth {
+			break
+		}
+		width += w
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // Run starts the application
