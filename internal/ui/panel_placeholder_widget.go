@@ -58,3 +58,11 @@ func (w *placeholderWidget) Resize(context.Context, panelcontent.Size) {}
 func (w *placeholderWidget) SetFocus(context.Context, bool) {}
 
 func (w *placeholderWidget) Teardown(context.Context) {}
+
+func (w *placeholderWidget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
+	return panelcontent.FrameInfo{
+		SuppressFooter:  true,
+		TopIndicator:    "─",
+		BottomIndicator: "─",
+	}
+}
