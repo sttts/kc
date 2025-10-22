@@ -3,6 +3,7 @@ package list
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -170,6 +171,75 @@ func (w *Widget) Footer(ctx context.Context, width int) string {
 		Height(1).
 		Align(lipgloss.Left).
 		Render(footerText)
+}
+
+func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
+	info := panelcontent.FrameInfo{}
+	if len(w.items) == 0 {
+		return info
+	}
+	ordinals := make([]int, len(w.items))
+	totalReal := 0
+	for i := range w.items {
+		if isBackItem(w.items[i]) {
+			continue
+		}
+		totalReal++
+		ordinals[i] = totalReal
+	}
+	if totalReal == 0 {
+		return info
+	}
+	current := 0
+	if w.selected >= 0 && w.selected < len(ordinals) {
+		current = ordinals[w.selected]
+	}
+	visibleStart := w.scroll
+	visibleEnd := w.scroll + w.visibleHeight()
+	if visibleEnd > len(ordinals) {
+		visibleEnd = len(ordinals)
+	}
+	bottomOrdinal := current
+	for i := visibleStart; i < visibleEnd; i++ {
+		if ordinals[i] > bottomOrdinal {
+			bottomOrdinal = ordinals[i]
+		}
+	}
+	percent := 0
+	if totalReal > 0 {
+		percent = int(math.Round(float64(bottomOrdinal) * 100 / float64(totalReal)))
+		if percent < 0 {
+			percent = 0
+		}
+		if percent > 100 {
+			percent = 100
+		}
+	}
+	topMore := false
+	for i := 0; i < visibleStart; i++ {
+		if ordinals[i] > 0 {
+			topMore = true
+			break
+		}
+	}
+	bottomMore := false
+	for i := visibleEnd; i < len(ordinals); i++ {
+		if ordinals[i] > 0 {
+			bottomMore = true
+			break
+		}
+	}
+	topIndicator := "─"
+	if topMore {
+		topIndicator = "^"
+	}
+	info.HeaderStatus = topIndicator
+	bottomIndicator := "─"
+	if bottomMore {
+		bottomIndicator = "v"
+	}
+	info.FooterStatus = fmt.Sprintf("%d/%d • %d%% %s", current, totalReal, percent, bottomIndicator)
+	return info
 }
 
 func (w *Widget) CurrentSelectionID(ctx context.Context) string {
@@ -783,6 +853,18 @@ func (w *Widget) currentPath() string {
 		return ""
 	}
 	return w.deps.Path()
+}
+
+func isBackItem(it Item) bool {
+	if it.Name == ".." {
+		return true
+	}
+	if it.Item != nil {
+		if back, ok := it.Item.(models.Back); ok {
+			return back.IsBack()
+		}
+	}
+	return false
 }
 
 // --- folder helpers --------------------------------------------------------

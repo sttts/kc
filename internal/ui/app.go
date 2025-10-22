@@ -18,6 +18,7 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -1165,11 +1166,13 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// contentHeight already equals (panelHeight-2), so subtract one more to account for the frame's top/bottom.
 	ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
 	a.leftPanel.SetDimensions(ctxLeft, contentWidth, contentHeight-2)
+	leftInfo := a.leftPanel.FrameInfo(ctxLeft)
 	leftContentView := a.leftPanel.ViewContentOnlyFocused(ctxLeft, a.activePanel == 0)
 	leftFooterView := a.leftPanel.GetFooter(ctxLeft)
 	cancelLeft()
 	ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
 	a.rightPanel.SetDimensions(ctxRight, contentWidth, contentHeight-2)
+	rightInfo := a.rightPanel.FrameInfo(ctxRight)
 	rightContentView := a.rightPanel.ViewContentOnlyFocused(ctxRight, a.activePanel == 1)
 	rightFooterView := a.rightPanel.GetFooter(ctxRight)
 	cancelRight()
@@ -1179,8 +1182,16 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	frameHeight := panelHeight - footerHeight
 
 	// Create frames with proper dimensions, passing focus state
-	leftFramed := a.createFrameWithOverlayTitle(leftContentView, a.leftPanel.GetCurrentPath(), panelWidth, frameHeight, a.activePanel == 0)
-	rightFramed := a.createFrameWithOverlayTitle(rightContentView, a.rightPanel.GetCurrentPath(), panelWidth, frameHeight, a.activePanel == 1)
+	leftTitle := leftInfo.Breadcrumb
+	if leftTitle == "" {
+		leftTitle = a.leftPanel.GetCurrentPath()
+	}
+	rightTitle := rightInfo.Breadcrumb
+	if rightTitle == "" {
+		rightTitle = a.rightPanel.GetCurrentPath()
+	}
+	leftFramed := a.createFrameWithOverlayTitle(leftContentView, leftInfo, leftTitle, panelWidth, frameHeight, a.activePanel == 0)
+	rightFramed := a.createFrameWithOverlayTitle(rightContentView, rightInfo, rightTitle, panelWidth, frameHeight, a.activePanel == 1)
 
 	// Create framed footers with T-junction connection
 	leftFooter := a.createFramedFooter(leftFooterView, panelWidth)
@@ -2432,7 +2443,10 @@ func (a *App) renameMoveItem() tea.Cmd {
 
 // createFrameWithOverlayTitle creates a frame with title overlaid on the top border
 // Based on the approach from https://gist.github.com/meowgorithm/1777377a43373f563476a2bcb7d89306
-func (a *App) createFrameWithOverlayTitle(content, title string, width, height int, isFocused bool) string {
+func (a *App) createFrameWithOverlayTitle(content string, info panelcontent.FrameInfo, title string, width, height int, isFocused bool) string {
+	if info.Breadcrumb != "" {
+		title = info.Breadcrumb
+	}
 	if title == "" {
 		// No title, just return regular frame
 		return lipgloss.NewStyle().
@@ -2553,7 +2567,29 @@ func (a *App) createFrameWithOverlayTitle(content, title string, width, height i
 	}
 
 	// Combine the custom top with the box
-	return top + "\n" + strings.Join(lines, "\n")
+	frame := top + "\n" + strings.Join(lines, "\n")
+
+	headerStatus := strings.TrimSpace(info.HeaderStatus)
+	if headerStatus != "" {
+		headerStatus = truncateStringToWidth(headerStatus, width-2)
+		headerOverlay := uistyles.PanelFooterStyle.Copy().
+			Width(lipgloss.Width(headerStatus)).
+			Align(lipgloss.Right).
+			Render(headerStatus)
+		frame = overlay.Composite(headerOverlay, frame, overlay.Right, overlay.Top, -1, 0)
+	}
+
+	bottomStatus := strings.TrimSpace(info.FooterStatus)
+	if bottomStatus != "" {
+		bottomStatus = truncateStringToWidth(bottomStatus, width-2)
+		bottomOverlay := uistyles.PanelFooterStyle.Copy().
+			Width(lipgloss.Width(bottomStatus)).
+			Align(lipgloss.Right).
+			Render(bottomStatus)
+		frame = overlay.Composite(bottomOverlay, frame, overlay.Right, overlay.Bottom, -1, 0)
+	}
+
+	return frame
 }
 
 // createFramedFooter creates a framed footer with T-junction characters at the top
@@ -2567,6 +2603,26 @@ func (a *App) createFramedFooter(content string, width int) string {
 		Foreground(lipgloss.Color(uistyles.ColorWhite)).
 		Width(width).
 		Render(content)
+}
+
+func truncateStringToWidth(s string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= maxWidth {
+		return s
+	}
+	var b strings.Builder
+	width := 0
+	for _, r := range s {
+		w := lipgloss.Width(string(r))
+		if width+w > maxWidth {
+			break
+		}
+		width += w
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // Run starts the application

@@ -2,6 +2,8 @@ package manifest
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
@@ -56,6 +58,30 @@ func (w *Widget) Teardown(context.Context) {}
 
 func (w *Widget) Footer(ctx context.Context, width int) string {
 	return w.viewer.Footer(width)
+}
+
+func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
+	info := panelcontent.FrameInfo{SuppressFooter: true}
+	breadcrumb := ""
+	if w.sel.Item != nil {
+		if path := w.sel.Item.Path(); len(path) > 0 {
+			breadcrumb = "/" + strings.Join(path, "/")
+		}
+		if breadcrumb == "" {
+			breadcrumb = w.sel.Path
+		}
+	}
+	if breadcrumb == "" && w.deps.Path != nil {
+		breadcrumb = w.deps.Path()
+	}
+	if breadcrumb != "" {
+		info.Breadcrumb = breadcrumb
+	}
+	current, total := w.viewer.Position()
+	if total > 0 {
+		info.HeaderStatus = fmt.Sprintf("%d/%d", current, total)
+	}
+	return info
 }
 
 // OnSelectionChanged refreshes the manifest for the provided selection.

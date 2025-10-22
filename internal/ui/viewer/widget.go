@@ -139,6 +139,22 @@ func (w *Widget) Footer(width int) string {
 // Metadata returns the current content metadata.
 func (w *Widget) Metadata() Metadata { return w.metadata }
 
+// Position reports the visible progress (bottom row index) and total lines.
+func (w *Widget) Position() (current int, total int) {
+	total = len(w.lines)
+	if total == 0 {
+		return 0, 0
+	}
+	end := w.offset + w.page()
+	if end > total {
+		end = total
+	}
+	if end <= 0 {
+		end = 1
+	}
+	return end, total
+}
+
 func (w *Widget) highlight() {
 	if w.raw == "" {
 		w.lines = []string{""}
