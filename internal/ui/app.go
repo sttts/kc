@@ -395,20 +395,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.modalManager != nil && a.modalManager.IsModalVisible() {
 			if m := a.modalManager.GetActiveModal(); m != nil {
 				m.SetDimensions(a.width, a.height)
-				// If the resources dialog is open, re-center and resnapshot background
-				// to keep proportions and stack drawing correct on resize.
-				// Window size: clamp to 60% of width, minimum 40, height fixed to content+frame.
-				// This avoids sprawling on very large terminals but scales on smaller ones.
-				winW := a.width * 6 / 10
-				if winW < 40 {
-					winW = 40
+				if vm, ok := m.content.(*ViewOptionsModel); ok {
+					a.layoutViewOptionsModal(m, vm, vm.PanelIndex())
 				}
-				if winW > a.width-2 {
-					winW = a.width - 2
-				}
-				winH := 6
-				bg, _ := a.renderMainView()
-				m.SetWindowed(winW, winH, bg)
 			}
 		}
 
@@ -432,6 +421,69 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			// Intercept resource options changes even while modal is visible
 			switch m := msg.(type) {
+			case ViewOptionsCommittedMsg:
+				targetIdx := m.PanelIndex
+				if targetIdx < 0 || targetIdx > 1 {
+					targetIdx = a.activePanel
+				}
+				var subCmds []tea.Cmd
+				closedBySubMsg := false
+				if m.SetPanelMode && m.Accept {
+					if _, cmd := a.Update(PanelModeSelectedMsg{PanelIndex: targetIdx, Mode: m.PanelMode}); cmd != nil {
+						subCmds = append(subCmds, cmd)
+					}
+				}
+				panel := a.panelByIndex(targetIdx)
+				currentTableMode := "scroll"
+				if panel != nil {
+					currentTableMode = panel.TableMode()
+				}
+				if m.Resources != nil && (m.Accept || m.SaveDefault) {
+					tableMode := currentTableMode
+					if m.HasTableMode {
+						tableMode = m.TableMode
+					}
+					resMsg := ResourcesOptionsChangedMsg{
+						ShowNonEmptyOnly: !m.Resources.IncludeEmpty,
+						Order:            m.Resources.Order,
+						TableMode:        tableMode,
+						HasInclude:       m.Resources.HasInclude,
+						HasOrder:         m.Resources.HasOrder,
+						SaveDefault:      m.SaveDefault,
+						Accept:           m.Accept,
+						Close:            m.Close,
+					}
+					if _, cmd := a.Update(resMsg); cmd != nil {
+						subCmds = append(subCmds, cmd)
+					}
+					if m.Close {
+						closedBySubMsg = true
+					}
+				}
+				if m.Objects != nil && (m.Accept || m.SaveDefault) {
+					tableMode := currentTableMode
+					if m.HasTableMode {
+						tableMode = m.TableMode
+					}
+					objMsg := ObjectOptionsChangedMsg{
+						TableMode:    tableMode,
+						Columns:      m.Objects.Columns,
+						ObjectsOrder: m.Objects.Order,
+						SaveDefault:  m.SaveDefault,
+						Accept:       m.Accept,
+						Close:        m.Close,
+					}
+					if _, cmd := a.Update(objMsg); cmd != nil {
+						subCmds = append(subCmds, cmd)
+					}
+					if m.Close {
+						closedBySubMsg = true
+					}
+				}
+				if m.Close && !closedBySubMsg {
+					a.modalManager.Hide()
+				}
+				return a, tea.Batch(subCmds...)
 			case ResourcesOptionsChangedMsg:
 				if m.SaveDefault {
 					// Persist current dialog values to config defaults
@@ -1441,9 +1493,14 @@ func (a *App) renderToggleMessage() string {
 
 func (a *App) setupModals() {
 	// Resources options modal (content set dynamically on open)
-	opts := NewResourcesOptionsModel(false, false, "scroll", false, "favorites")
-	resModal := NewModal("Resources", opts)
-	a.modalManager.Register("resources_options", resModal)
+	viewOpts := NewViewOptionsModel(ViewOptionsConfig{
+		PanelIndex:      0,
+		PanelModes:      []PanelViewMode{PanelModeList},
+		ActivePanelMode: PanelModeList,
+		TableMode:       "scroll",
+	})
+	viewModal := NewModal("View Options", viewOpts)
+	a.modalManager.Register("view_options", viewModal)
 
 	// Theme selector modal; content is set dynamically when opened
 	themeSelector := NewThemeSelector(nil)
@@ -1686,6 +1743,11 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 		return nil
 	}
 
+	panelIdx, ok := a.panelIndexFor(panel)
+	if !ok {
+		panelIdx = a.activePanel
+	}
+
 	// Determine folder context for contextual options.
 	var curFolder models.Folder
 	if nav := a.navigatorForPanel(panel); nav != nil {
@@ -1697,6 +1759,7 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 
 	showInclude := false
 	showOrder := false
+	resourceSection := false
 	if curFolder != nil {
 		switch curFolder.(type) {
 		case *models.RootFolder,
@@ -1706,27 +1769,134 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 			*models.ResourcesFolder:
 			showInclude = true
 			showOrder = true
+			resourceSection = true
 		}
 	}
 
+	objectSection := false
+	if curFolder != nil {
+		if _, ok := curFolder.(interface {
+			ObjectListMeta() (schema.GroupVersionResource, string, bool)
+		}); ok {
+			objectSection = true
+		}
+	}
+	if panel.Mode() != PanelModeList {
+		objectSection = false
+	}
+
+	// Panel-derived defaults.
 	showNonEmpty, order := panel.ResourceViewOptions()
 	tableMode := panel.TableMode()
-	content := NewResourcesOptionsModel(showInclude, showOrder, tableMode, showNonEmpty, order)
-	modal := a.modalManager.modals["resources_options"]
+	columns := panel.ColumnsMode()
+	objOrder := panel.ObjectOrder()
+
+	var resConfig *ViewOptionsResourcesConfig
+	if resourceSection {
+		resConfig = &ViewOptionsResourcesConfig{
+			ShowInclude:   showInclude,
+			IncludeEmpty:  !showNonEmpty,
+			ShowOrder:     showOrder,
+			Order:         order,
+			ShowTableMode: true,
+		}
+	}
+
+	var objConfig *ViewOptionsObjectsConfig
+	if objectSection {
+		objConfig = &ViewOptionsObjectsConfig{
+			ShowTableMode: true,
+			Columns:       columns,
+			Order:         objOrder,
+		}
+	}
+
+	content := NewViewOptionsModel(ViewOptionsConfig{
+		PanelIndex:      panelIdx,
+		PanelModes:      panel.AvailableModes(),
+		ActivePanelMode: panel.Mode(),
+		TableMode:       tableMode,
+		Resources:       resConfig,
+		Objects:         objConfig,
+	})
+
+	modal := a.modalManager.modals["view_options"]
 	if modal == nil {
-		modal = NewModal("Resources View Options", content)
-		a.modalManager.Register("resources_options", modal)
+		modal = NewModal("View Options", content)
+		a.modalManager.Register("view_options", modal)
 	} else {
 		modal.SetContent(content)
-		modal.title = "Resources View Options"
+		modal.title = "View Options"
 	}
-	winW, winH := 50, 6
+
+	a.layoutViewOptionsModal(modal, content, panelIdx)
+	modal.SetOnClose(func() tea.Cmd { return nil })
+	a.modalManager.Show("view_options")
+	return nil
+}
+
+func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int) {
+	panelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	if panelWidth <= 0 {
+		panelWidth = max(24, a.width/2)
+	}
+	winW := panelWidth / 2
+	if winW < 36 {
+		winW = 36
+	}
+	if winW > panelWidth-2 {
+		winW = panelWidth - 2
+	}
+	if winW < 24 {
+		winW = 24
+	}
+	if winW > a.width-4 {
+		winW = a.width - 4
+	}
+
+	contentHeight := content.ContentHeight()
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+	innerH := contentHeight
+	minInner := 5
+	if innerH < minInner {
+		innerH = minInner
+	}
+	maxInner := panelHeight - 4
+	if maxInner < minInner {
+		maxInner = minInner
+	}
+	if innerH > maxInner {
+		innerH = maxInner
+	}
+	winH := innerH + 2
+	if winH > panelHeight {
+		winH = panelHeight
+		innerH = max(1, winH-2)
+	}
+
 	bg, _ := a.renderMainView()
 	modal.SetWindowed(winW, winH, bg)
-	modal.SetOnClose(func() tea.Cmd { return nil })
+	if setter, ok := interface{}(content).(interface{ SetDimensions(int, int) }); ok {
+		setter.SetDimensions(max(1, winW-2), max(1, winH-2))
+	}
+
+	offsetX := panelIdx*panelWidth + max(0, (panelWidth-winW)/2)
+	panelUsable := max(0, panelHeight-headerOffset-1)
+	offsetY := headerOffset
+	if panelUsable > winH {
+		offsetY += (panelUsable - winH) / 2
+	}
+	if offsetY < headerOffset {
+		offsetY = headerOffset
+	}
+	maxOffsetY := max(0, (a.height-1)-winH)
+	if offsetY > maxOffsetY {
+		offsetY = maxOffsetY
+	}
+	modal.SetWindowOffset(offsetX, offsetY)
 	modal.SetDimensions(a.width, a.height)
-	a.modalManager.Show("resources_options")
-	return nil
 }
 
 func (a *App) viewResource() tea.Cmd {

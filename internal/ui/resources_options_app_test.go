@@ -32,7 +32,7 @@ func TestResourcesOptionsChangedMsgAppliesSettings(t *testing.T) {
 	app.leftPanel.SetFolder(ctx, folder, false)
 	app.leftPanel.SetCurrentPath("/resources")
 	app.activePanel = 0
-	app.modalManager.Show("resources_options")
+	app.modalManager.Show("view_options")
 
 	initial := folder.rowIDs(ctx)
 	if slices.Contains(initial, "batch/v1/jobs") {
@@ -83,6 +83,153 @@ func TestResourcesOptionsChangedMsgAppliesSettings(t *testing.T) {
 	}
 	if app.modalManager.IsModalVisible() {
 		t.Fatalf("resources modal should close after Accept")
+	}
+}
+
+func TestViewOptionsCommittedMsgAppliesResourceSettings(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	app := NewApp()
+	baseCfg := appconfig.Default()
+	baseCfg.Resources.ShowNonEmptyOnly = true
+	baseCfg.Resources.Order = appconfig.OrderAlpha
+	app.cfg = baseCfg
+	app.leftConfig = cloneConfig(baseCfg)
+
+	folder := newTestResourcesFolder(app.leftConfig)
+	app.leftNav = navui.NewNavigator(folder)
+	app.leftPanel.UseFolder(true)
+	app.leftPanel.SetFolder(ctx, folder, false)
+	app.leftPanel.SetCurrentPath("/resources")
+	app.activePanel = 0
+	app.modalManager.Show("view_options")
+
+	initial := folder.rowIDs(ctx)
+	if slices.Contains(initial, "batch/v1/jobs") {
+		t.Fatalf("expected jobs hidden with showNonEmptyOnly=true, rows=%v", initial)
+	}
+
+	msg := ViewOptionsCommittedMsg{
+		PanelIndex:   0,
+		SetPanelMode: true,
+		PanelMode:    app.leftPanel.Mode(),
+		TableMode:    "scroll",
+		HasTableMode: true,
+		Resources: &ViewOptionsResourcesPayload{
+			HasInclude:      true,
+			IncludeEmpty:    true,
+			HasOrder:        true,
+			Order:           "group",
+			ShowTableOption: true,
+		},
+		Accept: true,
+		Close:  true,
+	}
+
+	if _, cmd := app.Update(msg); cmd != nil {
+		_ = cmd()
+	}
+
+	if app.leftConfig.Resources.ShowNonEmptyOnly {
+		t.Fatalf("left panel config showNonEmptyOnly not updated after view options commit")
+	}
+	if app.leftConfig.Resources.Order != appconfig.OrderGroup {
+		t.Fatalf("left panel order not updated via view options commit, got %s", app.leftConfig.Resources.Order)
+	}
+
+	final := folder.rowIDs(ctx)
+	if !slices.Contains(final, "batch/v1/jobs") {
+		t.Fatalf("expected jobs visible after toggling include empty, rows=%v", final)
+	}
+	want := []string{
+		"apps/v1/deployments",
+		"apps/v1/replicasets",
+		"batch/v1/cronjobs",
+		"batch/v1/jobs",
+	}
+	if strings.Join(final, ",") != strings.Join(want, ",") {
+		t.Fatalf("unexpected ordering after view options commit: got=%v want=%v", final, want)
+	}
+	if app.modalManager.IsModalVisible() {
+		t.Fatalf("view options modal should close after Accept")
+	}
+}
+
+func TestViewOptionsCommittedMsgAppliesObjectSettings(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	app.leftConfig = cloneConfig(app.cfg)
+	app.activePanel = 0
+	app.modalManager.Show("view_options")
+
+	msg := ViewOptionsCommittedMsg{
+		PanelIndex:   0,
+		SetPanelMode: true,
+		PanelMode:    app.leftPanel.Mode(),
+		TableMode:    "fit",
+		HasTableMode: true,
+		Objects: &ViewOptionsObjectsPayload{
+			ShowTableOption: true,
+			Columns:         "wide",
+			Order:           "-name",
+		},
+		Accept: true,
+		Close:  true,
+	}
+
+	if _, cmd := app.Update(msg); cmd != nil {
+		_ = cmd()
+	}
+
+	if got := app.leftPanel.TableMode(); got != "fit" {
+		t.Fatalf("expected table mode fit, got %q", got)
+	}
+	if got := app.leftPanel.ColumnsMode(); got != "wide" {
+		t.Fatalf("expected columns mode wide, got %q", got)
+	}
+	if got := app.leftPanel.ObjectOrder(); got != "-name" {
+		t.Fatalf("expected object order -name, got %q", got)
+	}
+	if cfg := app.ensurePanelConfig(app.leftPanel); cfg != nil {
+		if cfg.Objects.Columns != "wide" {
+			t.Fatalf("expected config columns wide, got %q", cfg.Objects.Columns)
+		}
+		if cfg.Objects.Order != "-name" {
+			t.Fatalf("expected config order -name, got %q", cfg.Objects.Order)
+		}
+	}
+	if app.modalManager.IsModalVisible() {
+		t.Fatalf("view options modal should close after object commit")
+	}
+}
+
+func TestViewOptionsCommittedMsgPanelModeOnly(t *testing.T) {
+	t.Parallel()
+
+	app := NewApp()
+	app.modalManager.Show("view_options")
+
+	msg := ViewOptionsCommittedMsg{
+		PanelIndex:   0,
+		SetPanelMode: true,
+		PanelMode:    PanelModeManifest,
+		HasTableMode: false,
+		Accept:       true,
+		Close:        true,
+	}
+
+	if _, cmd := app.Update(msg); cmd != nil {
+		_ = cmd()
+	}
+
+	if app.leftPanel.Mode() != PanelModeManifest {
+		t.Fatalf("expected panel mode manifest after commit, got %v", app.leftPanel.Mode())
+	}
+	if app.modalManager.IsModalVisible() {
+		t.Fatalf("view options modal should close after panel-mode-only commit")
 	}
 }
 

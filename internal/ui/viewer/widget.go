@@ -218,14 +218,17 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 		if w.onEdit != nil {
 			return w.onEdit(), true
 		}
+		return nil, false
 	case "f2":
 		if w.onTheme != nil {
 			return w.onTheme(), true
 		}
+		return nil, false
 	case "f10":
 		if w.onClose != nil {
 			return w.onClose(), true
 		}
+		return nil, false
 	default:
 		return nil, false
 	}

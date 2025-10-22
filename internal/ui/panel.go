@@ -456,6 +456,31 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return p, cmd
 		}
 	}
+	if key, ok := msg.(tea.KeyMsg); ok {
+		var action PanelAction
+		var mapped bool
+		switch key.String() {
+		case "f1":
+			action, mapped = PanelActionHelp, true
+		case "f2":
+			action, mapped = PanelActionOptions, true
+		case "f3":
+			action, mapped = PanelActionView, true
+		case "f4":
+			action, mapped = PanelActionEdit, true
+		case "f7":
+			action, mapped = PanelActionCreateNamespace, true
+		case "f8":
+			action, mapped = PanelActionDelete, true
+		case "f9":
+			action, mapped = PanelActionMenu, true
+		}
+		if mapped {
+			actCtx, actCancel := context.WithTimeout(context.Background(), panelContextTimeout)
+			defer actCancel()
+			return p, p.invokeActionIfAllowed(actCtx, action)
+		}
+	}
 	return p, nil
 }
 
