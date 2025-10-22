@@ -492,7 +492,7 @@ func (p *Panel) View() string {
 	info := p.frameInfo(ctx)
 	header := p.renderHeader(info.Breadcrumb, info.HeaderStatus)
 	content := p.renderContent(ctx)
-	footer := p.renderFooter(ctx, info.SuppressFooter)
+	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 
 	if footer == "" {
 		return lipgloss.JoinVertical(
@@ -516,7 +516,7 @@ func (p *Panel) ViewWithoutHeader() string {
 	defer cancel()
 	info := p.frameInfo(ctx)
 	content := p.renderContent(ctx)
-	footer := p.renderFooter(ctx, info.SuppressFooter)
+	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 	if footer == "" {
 		return content
 	}
@@ -533,7 +533,7 @@ func (p *Panel) ViewWithoutHeaderFocused(isFocused bool) string {
 	defer cancel()
 	info := p.frameInfo(ctx)
 	content := p.renderContentFocused(ctx, isFocused)
-	footer := p.renderFooter(ctx, info.SuppressFooter)
+	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 	if footer == "" {
 		return content
 	}
@@ -561,7 +561,7 @@ func (p *Panel) SetCurrentPath(path string) { p.currentPath = path }
 // GetFooter returns the rendered footer for external use
 func (p *Panel) GetFooter(ctx context.Context) string {
 	info := p.frameInfo(ctx)
-	return p.renderFooter(ctx, info.SuppressFooter)
+	return p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 }
 
 // SetDimensions sets the panel dimensions
@@ -684,10 +684,11 @@ func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string
 	return ""
 }
 
-func (p *Panel) renderFooter(ctx context.Context, suppress bool) string {
+func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) string {
 	if suppress {
 		return ""
 	}
+	status = strings.TrimSpace(status)
 	renderedFooter := ""
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if fp, ok := widget.(panelcontent.FooterProvider); ok {
@@ -696,16 +697,29 @@ func (p *Panel) renderFooter(ctx context.Context, suppress bool) string {
 	}
 	lines := strings.Split(strings.TrimRight(renderedFooter, "\n"), "\n")
 	if len(lines) == 0 {
+		if status == "" {
+			return ""
+		}
 		lines = []string{""}
 	}
-	for i := range lines {
-		lines[i] = uistyles.PanelFooterStyle.Copy().
+	styled := make([]string, len(lines))
+	for i, line := range lines {
+		style := uistyles.PanelFooterStyle.Copy().
 			Width(p.width).
-			Height(1).
-			Align(lipgloss.Left).
-			Render(lines[i])
+			Height(1)
+		if i == 0 && status != "" {
+			statusText := truncateToWidth(status, p.width-1)
+			left := truncateToWidth(line, p.width-lipgloss.Width(statusText)-1)
+			padding := p.width - lipgloss.Width(left) - lipgloss.Width(statusText)
+			if padding < 1 {
+				padding = 1
+			}
+			styled[i] = style.Render(left + strings.Repeat(" ", padding) + statusText)
+		} else {
+			styled[i] = style.Align(lipgloss.Left).Render(line)
+		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(styled, "\n")
 }
 
 func truncateToWidth(s string, maxWidth int) string {

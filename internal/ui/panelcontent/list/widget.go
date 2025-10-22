@@ -174,7 +174,10 @@ func (w *Widget) Footer(ctx context.Context, width int) string {
 }
 
 func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
-	info := panelcontent.FrameInfo{}
+	info := panelcontent.FrameInfo{
+		TopIndicator:    "─",
+		BottomIndicator: "─",
+	}
 	if len(w.items) == 0 {
 		return info
 	}
@@ -229,16 +232,13 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 			break
 		}
 	}
-	topIndicator := "─"
 	if topMore {
-		topIndicator = "^"
+		info.TopIndicator = "^"
 	}
-	info.HeaderStatus = topIndicator
-	bottomIndicator := "─"
 	if bottomMore {
-		bottomIndicator = "v"
+		info.BottomIndicator = "v"
 	}
-	info.FooterStatus = fmt.Sprintf("%d/%d • %d%% %s", current, totalReal, percent, bottomIndicator)
+	info.FooterStatus = fmt.Sprintf("%d/%d • %d%%", current, totalReal, percent)
 	return info
 }
 

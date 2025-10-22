@@ -74,10 +74,12 @@ type FrameInfoRequest struct {
 
 // FrameInfo describes breadcrumb overrides and status strings.
 type FrameInfo struct {
-	Breadcrumb     string
-	HeaderStatus   string
-	FooterStatus   string
-	SuppressFooter bool
+	Breadcrumb      string
+	HeaderStatus    string
+	FooterStatus    string
+	TopIndicator    string
+	BottomIndicator string
+	SuppressFooter  bool
 }
 
 // SelectionListener widgets opt in to selection change notifications.

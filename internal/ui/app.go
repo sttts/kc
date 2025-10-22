@@ -2569,24 +2569,33 @@ func (a *App) createFrameWithOverlayTitle(content string, info panelcontent.Fram
 	// Combine the custom top with the box
 	frame := top + "\n" + strings.Join(lines, "\n")
 
-	headerStatus := strings.TrimSpace(info.HeaderStatus)
-	if headerStatus != "" {
-		headerStatus = truncateStringToWidth(headerStatus, width-2)
-		headerOverlay := uistyles.PanelFooterStyle.Copy().
-			Width(lipgloss.Width(headerStatus)).
-			Align(lipgloss.Right).
-			Render(headerStatus)
-		frame = overlay.Composite(headerOverlay, frame, overlay.Right, overlay.Top, -1, 0)
+	topIndicator := strings.TrimSpace(info.TopIndicator)
+	if topIndicator == "" {
+		topIndicator = border.Top
 	}
+	topIndicator = topBorderStyler(topIndicator)
+	frame = overlay.Composite(topIndicator, frame, overlay.Right, overlay.Top, -1, 0)
 
-	bottomStatus := strings.TrimSpace(info.FooterStatus)
-	if bottomStatus != "" {
-		bottomStatus = truncateStringToWidth(bottomStatus, width-2)
-		bottomOverlay := uistyles.PanelFooterStyle.Copy().
-			Width(lipgloss.Width(bottomStatus)).
-			Align(lipgloss.Right).
-			Render(bottomStatus)
-		frame = overlay.Composite(bottomOverlay, frame, overlay.Right, overlay.Bottom, -1, 0)
+	bottomIndicator := strings.TrimSpace(info.BottomIndicator)
+	if bottomIndicator == "" {
+		bottomIndicator = border.Bottom
+	}
+	bottomIndicator = lipgloss.NewStyle().
+		Foreground(boxStyle.GetBorderBottomForeground()).
+		Background(boxStyle.GetBorderBottomBackground()).
+		Render(bottomIndicator)
+	frame = overlay.Composite(bottomIndicator, frame, overlay.Right, overlay.Bottom, -1, 0)
+
+	if info.SuppressFooter {
+		status := strings.TrimSpace(info.FooterStatus)
+		if status != "" {
+			status = truncateStringToWidth(status, width-2)
+			statusOverlay := uistyles.PanelFooterStyle.Copy().
+				Width(lipgloss.Width(status)).
+				Align(lipgloss.Left).
+				Render(status)
+			frame = overlay.Composite(statusOverlay, frame, overlay.Right, overlay.Bottom, -(lipgloss.Width(statusOverlay) + 1), 0)
+		}
 	}
 
 	return frame

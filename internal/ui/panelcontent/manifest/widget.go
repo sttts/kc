@@ -3,6 +3,7 @@ package manifest
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -61,7 +62,7 @@ func (w *Widget) Footer(ctx context.Context, width int) string {
 }
 
 func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
-	info := panelcontent.FrameInfo{SuppressFooter: true}
+	info := panelcontent.FrameInfo{SuppressFooter: true, TopIndicator: "─", BottomIndicator: "─"}
 	breadcrumb := ""
 	if w.sel.Item != nil {
 		if path := w.sel.Item.Path(); len(path) > 0 {
@@ -79,7 +80,21 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 	}
 	current, total := w.viewer.Position()
 	if total > 0 {
-		info.HeaderStatus = fmt.Sprintf("%d/%d", current, total)
+		above, below := w.viewer.ScrollIndicators()
+		if above {
+			info.TopIndicator = "^"
+		}
+		if below {
+			info.BottomIndicator = "v"
+		}
+		percent := int(math.Round(float64(current) * 100 / float64(total)))
+		if percent < 0 {
+			percent = 0
+		}
+		if percent > 100 {
+			percent = 100
+		}
+		info.FooterStatus = fmt.Sprintf("%d/%d • %d%%", current, total, percent)
 	}
 	return info
 }
