@@ -511,45 +511,6 @@ func (p *Panel) View() string {
 	)
 }
 
-// ViewWithoutHeader renders the panel content and footer only (no header)
-func (p *Panel) ViewWithoutHeader() string {
-	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
-	defer cancel()
-	info := p.frameInfo(ctx)
-	content := p.renderContent(ctx)
-	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
-	if footer == "" {
-		return content
-	}
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		content,
-		footer,
-	)
-}
-
-// ViewWithoutHeaderFocused renders the panel content and footer with focus state
-func (p *Panel) ViewWithoutHeaderFocused(isFocused bool) string {
-	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
-	defer cancel()
-	info := p.frameInfo(ctx)
-	content := p.renderContentFocused(ctx, isFocused)
-	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
-	if footer == "" {
-		return content
-	}
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		content,
-		footer,
-	)
-}
-
-// ViewContentOnlyFocused renders just the panel content without header or footer
-func (p *Panel) ViewContentOnlyFocused(ctx context.Context, isFocused bool) string {
-	return p.renderContentFocused(ctx, isFocused)
-}
-
 // Render draws the fully framed panel, including optional footer, using the provided dimensions.
 func (p *Panel) Render(ctx context.Context, width, height int, focused bool) string {
 	if width <= 0 {
@@ -630,12 +591,6 @@ func (p *Panel) GetCurrentPath() string {
 // The App is responsible for computing the path via the navigator.
 func (p *Panel) SetCurrentPath(path string) { p.currentPath = path }
 
-// GetFooter returns the rendered footer for external use
-func (p *Panel) GetFooter(ctx context.Context) string {
-	info := p.frameInfo(ctx)
-	return p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
-}
-
 // SetDimensions sets the panel dimensions
 func (p *Panel) SetDimensions(ctx context.Context, width, height int) {
 	p.width = width
@@ -663,11 +618,6 @@ func (p *Panel) frameInfo(ctx context.Context) panelcontent.FrameInfo {
 		}
 	}
 	return info
-}
-
-// FrameInfo exposes frame metadata for external rendering.
-func (p *Panel) FrameInfo(ctx context.Context) panelcontent.FrameInfo {
-	return p.frameInfo(ctx)
 }
 
 // renderHeader renders the panel header

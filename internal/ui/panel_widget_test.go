@@ -20,7 +20,12 @@ func TestPanelModeSwitchesToManifest(t *testing.T) {
 	if !strings.Contains(view, "Select a resource") {
 		t.Fatalf("expected manifest placeholder, got %q", view)
 	}
-	info := panel.FrameInfo(ctx)
+	widget := panel.ensureActiveWidget(ctx)
+	provider, ok := widget.(panelcontent.FrameInfoProvider)
+	if !ok {
+		t.Fatalf("manifest widget does not implement FrameInfoProvider")
+	}
+	info := provider.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: panel.width})
 	if info.FooterStatus == "" {
 		t.Fatalf("expected manifest footer status")
 	}
