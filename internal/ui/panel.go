@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
-	"github.com/sttts/kc/internal/overlay"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	listwidget "github.com/sttts/kc/internal/ui/panelcontent/list"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
@@ -493,7 +492,7 @@ func (p *Panel) View() string {
 	info := p.frameInfo(ctx)
 	header := p.renderHeader(info.Breadcrumb, info.HeaderStatus)
 	content := p.renderContent(ctx)
-	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+    footer := p.renderFooter(ctx, "", info.SuppressFooter)
 
 	if footer == "" {
 		return lipgloss.JoinVertical(
@@ -538,7 +537,7 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	for i := 0; i < 3; i++ {
 		p.SetDimensions(ctx, contentWidth, contentHeight)
 		info = p.frameInfo(ctx)
-		footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+		footerContent := p.renderFooter(ctx, "", info.SuppressFooter)
 		footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
 		if footerHeight >= height {
 			footerFrame = ""
@@ -559,7 +558,7 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	// Ensure final dimensions are applied before rendering.
 	p.SetDimensions(ctx, contentWidth, contentHeight)
 	info = p.frameInfo(ctx)
-	footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+	footerContent := p.renderFooter(ctx, "", info.SuppressFooter)
 	footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
 	if footerHeight >= height {
 		footerFrame = ""
@@ -797,74 +796,91 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 	topLeft := topBorderStyler(border.TopLeft)
 	topRight := topBorderStyler(border.TopRight)
 
+	topIndicatorGlyph := indicatorGlyph(info.TopIndicator, border.Top)
+	topIndicator := topBorderStyler(topIndicatorGlyph)
 	availableSpace := width - lipgloss.Width(topLeft+topRight)
-	title = p.ellipsizeBreadcrumbTitle(labelStyle, title, availableSpace)
+	indicatorWidth := lipgloss.Width(topIndicator)
+	availableForLabel := max(0, availableSpace-indicatorWidth)
+	title = p.ellipsizeBreadcrumbTitle(labelStyle, title, availableForLabel)
 	renderedLabel := labelStyle.Render(title)
 	labelWidth := lipgloss.Width(renderedLabel)
+	gapWidth := max(0, availableForLabel-labelWidth)
+	leftGapWidth := gapWidth / 2
+	rightGapWidth := gapWidth - leftGapWidth
+	leftGap := topBorderStyler(strings.Repeat(border.Top, leftGapWidth))
+	rightGap := topBorderStyler(strings.Repeat(border.Top, rightGapWidth))
+	top := topLeft + leftGap + renderedLabel + rightGap + topIndicator + topRight
 
-	var top string
-	if labelWidth >= availableSpace {
-		gap := strings.Repeat(border.Top, max(0, availableSpace-labelWidth))
-		top = topLeft + renderedLabel + topBorderStyler(gap) + topRight
-	} else {
-		totalBorderNeeded := availableSpace - labelWidth
-		leftBorder := totalBorderNeeded / 2
-		rightBorder := totalBorderNeeded - leftBorder
-		leftGap := topBorderStyler(strings.Repeat(border.Top, leftBorder))
-		rightGap := topBorderStyler(strings.Repeat(border.Top, rightBorder))
-		top = topLeft + leftGap + renderedLabel + rightGap + topRight
-	}
-
-	bottom := boxStyle.Copy().
+	bottomView := boxStyle.Copy().
 		BorderTop(false).
 		Width(width).
 		Height(height - 1).
 		Render(content)
 
+	lines := strings.Split(bottomView, "\n")
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+
 	// Adjust bottom corners only when a footer is attached.
 	if hasFooter {
-		lines := strings.Split(bottom, "\n")
-		if len(lines) > 0 {
-			bottomLine := lines[len(lines)-1]
-			bottomLine = strings.Replace(bottomLine, "└", "├", 1)
-			bottomLine = strings.Replace(bottomLine, "┘", "┤", 1)
-			lines[len(lines)-1] = bottomLine
-			bottom = strings.Join(lines, "\n")
-		}
+		border.BottomLeft = "├"
+		border.BottomRight = "┤"
 	}
 
-	frame := top + "\n" + bottom
+	lines[len(lines)-1] = composeBottomBorder(lines[len(lines)-1], border, boxStyle, info, width, hasFooter)
 
-	if info.SuppressFooter {
-		status := strings.TrimSpace(info.FooterStatus)
-		if status != "" {
-			status = truncateStringToWidth(status, width-2)
-			statusOverlay := uistyles.PanelFooterStyle.Copy().
-				Width(lipgloss.Width(status)).
-				Align(lipgloss.Left).
-				Render(status)
-			frame = overlay.Composite(statusOverlay, frame, overlay.Right, overlay.Bottom, -(lipgloss.Width(statusOverlay) + 1), 0)
-		}
-	}
-
-	topIndicator := strings.TrimSpace(info.TopIndicator)
-	if topIndicator == "" {
-		topIndicator = border.Top
-	}
-	topIndicator = topBorderStyler(topIndicator)
-	frame = overlay.Composite(topIndicator, frame, overlay.Right, overlay.Top, -1, 0)
-
-	bottomIndicator := strings.TrimSpace(info.BottomIndicator)
-	if bottomIndicator == "" {
-		bottomIndicator = border.Bottom
-	}
-	bottomIndicator = lipgloss.NewStyle().
-		Foreground(boxStyle.GetBorderBottomForeground()).
-		Background(boxStyle.GetBorderBottomBackground()).
-		Render(bottomIndicator)
-	frame = overlay.Composite(bottomIndicator, frame, overlay.Right, overlay.Bottom, -1, 0)
+	frame := top + "\n" + strings.Join(lines, "\n")
 
 	return frame
+}
+
+func composeBottomBorder(_ string, border lipgloss.Border, boxStyle lipgloss.Style, info panelcontent.FrameInfo, width int, hasFooter bool) string {
+	borderStyle := lipgloss.NewStyle().
+		Foreground(boxStyle.GetBorderBottomForeground()).
+		Background(boxStyle.GetBorderBottomBackground())
+	left := borderStyle.Render(border.BottomLeft)
+	right := borderStyle.Render(border.BottomRight)
+	connector := borderStyle.Render(border.Bottom)
+	connectorWidth := lipgloss.Width(connector)
+	indicator := borderStyle.Render(indicatorGlyph(info.BottomIndicator, border.Bottom))
+	leftWidth := lipgloss.Width(left)
+	rightWidth := lipgloss.Width(right)
+	indicatorWidth := lipgloss.Width(indicator)
+	available := width - leftWidth - rightWidth - indicatorWidth - connectorWidth
+	if available < 0 {
+		available = 0
+	}
+	statusText := strings.TrimSpace(info.FooterStatus)
+	statusText = truncateStringToWidth(statusText, available)
+	status := ""
+	statusWidth := 0
+	if statusText != "" {
+		status = uistyles.PanelFooterStyle.Copy().Render(statusText)
+		statusWidth = lipgloss.Width(status)
+	}
+	fillerWidth := available - statusWidth
+	if fillerWidth < 0 {
+		fillerWidth = 0
+	}
+	filler := ""
+	if fillerWidth > 0 {
+		filler = borderStyle.Render(strings.Repeat(border.Bottom, fillerWidth))
+	}
+	return left + filler + status + connector + indicator + right
+}
+
+func indicatorGlyph(indicator string, fallback string) string {
+	switch strings.TrimSpace(indicator) {
+	case "^":
+		return "▲"
+	case "v":
+		return "▼"
+	case "":
+		return fallback
+	default:
+		return indicator
+	}
 }
 
 func (p *Panel) ellipsizeBreadcrumbTitle(labelStyle lipgloss.Style, title string, maxWidth int) string {
