@@ -816,9 +816,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle global shortcuts first
 		switch msg.String() {
 		case "alt+f1", "ctrl+1":
-			return a, a.showPanelModeModal(0)
+			return a, a.showViewOptionsModalForPanel(a.panelByIndex(0))
 		case "alt+f2", "ctrl+2":
-			return a, a.showPanelModeModal(1)
+			return a, a.showViewOptionsModalForPanel(a.panelByIndex(1))
 		case "ctrl+o":
 			// Toggle terminal mode
 			a.showTerminal = !a.showTerminal

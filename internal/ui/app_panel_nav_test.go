@@ -54,25 +54,40 @@ func TestIndependentPanelNavigation(t *testing.T) {
 	}
 }
 
-func TestPanelModeModalSwitchesMode(t *testing.T) {
+func TestViewOptionsModalTargetsPanels(t *testing.T) {
 	a := NewApp()
 	ctx := t.Context()
 	a.leftPanel.UseFolder(true)
-	a.leftPanel.SetFolder(ctx, mkFolder("root"), false)
-	if cmd := a.showPanelModeModal(0); cmd != nil {
+	a.leftPanel.SetFolder(ctx, mkFolder("rootL"), false)
+	a.rightPanel.UseFolder(true)
+	a.rightPanel.SetFolder(ctx, mkFolder("rootR"), false)
+
+	if cmd := a.showViewOptionsModalForPanel(a.leftPanel); cmd != nil {
 		if msg := cmd(); msg != nil {
 			a.Update(msg)
 		}
 	}
-	if !a.modalManager.IsModalVisible() {
-		t.Fatalf("mode modal not visible")
+	modal := a.modalManager.modals["view_options"]
+	if modal == nil || !modal.IsVisible() {
+		t.Fatalf("view options modal not visible for left panel")
 	}
-	// Simulate modal selection callback.
-	a.Update(PanelModeSelectedMsg{PanelIndex: 0, Mode: PanelModeManifest})
-	if a.leftPanel.Mode() != PanelModeManifest {
-		t.Fatalf("panel mode = %v, want manifest", a.leftPanel.Mode())
+	vm, ok := modal.content.(*ViewOptionsModel)
+	if !ok || vm.PanelIndex() != 0 {
+		t.Fatalf("expected left panel index 0 in modal, got %v", vm.PanelIndex())
 	}
-	if a.modalManager.IsModalVisible() {
-		t.Fatalf("mode modal still visible after selection")
+	a.modalManager.Hide()
+
+	if cmd := a.showViewOptionsModalForPanel(a.rightPanel); cmd != nil {
+		if msg := cmd(); msg != nil {
+			a.Update(msg)
+		}
+	}
+	modal = a.modalManager.modals["view_options"]
+	if modal == nil || !modal.IsVisible() {
+		t.Fatalf("view options modal not visible for right panel")
+	}
+	vm, ok = modal.content.(*ViewOptionsModel)
+	if !ok || vm.PanelIndex() != 1 {
+		t.Fatalf("expected right panel index 1 in modal, got %v", vm.PanelIndex())
 	}
 }
