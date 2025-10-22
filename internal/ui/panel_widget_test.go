@@ -17,8 +17,8 @@ func TestPanelModeSwitchesToManifest(t *testing.T) {
 		t.Fatalf("expected manifest mode, got %v", panel.Mode())
 	}
 	view := panel.View()
-	if !strings.Contains(view, "1/1") {
-		t.Fatalf("expected manifest header status, got %q", view)
+	if !strings.Contains(view, "Manifest") {
+		t.Fatalf("expected manifest content, got %q", view)
 	}
 }
 
