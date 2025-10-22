@@ -76,3 +76,27 @@
 - Adapt selection propagation so the list widget emits the selection change command and the panel shell just relays it to the app controller.
 - Re-enable tests by moving list-focused cases next to the new widget implementation and adding shell tests that rely on mocked widgets for lifecycle/registry assertions.
 - Once the list widget is migrated and stable, implement the manifest widget in `internal/ui/panelcontent/manifest/`, reusing the existing viewer helpers for YAML rendering.
+
+## Frame Layout
+
+Panel frames share the same chrome regardless of mode; widgets feed indicator and footer data through `FrameInfo` and the panel overlays them as follows:
+
+- **Top border**
+  - Center/ellipsize the breadcrumb/title on the border line.
+  - Reserve the final cell on the right for the “above” indicator supplied by the widget: render `^` when additional content exists, otherwise render the horizontal border glyph `─`.
+  - The indicator sits on the same row as the border—no vertical offset—and replaces the final border rune.
+
+- **Bottom border (footer suppressed)**
+  - Right-align the status string (e.g., `6/10 • 60%`) directly on the bottom border.
+  - Leave one cell at the far right for the “below” indicator: `v` when more content exists, `─` otherwise.
+  - Because no footer is drawn, the indicator shares the bottom border line with the status text.
+
+- **Bottom border (footer visible)**
+  - Overlay the status string on the border between content and footer, again reserving the final cell for the indicator (`v` or `─`).
+  - The footer box is rendered beneath that border; its top corners change to `├`/`┤` to splice into the existing frame.
+  - Arrows never appear inside the footer body; they always live on the border line itself.
+
+- **Placeholder behaviour**
+  - When a widget reports no additional content in a direction, the panel always renders `─` in place of the arrow so the frame width remains stable.
+
+These rules ensure every mode shares a consistent frame, with only the widget-provided footer/status text and indicators varying between modes.
