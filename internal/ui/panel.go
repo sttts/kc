@@ -612,6 +612,8 @@ func (p *Panel) frameInfo(ctx context.Context) panelcontent.FrameInfo {
 			}
 			info.HeaderStatus = wi.HeaderStatus
 			info.FooterStatus = wi.FooterStatus
+			info.TopIndicator = wi.TopIndicator
+			info.BottomIndicator = wi.BottomIndicator
 			if wi.SuppressFooter {
 				info.SuppressFooter = true
 			}
@@ -833,6 +835,18 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 
 	frame := top + "\n" + bottom
 
+	if info.SuppressFooter {
+		status := strings.TrimSpace(info.FooterStatus)
+		if status != "" {
+			status = truncateStringToWidth(status, width-2)
+			statusOverlay := uistyles.PanelFooterStyle.Copy().
+				Width(lipgloss.Width(status)).
+				Align(lipgloss.Left).
+				Render(status)
+			frame = overlay.Composite(statusOverlay, frame, overlay.Right, overlay.Bottom, -(lipgloss.Width(statusOverlay) + 1), 0)
+		}
+	}
+
 	topIndicator := strings.TrimSpace(info.TopIndicator)
 	if topIndicator == "" {
 		topIndicator = border.Top
@@ -849,18 +863,6 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 		Background(boxStyle.GetBorderBottomBackground()).
 		Render(bottomIndicator)
 	frame = overlay.Composite(bottomIndicator, frame, overlay.Right, overlay.Bottom, -1, 0)
-
-	if info.SuppressFooter {
-		status := strings.TrimSpace(info.FooterStatus)
-		if status != "" {
-			status = truncateStringToWidth(status, width-2)
-			statusOverlay := uistyles.PanelFooterStyle.Copy().
-				Width(lipgloss.Width(status)).
-				Align(lipgloss.Left).
-				Render(status)
-			frame = overlay.Composite(statusOverlay, frame, overlay.Right, overlay.Bottom, -(lipgloss.Width(statusOverlay) + 1), 0)
-		}
-	}
 
 	return frame
 }
