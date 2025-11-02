@@ -1242,6 +1242,16 @@ func (a *App) shouldRouteToPanel(key string) bool {
 		}
 	}
 
+	// If the user has typed into the terminal buffer while panels are visible,
+	// allow some navigation keys to keep flowing to the terminal so shell
+	// editing shortcuts remain usable.
+	if a.terminal != nil && a.terminal.HasInput() {
+		switch key {
+		case "tab", "ctrl+a", "ctrl+e":
+			return false
+		}
+	}
+
 	// Always route these keys to panels (others handled below)
 	panelKeys := []string{
 		// Navigation keys
