@@ -2706,10 +2706,11 @@ func (a *App) initData(ctx context.Context) error {
 		return fmt.Errorf("no current context found")
 	}
 	ctxNamespace := a.currentCtx.Namespace
-	if ctxNamespace == "" {
-		ctxNamespace = "default"
+	nsLog := ctxNamespace
+	if nsLog == "" {
+		nsLog = "(cluster)"
 	}
-	log.Info("selected context", "name", a.currentCtx.Name, "cluster", a.currentCtx.Cluster, "namespace", ctxNamespace)
+	log.Info("selected context", "name", a.currentCtx.Name, "cluster", a.currentCtx.Cluster, "namespace", nsLog)
 	// Prepare app context and cluster pool; cluster will be started via pool.Get
 	a.cancel()
 	a.ctx, a.cancel = context.WithCancel(ctx)
@@ -2766,11 +2767,15 @@ func (a *App) initData(ctx context.Context) error {
 	// Preview: Use folder-backed rendering starting at root (not contexts listing)
 	{
 		// Programmatic navigation to current namespace for both panels
-		ns := "default"
-		if a.currentCtx != nil && a.currentCtx.Namespace != "" {
+		ns := ""
+		if a.currentCtx != nil {
 			ns = a.currentCtx.Namespace
 		}
-		log.Info("initial navigation", "namespace", ns)
+		nsLog := ns
+		if nsLog == "" {
+			nsLog = "(cluster)"
+		}
+		log.Info("initial navigation", "namespace", nsLog)
 		a.goToNamespace(ns)
 	}
 	log.Info("panel initialization complete")
@@ -2780,11 +2785,8 @@ func (a *App) initData(ctx context.Context) error {
 // Legacy builder helpers removed (replaced by self-sufficient folders).
 
 // goToNamespace programmatically navigates to /namespaces/<ns> and updates panels.
-// If ns is empty, uses "default". If the namespace does not exist, navigates to root.
+// If ns is empty, the panels remain at cluster scope. If the namespace does not exist, navigates to root.
 func (a *App) goToNamespace(ns string) {
-	if ns == "" {
-		ns = "default"
-	}
 	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace")
 	leftCfg := a.ensurePanelConfig(a.leftPanel)
 	rightCfg := a.ensurePanelConfig(a.rightPanel)
@@ -2802,7 +2804,7 @@ func (a *App) goToNamespace(ns string) {
 	rootRight := models.NewRootFolder(depsRight, enterRight)
 	a.leftNav = navui.NewNavigator(rootLeft)
 	a.rightNav = navui.NewNavigator(rootRight)
-	if a.namespaceExists(ns) {
+	if ns != "" && a.namespaceExists(ns) {
 		namespaceSteps := []navui.GoToStep{
 			{SelectionID: "namespaces", Enter: true},
 			{SelectionID: ns, Enter: true},
@@ -2844,6 +2846,10 @@ func (a *App) goToNamespace(ns string) {
 				enqueuePreload("Resources", rightResult.Entered[1])
 			}
 		}
+	} else if ns == "" {
+		log.Info("no namespace configured, staying at cluster scope")
+	} else {
+		log.Info("namespace not found, staying at cluster scope", "namespace", ns)
 	}
 	curL := a.leftNav.Current()
 	hasBackL := a.leftNav.HasBack()

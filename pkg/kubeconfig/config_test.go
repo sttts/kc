@@ -135,9 +135,8 @@ func TestBuildContextsAndClusters(t *testing.T) {
 		CurrentContext: "context1",
 		Contexts: map[string]*api.Context{
 			"context1": {
-				Cluster:   "cluster1",
-				AuthInfo:  "user1",
-				Namespace: "default",
+				Cluster:  "cluster1",
+				AuthInfo: "user1",
 			},
 			"context2": {
 				Cluster:   "cluster1",
@@ -200,8 +199,8 @@ func TestBuildContextsAndClusters(t *testing.T) {
 	if context1 == nil {
 		t.Fatal("context1 not found")
 	}
-	if context1.Namespace != "default" {
-		t.Errorf("context1.Namespace = %v, want %v", context1.Namespace, "default")
+	if context1.Namespace != "" {
+		t.Errorf("context1.Namespace = %v, want %v", context1.Namespace, "")
 	}
 	if context1.Kubeconfig != kubeconfig1 {
 		t.Errorf("context1.Kubeconfig reference is not correct")

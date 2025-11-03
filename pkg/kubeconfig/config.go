@@ -194,15 +194,10 @@ func (m *Manager) buildContextsAndClusters() error {
 	for _, kubeconfig := range m.kubeconfigs {
 		// Build contexts
 		for contextName, context := range kubeconfig.Config.Contexts {
-			namespace := context.Namespace
-			if namespace == "" {
-				namespace = "default"
-			}
-
 			ctx := &Context{
 				Name:       contextName,
 				Cluster:    context.Cluster,
-				Namespace:  namespace,
+				Namespace:  context.Namespace,
 				User:       context.AuthInfo,
 				Kubeconfig: kubeconfig,
 			}
