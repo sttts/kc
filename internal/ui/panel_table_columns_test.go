@@ -52,8 +52,8 @@ func TestPanelSetFolderUsesServerColumns(t *testing.T) {
 	// Two columns present initially
 	ff := newFakeFolder([]string{"Name", "Ready"}, [][]string{{"a", "0/1"}, {"b", "0/1"}})
 	p := NewPanel("")
-	p.UseFolder(true)
 	ctx := t.Context()
+	p.UseFolder(ctx, true)
 	p.SetDimensions(ctx, 80, 20)
 	p.SetFolder(ctx, ff, false)
 	cols := p.ColumnTitles(ctx)
@@ -66,8 +66,8 @@ func TestPanelRefreshFolderRebuildsOnColumnChange(t *testing.T) {
 	// Start with single column
 	ff := newFakeFolder([]string{"Name"}, [][]string{{"a"}, {"b"}})
 	p := NewPanel("")
-	p.UseFolder(true)
 	ctx := t.Context()
+	p.UseFolder(ctx, true)
 	p.SetDimensions(ctx, 80, 20)
 	p.SetFolder(ctx, ff, false)
 	if cols := p.ColumnTitles(ctx); len(cols) != 1 {

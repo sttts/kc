@@ -67,7 +67,7 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 
 	// Panel should pick up server columns on SetFolder
 	p := NewPanel("")
-	p.UseFolder(true)
+	p.UseFolder(ctx, true)
 	p.SetDimensions(ctx, 120, 20)
 	p.SetFolder(ctx, folder, false)
 	cols := p.ColumnTitles(ctx)

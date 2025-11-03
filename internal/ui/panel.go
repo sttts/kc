@@ -155,11 +155,6 @@ func (p *Panel) RegisterMode(mode PanelViewMode, factory PanelWidgetFactory) {
 
 // SetMode switches the active view mode and ensures the widget is initialized.
 func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), panelContextTimeout)
-		defer cancel()
-	}
 	if current := p.ensureActiveWidget(ctx); current != nil && p.mode != mode {
 		current.SetFocus(ctx, false)
 	}
@@ -267,19 +262,19 @@ func (p *Panel) SetFolder(ctx context.Context, f models.Folder, hasBack bool) {
 }
 
 // UseFolder toggles folder-backed rendering.
-func (p *Panel) UseFolder(on bool) {
-	if lw := p.listWidget(nil); lw != nil {
+func (p *Panel) UseFolder(ctx context.Context, on bool) {
+	if lw := p.listWidget(ctx); lw != nil {
 		lw.UseFolder(on)
 	}
-	p.widgetSelectionChanged(nil, panelcontent.Selection{ID: p.lastSelectionID, Path: p.currentPath})
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.lastSelectionID, Path: p.currentPath})
 }
 
 // ClearFolder disables folder-backed rendering and clears current folder.
-func (p *Panel) ClearFolder() {
-	if lw := p.listWidget(nil); lw != nil {
+func (p *Panel) ClearFolder(ctx context.Context) {
+	if lw := p.listWidget(ctx); lw != nil {
 		lw.ClearFolder()
 	}
-	p.widgetSelectionChanged(nil, panelcontent.Selection{ID: "", Path: p.currentPath})
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: "", Path: p.currentPath})
 }
 
 // Folder returns the active folder if the list widget is folder-backed.
@@ -492,7 +487,7 @@ func (p *Panel) View() string {
 	info := p.frameInfo(ctx)
 	header := p.renderHeader(info.Breadcrumb, info.HeaderStatus)
 	content := p.renderContent(ctx)
-    footer := p.renderFooter(ctx, "", info.SuppressFooter)
+	footer := p.renderFooter(ctx, "", info.SuppressFooter)
 
 	if footer == "" {
 		return lipgloss.JoinVertical(

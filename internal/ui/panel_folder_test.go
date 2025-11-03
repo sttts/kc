@@ -78,7 +78,7 @@ func enterBack(ctx context.Context, p *Panel) {
 }
 
 func setupPanelFolder(ctx context.Context, p *Panel, folder models.Folder, hasBack bool) {
-	p.UseFolder(true)
+	p.UseFolder(ctx, true)
 	p.SetFolder(ctx, folder, hasBack)
 	p.RefreshFolder(ctx)
 }
@@ -210,7 +210,7 @@ func TestSelectionRestoreWithinContexts(t *testing.T) {
 	navg := nav.NewNavigator(root)
 	ctx := t.Context()
 	p.SetFolder(ctx, root, false)
-	p.UseFolder(true)
+	p.UseFolder(ctx, true)
 	p.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		if back {
 			navg.Back()
@@ -272,7 +272,7 @@ func TestSelectionRestoreNamespacesToGroupsAndBack(t *testing.T) {
 	navg := nav.NewNavigator(root)
 	ctx := t.Context()
 	p.SetFolder(ctx, root, false)
-	p.UseFolder(true)
+	p.UseFolder(ctx, true)
 	p.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
 		if back {
 			navg.Back()

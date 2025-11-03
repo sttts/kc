@@ -22,9 +22,9 @@ func TestIndependentPanelNavigation(t *testing.T) {
 	a.leftNav = nav.NewNavigator(leftRoot)
 	a.rightNav = nav.NewNavigator(rightRoot)
 	// Bind folders to panels
-	a.leftPanel.UseFolder(true)
-	a.rightPanel.UseFolder(true)
 	ctx := t.Context()
+	a.leftPanel.UseFolder(ctx, true)
+	a.rightPanel.UseFolder(ctx, true)
 	a.leftPanel.SetFolder(ctx, leftRoot, false)
 	a.rightPanel.SetFolder(ctx, rightRoot, false)
 	// Set initial breadcrumbs from navigators
@@ -57,9 +57,9 @@ func TestIndependentPanelNavigation(t *testing.T) {
 func TestViewOptionsModalTargetsPanels(t *testing.T) {
 	a := NewApp()
 	ctx := t.Context()
-	a.leftPanel.UseFolder(true)
+	a.leftPanel.UseFolder(ctx, true)
 	a.leftPanel.SetFolder(ctx, mkFolder("rootL"), false)
-	a.rightPanel.UseFolder(true)
+	a.rightPanel.UseFolder(ctx, true)
 	a.rightPanel.SetFolder(ctx, mkFolder("rootR"), false)
 
 	if cmd := a.showViewOptionsModalForPanel(a.leftPanel); cmd != nil {

@@ -55,9 +55,9 @@ func TestPanelCapabilitiesWithActions(t *testing.T) {
 		namespace: "ns",
 		name:      "foo",
 	}
-	ctx := context.Background()
+	ctx := t.Context()
 	folder := newStubFolder([]models.Item{obj})
-	panel.UseFolder(true)
+	panel.UseFolder(ctx, true)
 	panel.SetFolder(ctx, folder, false)
 	panel.SelectByRowID(ctx, obj.id)
 	panel.SetCurrentPath("/namespaces")

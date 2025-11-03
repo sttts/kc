@@ -2858,8 +2858,12 @@ func (a *App) goToNamespace(ns string) {
 	// Use navigator paths for breadcrumbs
 	a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
 	a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
-	a.leftPanel.UseFolder(true)
-	a.rightPanel.UseFolder(true)
+	ctxUseLeft, cancelUseLeft := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.leftPanel.UseFolder(ctxUseLeft, true)
+	cancelUseLeft()
+	ctxUseRight, cancelUseRight := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.rightPanel.UseFolder(ctxUseRight, true)
+	cancelUseRight()
 	a.applyResourceOptions(a.leftPanel)
 	a.applyResourceOptions(a.rightPanel)
 	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {

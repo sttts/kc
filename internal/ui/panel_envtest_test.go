@@ -37,7 +37,7 @@ func TestFooterShowsGroupVersionForPods(t *testing.T) {
 	folder := models.NewNamespacedResourcesFolder(deps, "default", []string{"namespaces", "default"})
 
 	p := NewPanel("")
-	p.UseFolder(true)
+	p.UseFolder(ctx, true)
 	p.SetFolder(ctx, folder, false)
 	_ = p.Render(ctx, 80, 20, false)
 

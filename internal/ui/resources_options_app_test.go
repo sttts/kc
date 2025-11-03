@@ -28,7 +28,7 @@ func TestResourcesOptionsChangedMsgAppliesSettings(t *testing.T) {
 
 	folder := newTestResourcesFolder(app.leftConfig)
 	app.leftNav = navui.NewNavigator(folder)
-	app.leftPanel.UseFolder(true)
+	app.leftPanel.UseFolder(ctx, true)
 	app.leftPanel.SetFolder(ctx, folder, false)
 	app.leftPanel.SetCurrentPath("/resources")
 	app.activePanel = 0
@@ -100,7 +100,7 @@ func TestViewOptionsCommittedMsgAppliesResourceSettings(t *testing.T) {
 
 	folder := newTestResourcesFolder(app.leftConfig)
 	app.leftNav = navui.NewNavigator(folder)
-	app.leftPanel.UseFolder(true)
+	app.leftPanel.UseFolder(ctx, true)
 	app.leftPanel.SetFolder(ctx, folder, false)
 	app.leftPanel.SetCurrentPath("/resources")
 	app.activePanel = 0
