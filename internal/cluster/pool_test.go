@@ -8,7 +8,7 @@ import (
 func TestPoolEvictIdleRemovesExpiredEntries(t *testing.T) {
 	t.Parallel()
 
-	p := NewPool(10 * time.Millisecond)
+    p := NewPool(10*time.Millisecond, time.Minute)
 	key := Key{KubeconfigPath: "/tmp/kubeconfig", ContextName: "ctx"}
 
 	evicted := 0
@@ -37,7 +37,7 @@ func TestPoolEvictIdleRemovesExpiredEntries(t *testing.T) {
 func TestPoolEvictIdleKeepsRecentEntries(t *testing.T) {
 	t.Parallel()
 
-	p := NewPool(50 * time.Millisecond)
+    p := NewPool(50*time.Millisecond, time.Minute)
 	key := Key{KubeconfigPath: "/tmp/kubeconfig", ContextName: "ctx"}
 
 	p.mu.Lock()

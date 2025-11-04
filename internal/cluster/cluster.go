@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"time"
 
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
@@ -40,6 +41,10 @@ type Cluster struct {
 
 	cancel  context.CancelFunc
 	refresh time.Duration
+
+	discoMu        sync.RWMutex
+	discoListeners map[int]func()
+	discoSeq       int
 }
 
 // Option configures Cluster.
@@ -130,13 +135,7 @@ func (c *Cluster) refreshLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			// invalidate discovery and reset mapper
-			if c.disco != nil {
-				c.disco.Invalidate()
-			}
-			if c.baseMapper != nil {
-				c.baseMapper.Reset()
-			}
+			c.RefreshDiscovery()
 		}
 	}
 }
@@ -164,6 +163,60 @@ func (c *Cluster) RESTMapper() metamapper.RESTMapper {
 func (c *Cluster) Dynamic() dynamic.Interface {
 	_ = c.ensureDiscovery()
 	return c.dyn
+}
+
+// RefreshDiscovery invalidates cached discovery information and notifies listeners.
+func (c *Cluster) RefreshDiscovery() {
+	if err := c.ensureDiscovery(); err != nil {
+		return
+	}
+	if c.disco != nil {
+		c.disco.Invalidate()
+	}
+	if c.baseMapper != nil {
+		c.baseMapper.Reset()
+	}
+	c.notifyDiscoveryListeners()
+}
+
+// AddDiscoveryListener registers a callback invoked whenever discovery is refreshed.
+// The returned function removes the listener when invoked.
+func (c *Cluster) AddDiscoveryListener(fn func()) func() {
+	if fn == nil {
+		return func() {}
+	}
+	c.discoMu.Lock()
+	if c.discoListeners == nil {
+		c.discoListeners = make(map[int]func())
+	}
+	id := c.discoSeq
+	c.discoSeq++
+	c.discoListeners[id] = fn
+	c.discoMu.Unlock()
+	return func() {
+		c.discoMu.Lock()
+		delete(c.discoListeners, id)
+		c.discoMu.Unlock()
+	}
+}
+
+func (c *Cluster) notifyDiscoveryListeners() {
+	c.discoMu.RLock()
+	if len(c.discoListeners) == 0 {
+		c.discoMu.RUnlock()
+		return
+	}
+	listeners := make([]func(), 0, len(c.discoListeners))
+	for _, fn := range c.discoListeners {
+		listeners = append(listeners, fn)
+	}
+	c.discoMu.RUnlock()
+	for _, fn := range listeners {
+		func() {
+			defer func() { _ = recover() }()
+			fn()
+		}()
+	}
 }
 
 // Note: we intentionally do not wrap GetClient/GetCache/etc. from the embedded

@@ -116,6 +116,9 @@ kubernetes:
     # TTL for controller-runtime clusters in the shared pool; idle clusters are
     # evicted after this time. Duration format (e.g., 2m, 30s). Default: 2m.
     ttl: 2m
+  discovery:
+    # How frequently discovery/RESTMapper caches are invalidated. Default: 30s.
+    refresh: 30s
 
 resources:
   # Show only resource groups with non-zero counts (true) or all (false).

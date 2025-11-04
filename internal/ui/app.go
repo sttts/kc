@@ -38,6 +38,9 @@ type EscTimeoutMsg struct{}
 // FolderTickMsg triggers periodic folder refresh (debounced to ~1s).
 type FolderTickMsg struct{}
 
+// DiscoveryRefreshedMsg is emitted when API discovery invalidates; resource folders should refresh.
+type DiscoveryRefreshedMsg struct{}
+
 // kubectlEditFinishedMsg notifies that a kubectl edit invocation exited.
 type kubectlEditFinishedMsg struct {
 	err         error
@@ -122,6 +125,9 @@ type App struct {
 	namespaceCreatePanel   int
 	leftPanelWidthPercent  int
 	rightPanelWidthPercent int
+	// Discovery refresh notifications
+	discoveryCh     chan struct{}
+	discoveryCancel func()
 }
 
 const requestTimeout = 10 * time.Second
@@ -201,6 +207,48 @@ func cloneConfig(cfg *appconfig.Config) *appconfig.Config {
 	clone := *cfg
 	clone.Resources.Favorites = append([]string(nil), cfg.Resources.Favorites...)
 	return &clone
+}
+
+func (a *App) watchDiscovery() tea.Cmd {
+	if a.discoveryCh == nil {
+		return nil
+	}
+	ctx := a.ctx
+	ch := a.discoveryCh
+	return func() tea.Msg {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ch:
+			return DiscoveryRefreshedMsg{}
+		}
+	}
+}
+
+func (a *App) handleDiscoveryRefresh() {
+	if a.cl != nil {
+		if infos, err := a.cl.GetResourceInfos(); err == nil {
+			a.leftPanel.SetResourceCatalog(infos)
+			a.rightPanel.SetResourceCatalog(infos)
+		} else if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Discovery refresh failed: %v", err))
+		}
+	}
+	mark := func(nav *navui.Navigator) {
+		if nav == nil {
+			return
+		}
+		nav.ForEach(func(f models.Folder) {
+			switch f.(type) {
+			case *models.ClusterResourcesFolder, *models.NamespacedResourcesFolder, *models.RootFolder, *models.ContextRootFolder:
+				if refresher, ok := f.(interface{ Refresh() }); ok {
+					refresher.Refresh()
+				}
+			}
+		})
+	}
+	mark(a.leftNav)
+	mark(a.rightNav)
 }
 
 func (a *App) ensurePanelConfig(panel *Panel) *appconfig.Config {
@@ -969,6 +1017,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Schedule next tick (lightweight check)
 		return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
+
+	case DiscoveryRefreshedMsg:
+		a.handleDiscoveryRefresh()
+		return a, a.watchDiscovery()
 
 	case tea.KeyMsg:
 		// Handle global shortcuts first
@@ -2670,6 +2722,10 @@ func Run(ctx context.Context) error {
 		fmt.Print("\033[?25h")   // Show cursor
 		fmt.Print("\033[0m")     // Reset all attributes
 		// Stop background resources
+		if app.discoveryCancel != nil {
+			app.discoveryCancel()
+			app.discoveryCancel = nil
+		}
 		if app.clPool != nil {
 			app.clPool.Stop()
 		}
@@ -2714,7 +2770,10 @@ func (a *App) initData(ctx context.Context) error {
 	// Prepare app context and cluster pool; cluster will be started via pool.Get
 	a.cancel()
 	a.ctx, a.cancel = context.WithCancel(ctx)
-	a.clPool = kccluster.NewPool(a.cfg.Kubernetes.Clusters.TTL.Duration)
+	a.clPool = kccluster.NewPool(
+		a.cfg.Kubernetes.Clusters.TTL.Duration,
+		a.cfg.Kubernetes.Discovery.Refresh.Duration,
+	)
 	log.Info("starting cluster pool")
 	a.clPool.Start()
 	k := kccluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
@@ -2737,6 +2796,20 @@ func (a *App) initData(ctx context.Context) error {
 		}
 		log.Error(err, "failed to fetch resource infos")
 	}
+	// Subscribe to discovery refresh events so resource folders can update dynamically.
+	if a.discoveryCh == nil {
+		a.discoveryCh = make(chan struct{}, 1)
+	}
+	if a.discoveryCancel != nil {
+		a.discoveryCancel()
+	}
+	a.discoveryCancel = a.cl.AddDiscoveryListener(func() {
+		select {
+		case a.discoveryCh <- struct{}{}:
+		default:
+		}
+	})
+	a.enqueueCmd(a.watchDiscovery())
 	// Legacy generic data sources removed; folders provide data directly
 	a.leftPanel.SetViewConfig(a.viewConfig)
 	a.rightPanel.SetViewConfig(a.viewConfig)

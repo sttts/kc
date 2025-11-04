@@ -59,8 +59,13 @@ type ClustersConfig struct {
 	TTL metav1.Duration `json:"ttl"` // duration, e.g. 2m, 30s
 }
 
+type DiscoveryConfig struct {
+	Refresh metav1.Duration `json:"refresh"`
+}
+
 type KubernetesConfig struct {
-	Clusters ClustersConfig `json:"clusters"`
+	Clusters  ClustersConfig  `json:"clusters"`
+	Discovery DiscoveryConfig `json:"discovery"`
 }
 
 // ResourcesViewOrder is the ordering mode for resource groups.
@@ -128,8 +133,11 @@ func Default() *Config {
 			Table:     TableConfig{Mode: TableModeScroll},
 			Width:     PanelWidthConfig{LeftPercent: 50, RightPercent: 50},
 		},
-		Input:      InputConfig{Mouse: MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}}},
-		Kubernetes: KubernetesConfig{Clusters: ClustersConfig{TTL: metav1.Duration{Duration: 2 * time.Minute}}},
+		Input: InputConfig{Mouse: MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}}},
+		Kubernetes: KubernetesConfig{
+			Clusters:  ClustersConfig{TTL: metav1.Duration{Duration: 2 * time.Minute}},
+			Discovery: DiscoveryConfig{Refresh: metav1.Duration{Duration: 30 * time.Second}},
+		},
 		Resources: ResourcesViewConfig{
 			ShowNonEmptyOnly: true,
 			Order:            OrderAlpha,
@@ -182,6 +190,12 @@ func Load() (*Config, error) {
 		normalizePanelWidth(&cfg.Panel.Width)
 		if cfg.Kubernetes.Clusters.TTL.Duration == 0 {
 			cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute}
+		}
+		if cfg.Kubernetes.Discovery.Refresh.Duration == 0 {
+			cfg.Kubernetes.Discovery.Refresh = metav1.Duration{Duration: 30 * time.Second}
+		}
+		if cfg.Kubernetes.Discovery.Refresh.Duration == 0 {
+			cfg.Kubernetes.Discovery.Refresh = metav1.Duration{Duration: 30 * time.Second}
 		}
 		if cfg.Input.Mouse.DoubleClickTimeout.Duration == 0 {
 			cfg.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: 300 * time.Millisecond}

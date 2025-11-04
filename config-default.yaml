@@ -16,6 +16,8 @@ input:
 kubernetes:
   clusters:
     ttl: 2m
+  discovery:
+    refresh: 30s
 
 resources:
   # Default behavior: hide resources with zero objects

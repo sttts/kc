@@ -120,3 +120,15 @@ func (n *Navigator) Path(ctx context.Context) string {
 	}
 	return "/" + strings.Join(segments, "/")
 }
+
+// ForEach invokes fn for every folder in the navigation stack from root to current.
+func (n *Navigator) ForEach(fn func(models.Folder)) {
+	if fn == nil {
+		return
+	}
+	for _, fr := range n.stack {
+		if fr.f != nil {
+			fn(fr.f)
+		}
+	}
+}

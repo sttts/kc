@@ -11,6 +11,8 @@ import (
 	kctesting "github.com/sttts/kc/internal/testing"
 	"github.com/sttts/kc/pkg/appconfig"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apiextclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -158,4 +160,117 @@ func assertRows(t *testing.T, name string, f interface {
 			}
 		}
 	}
+}
+
+func TestDiscoveryRefreshAddsCRD(t *testing.T) {
+	t.Parallel()
+
+	env := &envtest.Environment{}
+	cfg, err := env.Start()
+	if err != nil || cfg == nil {
+		if err != nil && strings.Contains(err.Error(), "operation not permitted") {
+			t.Skipf("envtest unavailable: %v", err)
+		}
+		t.Fatalf("start envtest: %v", err)
+	}
+	defer func() { _ = env.Stop() }()
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	cl, err := kccluster.New(cfg, kccluster.WithScheme(scheme))
+	if err != nil {
+		t.Fatalf("kccluster: %v", err)
+	}
+
+	ctx := t.Context()
+	go cl.Start(ctx)
+
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "crd-ns"}}
+	mustCreate(t, cl.GetClient(), ns)
+
+	deps := Deps{
+		Cl:      cl,
+		Ctx:     ctx,
+		CtxName: "envtest",
+		KubeConfig: clientcmdapi.Config{
+			CurrentContext: "envtest",
+			Contexts:       map[string]*clientcmdapi.Context{"envtest": {Namespace: ns.Name}},
+		},
+		AppConfig: appconfig.Default(),
+	}
+
+	folder := NewNamespacedResourcesFolder(deps, ns.Name, []string{"namespaces", ns.Name})
+	folder.Refresh()
+	ctxFolder := t.Context()
+	waitFolder(t, folder)
+
+	apiext, err := apiextclient.NewForConfig(cfg)
+	if err != nil {
+		t.Fatalf("apiext client: %v", err)
+	}
+
+	crd := &apiextensionsv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: "widgets.example.com"},
+		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+			Group: "example.com",
+			Names: apiextensionsv1.CustomResourceDefinitionNames{
+				Plural:   "widgets",
+				Singular: "widget",
+				Kind:     "Widget",
+				ListKind: "WidgetList",
+			},
+			Scope: apiextensionsv1.NamespaceScoped,
+			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{{
+				Name:    "v1",
+				Served:  true,
+				Storage: true,
+				Schema: &apiextensionsv1.CustomResourceValidation{
+					OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+						Type: "object",
+						Properties: map[string]apiextensionsv1.JSONSchemaProps{
+							"spec": {
+								Type: "object",
+								Properties: map[string]apiextensionsv1.JSONSchemaProps{
+									"replicas": {Type: "integer"},
+								},
+							},
+						},
+					},
+				},
+			}},
+		},
+	}
+
+	if _, err := apiext.ApiextensionsV1().CustomResourceDefinitions().Create(ctx, crd, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create CRD: %v", err)
+	}
+
+	kctesting.Eventually(t, 10*time.Second, 100*time.Millisecond, func() bool {
+		latest, err := apiext.ApiextensionsV1().CustomResourceDefinitions().Get(ctx, crd.Name, metav1.GetOptions{})
+		if err != nil {
+			return false
+		}
+		for _, cond := range latest.Status.Conditions {
+			if cond.Type == apiextensionsv1.Established && cond.Status == apiextensionsv1.ConditionTrue {
+				return true
+			}
+		}
+		return false
+	})
+
+	cl.RefreshDiscovery()
+	folder.Refresh()
+
+	kctesting.Eventually(t, 10*time.Second, 100*time.Millisecond, func() bool {
+		count := folder.Len(ctxFolder)
+		rows := folder.Lines(ctxFolder, 0, count)
+		for _, r := range rows {
+			id, _, _, ok := r.Columns()
+			if ok && strings.Contains(id, "widgets") {
+				return true
+			}
+		}
+		folder.Refresh()
+		return false
+	})
 }

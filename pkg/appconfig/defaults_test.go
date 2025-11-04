@@ -57,6 +57,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 		if out.Kubernetes.Clusters.TTL.Duration == 0 {
 			out.Kubernetes.Clusters.TTL = metav1.Duration{Duration: Default().Kubernetes.Clusters.TTL.Duration}
 		}
+		if out.Kubernetes.Discovery.Refresh.Duration == 0 {
+			out.Kubernetes.Discovery.Refresh = metav1.Duration{Duration: Default().Kubernetes.Discovery.Refresh.Duration}
+		}
 		if out.Resources.Order == "" {
 			out.Resources.Order = fromCode.Resources.Order
 		}
@@ -90,6 +93,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	}
 	if a.Kubernetes.Clusters.TTL.Duration != b.Kubernetes.Clusters.TTL.Duration {
 		t.Fatalf("kubernetes.clusters.ttl mismatch: yaml=%v code=%v", a.Kubernetes.Clusters.TTL.Duration, b.Kubernetes.Clusters.TTL.Duration)
+	}
+	if a.Kubernetes.Discovery.Refresh.Duration != b.Kubernetes.Discovery.Refresh.Duration {
+		t.Fatalf("kubernetes.discovery.refresh mismatch: yaml=%v code=%v", a.Kubernetes.Discovery.Refresh.Duration, b.Kubernetes.Discovery.Refresh.Duration)
 	}
 	if bool(a.Resources.ShowNonEmptyOnly) != bool(b.Resources.ShowNonEmptyOnly) {
 		t.Fatalf("resources.showNonEmptyOnly mismatch: yaml=%v code=%v", a.Resources.ShowNonEmptyOnly, b.Resources.ShowNonEmptyOnly)
