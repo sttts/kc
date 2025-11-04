@@ -37,6 +37,8 @@ type ResourceGroupItem struct {
 	publishedCountKnown bool
 	publishedEmpty      bool
 	publishedEmptyKnown bool
+	recounting          bool // true while an async count recomputation is in flight
+	watchOnce           sync.Once
 }
 
 func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, namespace, id string, cells []string, path []string, detail string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
@@ -162,6 +164,7 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 		}
 		return 0, false
 	}
+	r.ensureInformerHandler(informer)
 	if !informer.HasSynced() {
 		toolscache.WaitForCacheSync(ctx.Done(), informer.HasSynced)
 	}
@@ -309,4 +312,53 @@ func (r *ResourceGroupItem) recordPublishedLocked() bool {
 		}
 	}
 	return changed
+}
+
+func (r *ResourceGroupItem) ensureInformerHandler(informer crcache.Informer) {
+	if informer == nil {
+		return
+	}
+	r.watchOnce.Do(func() {
+		_, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
+			AddFunc:    func(obj interface{}) { r.onInformerEvent(obj) },
+			UpdateFunc: func(_, newObj interface{}) { r.onInformerEvent(newObj) },
+			DeleteFunc: func(obj interface{}) { r.onInformerEvent(obj) },
+		})
+		if err != nil {
+			crlog.FromContext(r.deps.Ctx).Error(err, "register informer handler", "gvr", r.gvr.String(), "namespace", r.namespace)
+		}
+	})
+}
+
+func (r *ResourceGroupItem) onInformerEvent(obj interface{}) {
+	if r.namespace != "" {
+		if acc, ok := accessorForEvent(obj); ok && acc != nil {
+			if acc.GetNamespace() != r.namespace {
+				return
+			}
+		}
+	}
+	r.scheduleRecount()
+}
+
+func (r *ResourceGroupItem) scheduleRecount() {
+	r.mu.Lock()
+	if r.recounting {
+		r.mu.Unlock()
+		return
+	}
+	r.recounting = true
+	r.countKnown = false
+	r.emptyKnown = false
+	r.mu.Unlock()
+
+	go func() {
+		defer func() {
+			r.mu.Lock()
+			r.recounting = false
+			r.mu.Unlock()
+		}()
+		_ = r.Count()
+		r.notifyIfChanged(nil)
+	}()
 }
