@@ -160,6 +160,12 @@ func (c *Cluster) RESTMapper() metamapper.RESTMapper {
 	return c.mapper
 }
 
+// Dynamic returns the shared dynamic client backing the cluster.
+func (c *Cluster) Dynamic() dynamic.Interface {
+	_ = c.ensureDiscovery()
+	return c.dyn
+}
+
 // Note: we intentionally do not wrap GetClient/GetCache/etc. from the embedded
 // controller-runtime Cluster. Callers should use the embedded methods directly
 // (e.g., c.GetClient(), c.GetCache()).

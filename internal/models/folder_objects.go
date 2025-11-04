@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/internal/tablecache"
@@ -13,8 +14,12 @@ import (
 	meta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
+	dynamic "k8s.io/client-go/dynamic"
 	toolscache "k8s.io/client-go/tools/cache"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // ObjectsFolder provides shared scaffolding for object list folders.
@@ -240,37 +245,101 @@ type liveObjectRowSource struct {
 	items         map[string]Item
 	dirty         bool
 	once          sync.Once
+	watchFactory  func(func(), func()) (func(), error)
+	watchCancel   func()
+	watchTimer    *time.Timer
+	watchTTL      time.Duration
 }
 
 func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
-	return newLiveObjectRowSourceWithHooks(
+	rows := newLiveObjectRowSourceWithHooks(
 		func(ctx context.Context) ([]table.Row, error) { return owner.populateRows(ctx) },
 		owner.BaseFolder.markDirtyFromSource,
-		func(cb func()) { startInformerForObjectsFolder(owner, cb) },
+		func(onEvent func(), onStop func()) (func(), error) {
+			return startInformerForObjectsFolder(owner, onEvent, onStop)
+		},
 	)
+	rows.watchTTL = watchDuration(owner.Deps)
+	return rows
 }
 
-func newLiveObjectRowSourceWithHooks(populate func(context.Context) ([]table.Row, error), onDirty func(), startInformer func(func())) *liveObjectRowSource {
+func newLiveObjectRowSourceWithHooks(
+	populate func(context.Context) ([]table.Row, error),
+	onDirty func(),
+	startInformer func(func(), func()) (func(), error),
+) *liveObjectRowSource {
 	src := &liveObjectRowSource{
 		populate:      populate,
 		onFolderDirty: onDirty,
 		dirty:         true,
-	}
-	if startInformer != nil {
-		startInformer(src.MarkDirty)
+		watchFactory:  startInformer,
 	}
 	return src
 }
 
-func startInformerForObjectsFolder(owner *ObjectsFolder, onEvent func()) {
+func startInformerForObjectsFolder(owner *ObjectsFolder, onEvent func(), onStop func()) (func(), error) {
 	if owner == nil {
+		return nil, nil
+	}
+	return startInformerForResource(owner.Deps, owner.gvr, owner.namespace, "", onEvent, onStop)
+}
+
+func (s *liveObjectRowSource) ensureWatcherLocked() {
+	if s.watchFactory == nil || s.watchCancel != nil {
 		return
 	}
-	startInformerForResource(owner.Deps, owner.gvr, owner.namespace, "", onEvent)
+	factory := s.watchFactory
+	s.mu.Unlock()
+	cancel, err := factory(s.MarkDirty, s.watchStopped)
+	s.mu.Lock()
+	if err != nil {
+		ctrllog.Log.WithName("liveObjectRowSource").Error(err, "failed to start resource watch")
+		return
+	}
+	if cancel != nil {
+		s.watchCancel = cancel
+		s.scheduleWatchTimeoutLocked()
+	}
+}
+
+func (s *liveObjectRowSource) touchWatchLocked() {
+	if s.watchTTL <= 0 || s.watchCancel == nil {
+		return
+	}
+	s.scheduleWatchTimeoutLocked()
+}
+
+func (s *liveObjectRowSource) scheduleWatchTimeoutLocked() {
+	if s.watchTTL <= 0 || s.watchCancel == nil {
+		if s.watchTimer != nil {
+			s.watchTimer.Stop()
+			s.watchTimer = nil
+		}
+		return
+	}
+	cancel := s.watchCancel
+	if s.watchTimer != nil {
+		s.watchTimer.Stop()
+	}
+	s.watchTimer = time.AfterFunc(s.watchTTL, func() {
+		cancel()
+	})
+}
+
+func (s *liveObjectRowSource) watchStopped() {
+	s.mu.Lock()
+	if s.watchTimer != nil {
+		s.watchTimer.Stop()
+		s.watchTimer = nil
+	}
+	s.watchCancel = nil
+	s.mu.Unlock()
 }
 
 func (s *liveObjectRowSource) ensureLocked(ctx context.Context) {
 	s.once.Do(func() { s.dirty = true })
+	s.ensureWatcherLocked()
+	s.touchWatchLocked()
 	if !s.dirty {
 		return
 	}
@@ -411,59 +480,126 @@ func (s *liveObjectRowSource) MarkDirty() {
 }
 
 func newLiveKeyRowSource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, populate func(context.Context) ([]table.Row, error), onDirty func()) *liveObjectRowSource {
-	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
-		startInformerForResource(deps, gvr, namespace, name, cb)
+	rows := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
+		return startInformerForResource(deps, gvr, namespace, name, onEvent, onStop)
 	})
+	rows.watchTTL = watchDuration(deps)
+	return rows
 }
 
-func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, onEvent func()) {
-	if onEvent == nil || deps.Cl == nil {
-		return
+func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namespace, name string, onEvent func(), onStop func()) (func(), error) {
+	if deps.Cl == nil {
+		return nil, nil
 	}
-	ctx := deps.Ctx
-	if ctx == nil {
-		ctx = context.Background()
+	baseCtx := deps.Ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
 	}
-	gvk, err := deps.Cl.RESTMapper().KindFor(gvr)
-	if err != nil {
-		return
+	log := ctrllog.FromContext(baseCtx).WithName("resourceWatch").WithValues("gvr", gvr.String(), "namespace", namespace, "name", name)
+	dyn := deps.Cl.Dynamic()
+	if dyn == nil {
+		return nil, fmt.Errorf("dynamic client unavailable")
 	}
-	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(gvk)
-	informer, err := deps.Cl.GetCache().GetInformer(ctx, obj)
-	if err != nil {
-		return
+	nsResource := dyn.Resource(gvr)
+	var resource dynamic.ResourceInterface = nsResource
+	if namespace != "" {
+		resource = nsResource.Namespace(namespace)
 	}
-	matches := func(evt interface{}) bool {
-		accessor, ok := accessorForEvent(evt)
-		if !ok {
-			return false
-		}
-		if namespace != "" && accessor.GetNamespace() != namespace {
-			return false
-		}
-		if name != "" && accessor.GetName() != name {
-			return false
-		}
-		return true
+	fieldSelector := ""
+	if name != "" {
+		fieldSelector = fields.OneTermEqualSelector("metadata.name", name).String()
 	}
-	_, _ = informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			if matches(obj) {
+	watchCtx, cancel := context.WithCancel(baseCtx)
+	go func() {
+		defer func() {
+			if onStop != nil {
+				onStop()
+			}
+		}()
+		backoff := time.Second
+		for {
+			if watchCtx.Err() != nil {
+				return
+			}
+			listOpts := metav1.ListOptions{FieldSelector: fieldSelector}
+			list, err := resource.List(watchCtx, listOpts)
+			if err != nil {
+				if watchCtx.Err() != nil {
+					return
+				}
+				log.Error(err, "list before watch failed")
+				select {
+				case <-time.After(backoff):
+				case <-watchCtx.Done():
+					return
+				}
+				if backoff < 8*time.Second {
+					backoff *= 2
+				}
+				continue
+			}
+			if onEvent != nil {
 				onEvent()
 			}
-		},
-		UpdateFunc: func(_, newObj interface{}) {
-			if matches(newObj) {
-				onEvent()
+			opts := metav1.ListOptions{
+				FieldSelector:       fieldSelector,
+				ResourceVersion:     list.GetResourceVersion(),
+				AllowWatchBookmarks: true,
 			}
-		},
-		DeleteFunc: func(obj interface{}) {
-			if matches(obj) {
-				onEvent()
+			watcher, err := resource.Watch(watchCtx, opts)
+			if err != nil {
+				if watchCtx.Err() != nil {
+					return
+				}
+				log.Error(err, "watch start failed")
+				select {
+				case <-time.After(backoff):
+				case <-watchCtx.Done():
+					return
+				}
+				if backoff < 8*time.Second {
+					backoff *= 2
+				}
+				continue
 			}
-		},
-	})
+			backoff = time.Second
+		watchLoop:
+			for {
+				select {
+				case <-watchCtx.Done():
+					watcher.Stop()
+					return
+				case evt, ok := <-watcher.ResultChan():
+					if !ok {
+						watcher.Stop()
+						if watchCtx.Err() != nil {
+							return
+						}
+						time.Sleep(200 * time.Millisecond)
+						break watchLoop
+					}
+					if evt.Type == watch.Bookmark {
+						continue
+					}
+					if onEvent != nil {
+						onEvent()
+					}
+				}
+			}
+		}
+	}()
+	return func() {
+		cancel()
+	}, nil
+}
+
+func watchDuration(deps Deps) time.Duration {
+	if deps.AppConfig != nil {
+		if dur := deps.AppConfig.Kubernetes.Clusters.TTL.Duration; dur > 0 {
+			return dur
+		}
+	}
+	return 2 * time.Minute
 }
 
 func accessorForEvent(obj interface{}) (metav1.Object, bool) {

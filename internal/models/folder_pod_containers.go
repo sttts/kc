@@ -187,21 +187,27 @@ func (f *PodContainerLogsFolder) buildRows(context.Context) ([]table.Row, error)
 
 func newPodSectionRowSource(deps Deps, namespace, pod string, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
-	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
-		startInformerForResource(deps, gvr, namespace, pod, cb)
+	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
+		return startInformerForResource(deps, gvr, namespace, pod, onEvent, onStop)
 	})
+	lor.watchTTL = watchDuration(deps)
+	return lor
 }
 
 func newPodContainerRowSource(deps Deps, namespace, pod string, kind containerKind, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
-	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
-		startInformerForResource(deps, gvr, namespace, pod, cb)
+	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
+		return startInformerForResource(deps, gvr, namespace, pod, onEvent, onStop)
 	})
+	lor.watchTTL = watchDuration(deps)
+	return lor
 }
 
 func newPodContainerLogRowSource(deps Deps, namespace, pod, container string, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
-	return newLiveObjectRowSourceWithHooks(populate, onDirty, func(cb func()) {
-		startInformerForResource(deps, gvr, namespace, pod, cb)
+	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
+		return startInformerForResource(deps, gvr, namespace, pod, onEvent, onStop)
 	})
+	lor.watchTTL = watchDuration(deps)
+	return lor
 }

@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"testing"
+	"time"
 
 	table "github.com/sttts/kc/internal/table"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -32,17 +33,21 @@ func TestLiveObjectRowSourceRefresh(t *testing.T) {
 			return rows, nil
 		},
 		func() { folderDirty++ },
-		func(cb func()) { informer = cb },
+		func(onEvent func(), _ func()) (func(), error) {
+			informer = onEvent
+			return func() {}, nil
+		},
 	)
 
-	if informer == nil {
-		t.Fatalf("expected informer callback to be registered")
-	}
+	src.watchTTL = time.Minute
 
 	ctx := t.Context()
 	first := src.Lines(ctx, 0, 10)
 	if len(first) != len(rowsSet[0]) {
 		t.Fatalf("expected %d rows, got %d", len(rowsSet[0]), len(first))
+	}
+	if informer == nil {
+		t.Fatalf("expected informer callback to be registered on first access")
 	}
 	if populateCalls != 1 {
 		t.Fatalf("expected one populate call, got %d", populateCalls)
