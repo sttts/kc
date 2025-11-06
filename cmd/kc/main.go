@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/alecthomas/kong"
 	"github.com/go-logr/logr"
 	"github.com/sttts/kc/internal/ui"
 	klog "k8s.io/klog/v2"
@@ -21,42 +21,35 @@ var (
 	date    = "unknown"
 )
 
+type cliFlags struct {
+	Version    bool   `help:"Show version information"`
+	Kubeconfig string `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
+	Namespace  string `help:"Namespace to open on startup" short:"n"`
+}
+
 func main() {
-	var (
-		showVersion    = flag.Bool("version", false, "Show version information")
-		help           = flag.Bool("help", false, "Show help information")
-		namespaceFlag  = flag.String("namespace", "", "Namespace to open on startup")
-		namespaceShort = flag.String("n", "", "Alias for -namespace")
-		kubeconfigFlag = flag.String("kubeconfig", "", "Path to kubeconfig file (overrides KUBECONFIG)")
+	var cli cliFlags
+	kong.Parse(&cli,
+		kong.Name("kc"),
+		kong.Description("Kubernetes Commander (kc) - A TUI for Kubernetes."),
+		kong.UsageOnError(),
 	)
 
-	flag.Parse()
-
-	if kcPath := strings.TrimSpace(*kubeconfigFlag); kcPath != "" {
+	if kcPath := strings.TrimSpace(cli.Kubeconfig); kcPath != "" {
 		_ = os.Setenv("KUBECONFIG", kcPath)
-	}
-
-	namespaceOverride := strings.TrimSpace(*namespaceFlag)
-	if namespaceOverride == "" {
-		namespaceOverride = strings.TrimSpace(*namespaceShort)
 	}
 
 	// Set up controller-runtime logging. By default discard logs entirely.
 	// If DEBUG=1, write logs to ~/.kc/debug.log in dev-friendly format.
 	setupControllerRuntimeLogger()
 
-	if *help {
-		showHelp()
-		return
-	}
-
-	if *showVersion {
+	if cli.Version {
 		showVersionInfo()
 		return
 	}
 
 	// Run the application
-	runCfg := ui.RunConfig{Namespace: namespaceOverride}
+	runCfg := ui.RunConfig{Namespace: strings.TrimSpace(cli.Namespace)}
 	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
