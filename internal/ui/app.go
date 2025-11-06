@@ -18,11 +18,13 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
+	table "github.com/sttts/kc/internal/table"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -52,6 +54,10 @@ type kubectlEditFinishedMsg struct {
 type namespaceCreatedMsg struct {
 	name string
 	err  error
+}
+
+type namespaceRetryMsg struct {
+	namespace string
 }
 
 type deleteTarget struct {
@@ -128,9 +134,16 @@ type App struct {
 	// Discovery refresh notifications
 	discoveryCh     chan struct{}
 	discoveryCancel func()
+	// Namespace auto-navigation state
+	namespaceAutoTarget   string
+	namespaceAutoAttempts int
 }
 
-const requestTimeout = 10 * time.Second
+const (
+	requestTimeout            = 10 * time.Second
+	namespaceRetryInterval    = 200 * time.Millisecond
+	namespaceRetryMaxAttempts = 50
+)
 
 var panelWidthPercentOptions = []int{25, 33, 50, 66, 75, 100}
 
@@ -567,6 +580,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Always adapt size
 	switch msg := msg.(type) {
+	case namespaceRetryMsg:
+		a.goToNamespaceWithRetry(msg.namespace, false)
+		return a, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		msg.Width = max(40, msg.Width)
 		msg.Height = max(5, msg.Height)
@@ -2842,7 +2858,11 @@ func (a *App) initData(ctx context.Context) error {
 		// Programmatic navigation to current namespace for both panels
 		ns := ""
 		if a.currentCtx != nil {
-			ns = a.currentCtx.Namespace
+			ns = strings.TrimSpace(a.currentCtx.Namespace)
+		}
+		if ns == "" {
+			ns = corev1.NamespaceDefault
+			log.Info("no namespace set in context; defaulting", "namespace", ns)
 		}
 		nsLog := ns
 		if nsLog == "" {
@@ -2858,9 +2878,21 @@ func (a *App) initData(ctx context.Context) error {
 // Legacy builder helpers removed (replaced by self-sufficient folders).
 
 // goToNamespace programmatically navigates to /namespaces/<ns> and updates panels.
-// If ns is empty, the panels remain at cluster scope. If the namespace does not exist, navigates to root.
+// If ns is empty, the panels remain at cluster scope. If the namespace does not exist, it retries briefly before staying at cluster scope.
 func (a *App) goToNamespace(ns string) {
+	a.goToNamespaceWithRetry(ns, true)
+}
+
+func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace")
+	if reset {
+		a.namespaceAutoTarget = ns
+		a.namespaceAutoAttempts = 0
+		log.Info("namespace navigation requested", "namespace", ns)
+	} else if ns != a.namespaceAutoTarget {
+		log.Info("namespace navigation skipped; target changed", "namespace", ns, "autoTarget", a.namespaceAutoTarget)
+		return
+	}
 	leftCfg := a.ensurePanelConfig(a.leftPanel)
 	rightCfg := a.ensurePanelConfig(a.rightPanel)
 	a.syncPanelConfig(a.leftPanel)
@@ -2877,53 +2909,66 @@ func (a *App) goToNamespace(ns string) {
 	rootRight := models.NewRootFolder(depsRight, enterRight)
 	a.leftNav = navui.NewNavigator(rootLeft)
 	a.rightNav = navui.NewNavigator(rootRight)
-	if ns != "" && a.namespaceExists(ns) {
-		namespaceSteps := []navui.GoToStep{
-			{SelectionID: "namespaces", Enter: true},
-			{SelectionID: ns, Enter: true},
-		}
-		enqueuePreload := func(label string, folder models.Folder) {
-			if folder == nil {
-				return
-			}
-			a.enqueueCmd(a.withBusy(label, 800*time.Millisecond, func() tea.Msg {
-				ctxBusy, cancelBusy := context.WithTimeout(a.ctx, panelContextTimeout)
-				defer cancelBusy()
-				_ = folder.Len(ctxBusy)
-				return nil
-			}))
-		}
-		ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
-		leftResult, err := navui.GoTo(ctxLeft, a.leftNav, namespaceSteps)
-		cancelLeft()
-		if err != nil {
-			log.Error(err, "failed to navigate left panel", "panel", "left", "namespace", ns)
-		} else {
-			if len(leftResult.Entered) > 0 {
-				enqueuePreload("Namespaces", leftResult.Entered[0])
-			}
-			if len(leftResult.Entered) > 1 {
-				enqueuePreload("Resources", leftResult.Entered[1])
-			}
-		}
-		ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
-		rightResult, err := navui.GoTo(ctxRight, a.rightNav, namespaceSteps)
-		cancelRight()
-		if err != nil {
-			log.Error(err, "failed to navigate right panel", "panel", "right", "namespace", ns)
-		} else {
-			if len(rightResult.Entered) > 0 {
-				enqueuePreload("Namespaces", rightResult.Entered[0])
-			}
-			if len(rightResult.Entered) > 1 {
-				enqueuePreload("Resources", rightResult.Entered[1])
-			}
-		}
-	} else if ns == "" {
+
+	logged := false
+	retryScheduled := false
+
+	if ns == "" {
 		log.Info("no namespace configured, staying at cluster scope")
+		a.namespaceAutoTarget = ""
+		a.namespaceAutoAttempts = 0
+		logged = true
 	} else {
-		log.Info("namespace not found, staying at cluster scope", "namespace", ns)
+		log.Info("checking namespace readiness", "namespace", ns, "attempt", a.namespaceAutoAttempts)
+		nsReady, terminal, readyErr := a.namespaceReady(ns)
+		if readyErr != nil {
+			log.Error(readyErr, "checking namespace readiness", "namespace", ns)
+		}
+		log.Info("namespace readiness evaluated", "namespace", ns, "ready", nsReady, "terminal", terminal)
+		switch {
+		case nsReady:
+			if !a.forceNamespaceNavigation(ns, depsLeft, depsRight) {
+				log.Error(fmt.Errorf("navigation failed"), "unable to navigate to namespace", "namespace", ns)
+				if ns == a.namespaceAutoTarget {
+					a.namespaceAutoTarget = ""
+				}
+				logged = true
+				break
+			}
+			log.Info("navigated to namespace", "namespace", ns)
+			logged = true
+			if ns == a.namespaceAutoTarget {
+				a.namespaceAutoTarget = ""
+				a.namespaceAutoAttempts = 0
+			}
+		case terminal:
+			log.Info("namespace not found, staying at cluster scope", "namespace", ns)
+			if ns == a.namespaceAutoTarget {
+				a.namespaceAutoTarget = ""
+			}
+			logged = true
+		case a.ctx.Err() == nil && ns == a.namespaceAutoTarget && a.namespaceAutoAttempts < namespaceRetryMaxAttempts:
+			a.namespaceAutoAttempts++
+			log.Info("namespace not ready yet, retrying", "namespace", ns, "attempt", a.namespaceAutoAttempts)
+			a.enqueueCmd(a.namespaceRetryCmd(ns))
+			retryScheduled = true
+			logged = true
+		default:
+			log.Info("namespace not ready, staying at cluster scope", "namespace", ns)
+			if ns == a.namespaceAutoTarget {
+				a.namespaceAutoTarget = ""
+			}
+			logged = true
+		}
 	}
+
+	if !logged && !retryScheduled && ns != "" {
+		log.Info("namespace not found, staying at cluster scope", "namespace", ns)
+		if ns == a.namespaceAutoTarget {
+			a.namespaceAutoTarget = ""
+		}
+	}
+
 	curL := a.leftNav.Current()
 	hasBackL := a.leftNav.HasBack()
 	curR := a.rightNav.Current()
@@ -2961,6 +3006,62 @@ func (a *App) goToNamespace(ns string) {
 	cancelResetR()
 }
 
+func (a *App) namespaceRetryCmd(ns string) tea.Cmd {
+	return func() tea.Msg {
+		timer := time.NewTimer(namespaceRetryInterval)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			return namespaceRetryMsg{namespace: ns}
+		case <-a.ctx.Done():
+			return nil
+		}
+	}
+}
+
+func (a *App) forceNamespaceNavigation(ns string, depsLeft, depsRight models.Deps) bool {
+	gvrNamespaces := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
+	nsListPath := []string{"namespaces"}
+	nsPath := []string{"namespaces", ns}
+	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace").WithValues("namespace", ns)
+
+	leftList := newNamespaceShortcutFolder(depsLeft, ns, gvrNamespaces, nsListPath)
+	rightList := newNamespaceShortcutFolder(depsRight, ns, gvrNamespaces, nsListPath)
+	leftResources := models.NewNamespacedResourcesFolder(depsLeft, ns, nsPath)
+	rightResources := models.NewNamespacedResourcesFolder(depsRight, ns, nsPath)
+
+	log.Info("pushing namespace folders to navigators")
+	preload := func(label string, folder models.Folder) {
+		if folder == nil {
+			return
+		}
+		a.enqueueCmd(a.withBusy(label, 800*time.Millisecond, func() tea.Msg {
+			ctxBusy, cancelBusy := context.WithTimeout(a.ctx, panelContextTimeout)
+			defer cancelBusy()
+			_ = folder.Len(ctxBusy)
+			return nil
+		}))
+	}
+
+	a.leftNav.SetSelectionID("namespaces")
+	a.leftNav.Push(leftList)
+	a.leftNav.SetSelectionID(ns)
+	a.leftNav.Push(leftResources)
+	log.Info("left navigator updated", "stackDepth", a.navigatorDepth(a.leftNav))
+	preload("Namespaces", leftList)
+	preload("Resources", leftResources)
+
+	a.rightNav.SetSelectionID("namespaces")
+	a.rightNav.Push(rightList)
+	a.rightNav.SetSelectionID(ns)
+	a.rightNav.Push(rightResources)
+	log.Info("right navigator updated", "stackDepth", a.navigatorDepth(a.rightNav))
+	preload("Namespaces", rightList)
+	preload("Resources", rightResources)
+
+	return true
+}
+
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
 // currentNav returns the navigator for the active panel (left=0, right=1).
 func (a *App) currentNav() *navui.Navigator {
@@ -2968,6 +3069,15 @@ func (a *App) currentNav() *navui.Navigator {
 		return a.leftNav
 	}
 	return a.rightNav
+}
+
+func (a *App) navigatorDepth(nav *navui.Navigator) int {
+	if nav == nil {
+		return 0
+	}
+	count := 0
+	nav.ForEach(func(models.Folder) { count++ })
+	return count
 }
 
 func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
@@ -3060,12 +3170,17 @@ func (a *App) namespaceExists(ns string) bool {
 	if ns == "" {
 		return false
 	}
+	if a.cl == nil {
+		return false
+	}
 	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}
 	gvr, err := a.cl.GVKToGVR(gvk)
 	if err != nil {
 		return false
 	}
-	lst, err := a.cl.ListByGVR(a.ctx, gvr, "")
+	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+	defer cancel()
+	lst, err := a.cl.ListByGVR(ctx, gvr, "")
 	if err != nil {
 		return false
 	}
@@ -3075,6 +3190,66 @@ func (a *App) namespaceExists(ns string) bool {
 		}
 	}
 	return false
+}
+
+func (a *App) namespaceReady(ns string) (ready bool, terminal bool, err error) {
+	if ns == "" {
+		return false, true, nil
+	}
+	if a.cl == nil {
+		return false, true, fmt.Errorf("no cluster available")
+	}
+	dyn := a.cl.Dynamic()
+	if dyn == nil {
+		return false, false, fmt.Errorf("dynamic client unavailable")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+	defer cancel()
+	res := dyn.Resource(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"})
+	if _, err := res.Get(ctx, ns, metav1.GetOptions{}); err != nil {
+		switch {
+		case apierrors.IsNotFound(err):
+			return false, true, nil
+		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+			return false, false, nil
+		case ctx.Err() != nil:
+			return false, false, nil
+		default:
+			return false, false, err
+		}
+	}
+	return true, true, nil
+}
+
+//
+
+type namespaceShortcutFolder struct {
+	*models.BaseFolder
+	rows []table.Row
+}
+
+func newNamespaceShortcutFolder(deps models.Deps, namespace string, gvr schema.GroupVersionResource, path []string) *namespaceShortcutFolder {
+	listPath := append([]string(nil), path...)
+	base := models.NewBaseFolder(deps, []table.Column{{Title: " Name"}}, listPath)
+	f := &namespaceShortcutFolder{BaseFolder: base}
+	f.rows = []table.Row{newNamespaceShortcutRow(deps, namespace, gvr, listPath)}
+	base.SetPopulate(f.populate)
+	return f
+}
+
+func (f *namespaceShortcutFolder) populate(context.Context) ([]table.Row, error) {
+	return append([]table.Row(nil), f.rows...), nil
+}
+
+func newNamespaceShortcutRow(deps models.Deps, namespace string, gvr schema.GroupVersionResource, parentPath []string) table.Row {
+	basePath := append(append([]string(nil), parentPath...), namespace)
+	cells := []string{"/" + namespace}
+	obj := models.NewObjectRow(namespace, cells, basePath, gvr, "", namespace, models.WhiteStyle())
+	item := models.NewNamespaceItem(obj, func() (models.Folder, error) {
+		nsPath := append(append([]string(nil), parentPath...), namespace)
+		return models.NewNamespacedResourcesFolder(deps, namespace, nsPath), nil
+	})
+	return item
 }
 
 //
