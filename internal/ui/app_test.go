@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestNewApp(t *testing.T) {
@@ -110,5 +111,64 @@ func TestPanelHelpAndMenuActionsDisabled(t *testing.T) {
 	}
 	if caps.HasContextMenu {
 		t.Fatal("expected HasContextMenu to be false until context menu is implemented")
+	}
+}
+
+func TestDeleteConfirmEnterTriggersMessage(t *testing.T) {
+	app := NewApp()
+	app.width = 80
+	app.height = 24
+
+	modal := app.modalManager.modals["delete_confirm"]
+	if modal == nil {
+		t.Fatalf("delete_confirm modal not registered")
+	}
+
+	target := deleteTarget{
+		panelIdx:  0,
+		gvr:       schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		namespace: "default",
+		name:      "demo",
+	}
+	app.pendingDelete = &target
+
+	app.deleteConfirm.Configure("pods.v1./demo", "default")
+	app.deleteConfirm.SetDimensions(40, 8)
+	modal.SetContent(app.deleteConfirm)
+	modal.SetDimensions(app.width, app.height)
+	modal.SetWindowed(50, 8, "")
+	modal.SetOnClose(func() tea.Cmd {
+		app.pendingDelete = nil
+		return nil
+	})
+	app.modalManager.Show("delete_confirm")
+
+	// Move focus to "Yes".
+	model, _ := app.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	app = model.(*App)
+
+	model, cmd := app.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatalf("expected Enter to trigger a command when delete modal is open")
+	}
+	app = model.(*App)
+
+	msg := cmd()
+	res, ok := msg.(DeleteConfirmMsg)
+	if !ok {
+		t.Fatalf("expected DeleteConfirmMsg, got %T", msg)
+	}
+	if !res.Confirm || !res.Close {
+		t.Fatalf("expected delete confirmation message, got %+v", res)
+	}
+
+	if app.pendingDelete == nil {
+		t.Fatalf("pendingDelete cleared before handling confirmation")
+	}
+
+	model, deleteCmd := app.Update(res)
+	app = model.(*App)
+	if deleteCmd == nil {
+		t.Fatalf("expected delete confirmation to trigger delete command")
 	}
 }

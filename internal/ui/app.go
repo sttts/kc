@@ -616,10 +616,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Handle modals first
 	if a.modalManager.IsModalVisible() {
-		if _, skip := msg.(PanelModeSelectedMsg); skip {
-			// Let mode selection messages fall through to the main switch so Enter works.
-		} else {
-			// Intercept resource options changes even while modal is visible
+		switch msg.(type) {
+		case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg:
+			// Let modal result messages fall through to the main switch so they can close dialogs.
+		default:
+			// Intercept modal-scoped commits while the dialog is open.
 			switch m := msg.(type) {
 			case ViewOptionsCommittedMsg:
 				targetIdx := m.PanelIndex
@@ -959,10 +960,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.namespaceCreatePanel = -1
 		return a, nil
 	case DeleteConfirmMsg:
+		target := a.pendingDelete
 		if msg.Close {
 			a.modalManager.Hide()
 		}
-		target := a.pendingDelete
+		// Clear pending delete regardless of confirmation outcome once we've captured it.
 		a.pendingDelete = nil
 		if target != nil && msg.Confirm {
 			return a, a.performDelete(*target)
@@ -1009,7 +1011,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 		}
-		a.enqueueCmd(a.ShowToast(fmt.Sprintf("Deleted %s", kubectlResourceRef(msg.target.gvr, msg.target.name)), 3*time.Second))
 		a.refreshPanelAfterEdit(msg.target.panelIdx)
 		return a, nil
 	case EscTimeoutMsg:
