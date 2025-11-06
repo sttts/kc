@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/sttts/kc/internal/ui"
@@ -22,11 +23,23 @@ var (
 
 func main() {
 	var (
-		showVersion = flag.Bool("version", false, "Show version information")
-		help        = flag.Bool("help", false, "Show help information")
+		showVersion    = flag.Bool("version", false, "Show version information")
+		help           = flag.Bool("help", false, "Show help information")
+		namespaceFlag  = flag.String("namespace", "", "Namespace to open on startup")
+		namespaceShort = flag.String("n", "", "Alias for -namespace")
+		kubeconfigFlag = flag.String("kubeconfig", "", "Path to kubeconfig file (overrides KUBECONFIG)")
 	)
 
 	flag.Parse()
+
+	if kcPath := strings.TrimSpace(*kubeconfigFlag); kcPath != "" {
+		_ = os.Setenv("KUBECONFIG", kcPath)
+	}
+
+	namespaceOverride := strings.TrimSpace(*namespaceFlag)
+	if namespaceOverride == "" {
+		namespaceOverride = strings.TrimSpace(*namespaceShort)
+	}
 
 	// Set up controller-runtime logging. By default discard logs entirely.
 	// If DEBUG=1, write logs to ~/.kc/debug.log in dev-friendly format.
@@ -43,7 +56,8 @@ func main() {
 	}
 
 	// Run the application
-	if err := ui.Run(context.Background()); err != nil {
+	runCfg := ui.RunConfig{Namespace: namespaceOverride}
+	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -58,9 +72,9 @@ func setupControllerRuntimeLogger() {
 			// Best-effort create directory and file; fallback to discard on error.
 			if err := os.MkdirAll(dir, 0o700); err == nil {
 				fpath := filepath.Join(dir, "debug.log")
-                // recreate the log file on each start to avoid unbounded growth
-                _ = os.Remove(fpath)
-                f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+				// recreate the log file on each start to avoid unbounded growth
+				_ = os.Remove(fpath)
+				f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 				if err == nil {
 					// We intentionally do not close f until process exit.
 					l := crzap.New(
@@ -88,8 +102,11 @@ func showHelp() {
 	fmt.Println("  kc [flags]")
 	fmt.Println()
 	fmt.Println("Flags:")
-	fmt.Println("  -version    Show version information")
-	fmt.Println("  -help       Show this help message")
+	fmt.Println("  -version           Show version information")
+	fmt.Println("  -help              Show this help message")
+	fmt.Println("  -kubeconfig <path> Use the provided kubeconfig file (overrides KUBECONFIG)")
+	fmt.Println("  -namespace <name>  Open the specified namespace on startup")
+	fmt.Println("  -n <name>          Alias for -namespace")
 	fmt.Println()
 	fmt.Println("Key Bindings:")
 	fmt.Println("  F1          Help")

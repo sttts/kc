@@ -137,6 +137,7 @@ type App struct {
 	// Namespace auto-navigation state
 	namespaceAutoTarget   string
 	namespaceAutoAttempts int
+	namespaceOverride     string
 }
 
 const (
@@ -2699,11 +2700,17 @@ func (a *App) renameMoveItem() tea.Cmd {
 	return nil
 }
 
+// RunConfig allows callers to customize the UI startup.
+type RunConfig struct {
+	Namespace string
+}
+
 // Run starts the application
-func Run(ctx context.Context) error {
+func Run(ctx context.Context, cfg RunConfig) error {
 	ctx = ctrllog.IntoContext(ctx, ctrllog.Log.WithName("startup"))
 	log := ctrllog.FromContext(ctx)
 	app := NewApp()
+	app.namespaceOverride = strings.TrimSpace(cfg.Namespace)
 
 	// Initialize data model (best-effort; UI can still run without it)
 	log.Info("initializing data")
@@ -2777,7 +2784,13 @@ func (a *App) initData(ctx context.Context) error {
 		log.Error(nil, "no current context found")
 		return fmt.Errorf("no current context found")
 	}
-	ctxNamespace := a.currentCtx.Namespace
+	ctxNamespace := strings.TrimSpace(a.currentCtx.Namespace)
+	override := strings.TrimSpace(a.namespaceOverride)
+	if override != "" {
+		log.Info("namespace override requested", "requested", override, "original", ctxNamespace)
+		ctxNamespace = override
+		a.currentCtx.Namespace = override
+	}
 	nsLog := ctxNamespace
 	if nsLog == "" {
 		nsLog = "(cluster)"
@@ -2856,19 +2869,17 @@ func (a *App) initData(ctx context.Context) error {
 	// Preview: Use folder-backed rendering starting at root (not contexts listing)
 	{
 		// Programmatic navigation to current namespace for both panels
-		ns := ""
-		if a.currentCtx != nil {
-			ns = strings.TrimSpace(a.currentCtx.Namespace)
+		ns := a.initialNamespace()
+		if strings.TrimSpace(a.namespaceOverride) == "" {
+			ctxNs := ""
+			if a.currentCtx != nil {
+				ctxNs = strings.TrimSpace(a.currentCtx.Namespace)
+			}
+			if ctxNs == "" && ns == corev1.NamespaceDefault {
+				log.Info("no namespace set in context; defaulting", "namespace", ns)
+			}
 		}
-		if ns == "" {
-			ns = corev1.NamespaceDefault
-			log.Info("no namespace set in context; defaulting", "namespace", ns)
-		}
-		nsLog := ns
-		if nsLog == "" {
-			nsLog = "(cluster)"
-		}
-		log.Info("initial navigation", "namespace", nsLog)
+		log.Info("initial navigation", "namespace", ns)
 		a.goToNamespace(ns)
 	}
 	log.Info("panel initialization complete")
@@ -3060,6 +3071,18 @@ func (a *App) forceNamespaceNavigation(ns string, depsLeft, depsRight models.Dep
 	preload("Resources", rightResources)
 
 	return true
+}
+
+func (a *App) initialNamespace() string {
+	if ns := strings.TrimSpace(a.namespaceOverride); ns != "" {
+		return ns
+	}
+	if a.currentCtx != nil {
+		if ns := strings.TrimSpace(a.currentCtx.Namespace); ns != "" {
+			return ns
+		}
+	}
+	return corev1.NamespaceDefault
 }
 
 // handleFolderNav processes back/forward navigation from panels and updates both panels.
