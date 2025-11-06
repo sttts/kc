@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -93,6 +94,9 @@ func (r *ResourceGroupItem) Count() int {
 		if count == 0 {
 			r.empty = true
 			r.emptyKnown = true
+		} else {
+			r.empty = false
+			r.emptyKnown = true
 		}
 		return r.count
 	}
@@ -116,13 +120,20 @@ func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 	}
 	crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
 	empty, ok := r.peekEmptyLocked()
+	prevEmpty := r.emptyKnown && r.empty
 	r.lastPeek = time.Now()
 	if ok {
 		r.empty = empty
 		r.emptyKnown = true
+		needRecount := false
 		if empty {
 			r.count = 0
 			r.countKnown = true
+		} else if prevEmpty {
+			r.countKnown = false
+			r.empty = false
+			r.emptyKnown = true
+			needRecount = true
 		}
 		changed := r.recordPublishedLocked()
 		onChange := r.onChange
@@ -130,6 +141,9 @@ func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 		r.mu.Unlock()
 		if changed && onChange != nil {
 			onChange()
+		}
+		if needRecount {
+			go r.scheduleRecount()
 		}
 		return val
 	}
@@ -149,6 +163,9 @@ func (r *ResourceGroupItem) TryCount() (int, bool) {
 
 func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 	ctx := r.deps.Ctx
+	if ul, err := r.deps.Cl.ListByGVR(ctx, r.gvr, r.namespace); err == nil && ul != nil {
+		return len(ul.Items), true
+	}
 	gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
 	if err != nil {
 		return 0, false
@@ -319,10 +336,17 @@ func (r *ResourceGroupItem) ensureInformerHandler(informer crcache.Informer) {
 		return
 	}
 	r.watchOnce.Do(func() {
+		crlog.FromContext(r.deps.Ctx).Info("resource group registering informer handler", "gvr", r.gvr.String(), "namespace", r.namespace)
 		_, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-			AddFunc:    func(obj interface{}) { r.onInformerEvent(obj) },
-			UpdateFunc: func(_, newObj interface{}) { r.onInformerEvent(newObj) },
-			DeleteFunc: func(obj interface{}) { r.onInformerEvent(obj) },
+			AddFunc: func(obj interface{}) {
+				r.onInformerEvent(obj)
+			},
+			UpdateFunc: func(_, newObj interface{}) {
+				r.onInformerEvent(newObj)
+			},
+			DeleteFunc: func(obj interface{}) {
+				r.onInformerEvent(obj)
+			},
 		})
 		if err != nil {
 			crlog.FromContext(r.deps.Ctx).Error(err, "register informer handler", "gvr", r.gvr.String(), "namespace", r.namespace)
@@ -331,9 +355,12 @@ func (r *ResourceGroupItem) ensureInformerHandler(informer crcache.Informer) {
 }
 
 func (r *ResourceGroupItem) onInformerEvent(obj interface{}) {
+	log := crlog.FromContext(r.deps.Ctx)
+	log.Info("resource group informer event", "gvr", r.gvr.String(), "namespace", r.namespace)
 	if r.namespace != "" {
 		if acc, ok := accessorForEvent(obj); ok && acc != nil {
 			if acc.GetNamespace() != r.namespace {
+				log.Info("resource group event ignored due to namespace mismatch", "eventNamespace", acc.GetNamespace())
 				return
 			}
 		}
@@ -350,6 +377,7 @@ func (r *ResourceGroupItem) scheduleRecount() {
 	r.recounting = true
 	r.countKnown = false
 	r.emptyKnown = false
+	r.lastPeek = time.Time{}
 	r.mu.Unlock()
 
 	go func() {
@@ -358,7 +386,36 @@ func (r *ResourceGroupItem) scheduleRecount() {
 			r.recounting = false
 			r.mu.Unlock()
 		}()
+		log := crlog.FromContext(r.deps.Ctx)
+		log.Info("resource group recount started", "gvr", r.gvr.String(), "namespace", r.namespace)
 		_ = r.Count()
+		ctx := r.deps.Ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		hasAny, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
+		if err != nil {
+			log.Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
+		}
+		r.mu.Lock()
+		if err == nil {
+			log.Info("hasAny peek", "gvr", r.gvr.String(), "namespace", r.namespace, "hasAny", hasAny)
+			r.empty = !hasAny
+			r.emptyKnown = true
+			r.lastPeek = time.Now()
+		}
+		count := r.count
+		countKnown := r.countKnown
+		onChange := r.onChange
+		r.mu.Unlock()
+		if countKnown {
+			r.setCountCell(fmt.Sprintf("%d", count))
+		}
 		r.notifyIfChanged(nil)
+		if onChange != nil {
+			log.Info("resource group recount triggering refresh", "gvr", r.gvr.String(), "namespace", r.namespace, "count", count)
+			onChange()
+		}
+		log.Info("resource group recount finished", "gvr", r.gvr.String(), "namespace", r.namespace, "count", count, "countKnown", countKnown)
 	}()
 }

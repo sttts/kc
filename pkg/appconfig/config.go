@@ -90,7 +90,7 @@ type ResourcesViewConfig struct {
 	Columns string `json:"columns"`
 	// ObjectsOrder controls ordering within object lists when drilling into resources. Valid values are "name", "-name", "creation", "-creation".
 	ObjectsOrder string `json:"objectsOrder"`
-	// PeekInterval throttles how often empty-resource peeks hit the API (default 30s).
+    // PeekInterval throttles how often empty-resource peeks hit the API (default 10s).
 	PeekInterval metav1.Duration `json:"peekInterval"`
 }
 
@@ -142,7 +142,7 @@ func Default() *Config {
 			ShowNonEmptyOnly: true,
 			Order:            OrderAlpha,
 			Columns:          ColumnsModeNormal,
-			PeekInterval:     metav1.Duration{Duration: 30 * time.Second},
+			PeekInterval:     metav1.Duration{Duration: 10 * time.Second},
 			// Seed favorites with a sensible default set similar to `kubectl get all`.
 			Favorites: []string{
 				"pods", "services", "deployments", "replicasets", "statefulsets",
@@ -213,9 +213,6 @@ func Load() (*Config, error) {
 			cfg.Resources.Columns = ColumnsModeWide
 		} else {
 			cfg.Resources.Columns = ColumnsModeNormal
-		}
-		if cfg.Resources.PeekInterval.Duration <= 0 {
-			cfg.Resources.PeekInterval = metav1.Duration{Duration: 30 * time.Second}
 		}
 		switch {
 		case strings.EqualFold(cfg.Objects.Order, ObjectsOrderName):
@@ -331,9 +328,6 @@ func Load() (*Config, error) {
 	} else {
 		cfg.Resources.Columns = ColumnsModeNormal
 	}
-	if cfg.Resources.PeekInterval.Duration <= 0 {
-		cfg.Resources.PeekInterval = metav1.Duration{Duration: 30 * time.Second}
-	}
 	switch {
 	case strings.EqualFold(cfg.Objects.Order, ObjectsOrderName):
 		cfg.Objects.Order = ObjectsOrderName
@@ -378,7 +372,7 @@ func Save(cfg *Config) error {
 		out.Resources.Columns = ColumnsModeNormal
 	}
 	if out.Resources.PeekInterval.Duration <= 0 {
-		out.Resources.PeekInterval = metav1.Duration{Duration: 30 * time.Second}
+		out.Resources.PeekInterval = metav1.Duration{Duration: Default().Resources.PeekInterval.Duration}
 	}
 	switch {
 	case strings.EqualFold(out.Objects.Order, ObjectsOrderName):

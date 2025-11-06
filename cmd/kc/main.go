@@ -58,7 +58,9 @@ func setupControllerRuntimeLogger() {
 			// Best-effort create directory and file; fallback to discard on error.
 			if err := os.MkdirAll(dir, 0o700); err == nil {
 				fpath := filepath.Join(dir, "debug.log")
-				f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+                // recreate the log file on each start to avoid unbounded growth
+                _ = os.Remove(fpath)
+                f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 				if err == nil {
 					// We intentionally do not close f until process exit.
 					l := crzap.New(

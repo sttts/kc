@@ -46,6 +46,7 @@ Current tasks
   - [ ] Logs: implement a logs viewer (follow mode, search). Wire container “logs” entries to open it.
 - [ ] `F4` Edit: launch `kubectl edit` for the current object; refresh on successful apply.
 - [ ] Function key bar: dynamic and context-aware (grey out unavailable actions per location/object).
+- [ ] Delete modal: Enter should activate the focused button (Yes/No) in addition to Left/Right selection.
 
 ## Table View Enhancements
 - [ ] Horizontal scroll: when columns exceed panel width, support column‑wise scrolling with Left/Right keys; gate on “no typed input” (same Enter routing gating).
