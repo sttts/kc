@@ -100,10 +100,10 @@ func (m *PanelModeModel) View() string {
 }
 
 // FooterHints supplies modal footer hints.
-func (m *PanelModeModel) FooterHints() [][2]string {
-	return [][2]string{
-		{"Enter", "Apply"},
-		{"Esc", "Cancel"},
+func (m *PanelModeModel) FooterHints() []FooterHint {
+	return []FooterHint{
+		{Key: "Enter", Label: "Apply", Enabled: true},
+		{Key: "Esc", Label: "Cancel", Enabled: true},
 	}
 }
 

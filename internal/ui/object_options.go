@@ -151,6 +151,12 @@ func (m *ObjectOptionsModel) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
-func (m *ObjectOptionsModel) FooterHints() [][2]string {
-	return [][2]string{{"Up/Down", "Move"}, {"Left/Right/Space", "Toggle"}, {"Ctrl+S", "Save as defaults"}, {"Enter", "Apply & Close"}, {"Esc", "Cancel"}}
+func (m *ObjectOptionsModel) FooterHints() []FooterHint {
+	return []FooterHint{
+		{Key: "Up/Down", Label: "Move", Enabled: true},
+		{Key: "Left/Right/Space", Label: "Toggle", Enabled: true},
+		{Key: "Ctrl+S", Label: "Save as defaults", Enabled: true},
+		{Key: "Enter", Label: "Apply & Close", Enabled: true},
+		{Key: "Esc", Label: "Cancel", Enabled: true},
+	}
 }

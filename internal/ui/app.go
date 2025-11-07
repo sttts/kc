@@ -1671,6 +1671,11 @@ func (a *App) renderFunctionKeys() string {
 			if !enabled {
 				desc = uistyles.FunctionKeyDisabledStyle
 			}
+			trimmed := strings.TrimSpace(label)
+			if trimmed == "" {
+				placeholder := desc.Copy().Padding(0, 0, 0, 0)
+				return uistyles.FunctionKeyStyle.Render(key) + placeholder.Render(" - ")
+			}
 			return uistyles.FunctionKeyStyle.Render(key) + desc.Render(label)
 		}
 
@@ -1679,11 +1684,11 @@ func (a *App) renderFunctionKeys() string {
 			renderKey("F2", "Options", caps.HasOptions),
 			renderKey("F3", "View", caps.CanView),
 			renderKey("F4", "Edit", caps.CanEdit),
-			renderKey("F5", "Copy", false),
-			renderKey("F6", "Rename/Move", false),
+			renderKey("F5", "", false),
+			renderKey("F6", "", false),
 			renderKey("F7", "Namespace", caps.CanCreateNS),
 			renderKey("F8", "Delete", caps.CanDelete),
-			renderKey("F9", "Menu", caps.HasContextMenu),
+			renderKey("F9", "", false),
 			uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
 			uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
 		}

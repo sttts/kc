@@ -154,6 +154,9 @@ func (m *DeleteConfirmModel) renderOption(label string, width int, focused bool)
 	return style.Render(label)
 }
 
-func (m *DeleteConfirmModel) FooterHints() [][2]string {
-	return [][2]string{{"Enter", "Confirm"}, {"Esc", "Cancel"}}
+func (m *DeleteConfirmModel) FooterHints() []FooterHint {
+	return []FooterHint{
+		{Key: "Enter", Label: "Confirm", Enabled: true},
+		{Key: "Esc", Label: "Cancel", Enabled: true},
+	}
 }

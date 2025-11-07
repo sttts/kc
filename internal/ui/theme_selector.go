@@ -138,9 +138,9 @@ func (s *ThemeSelector) View() string {
 func (s *ThemeSelector) SetOnChange(fn func(name string) tea.Cmd) { s.onChange = fn }
 
 // FooterHints advertises key usage for the surrounding modal.
-func (s *ThemeSelector) FooterHints() [][2]string {
-	return [][2]string{
-		{"Enter", "Apply"},
-		{"Esc", "Cancel"},
+func (s *ThemeSelector) FooterHints() []FooterHint {
+	return []FooterHint{
+		{Key: "Enter", Label: "Apply", Enabled: true},
+		{Key: "Esc", Label: "Cancel", Enabled: true},
 	}
 }

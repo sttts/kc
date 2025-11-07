@@ -55,7 +55,19 @@ type RedrawTickMsg struct{}
 // rendered next to the default "Esc Close".
 type ModalFooterHints interface {
 	// FooterHints returns a list of key,label pairs to render in the footer.
-	FooterHints() [][2]string
+	FooterHints() []FooterHint
+}
+
+// ModalFooterStatus allows content to append a free-form status string to the footer.
+type ModalFooterStatus interface {
+	FooterStatus(width int) string
+}
+
+// FooterHint describes a function key footer entry.
+type FooterHint struct {
+	Key     string
+	Label   string
+	Enabled bool
 }
 
 // Init initializes the modal
@@ -492,9 +504,10 @@ func shiftMouseMsg(msg tea.MouseMsg, dx, dy int) tea.MouseMsg {
 }
 
 type footerHotspot struct {
-	key   string
-	start int
-	end   int
+	key     string
+	start   int
+	end     int
+	enabled bool
 }
 
 func (m *Modal) handleFooterMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
@@ -512,8 +525,8 @@ func (m *Modal) handleFooterMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 	if _, ok := msg.(tea.MouseReleaseMsg); !ok {
 		return m, nil, true
 	}
-	key := m.keyAtFooterColumn(mouse.X)
-	if key == "" {
+	key, enabled := m.keyAtFooterColumn(mouse.X)
+	if key == "" || !enabled {
 		return m, nil, true
 	}
 	if km, ok := keyMsgForLabel(key); ok {
@@ -523,39 +536,68 @@ func (m *Modal) handleFooterMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd, bool) {
 	return m, nil, true
 }
 
-func (m *Modal) keyAtFooterColumn(x int) string {
+func (m *Modal) keyAtFooterColumn(x int) (string, bool) {
 	for _, hs := range m.footerHotspots {
 		if x >= hs.start && x < hs.end {
-			return hs.key
+			return hs.key, hs.enabled
 		}
 	}
-	return ""
+	return "", false
 }
 
 func (m *Modal) buildFooter(includeEsc bool) string {
 	var builder strings.Builder
 	currentWidth := 0
-	appendHint := func(key, label string) {
+	appendHint := func(key, label string, enabled bool) {
 		if builder.Len() > 0 {
 			builder.WriteString(" ")
 			currentWidth += lipgloss.Width(" ")
 		}
-		segment := uistyles.FunctionKeyStyle.Render(key) + uistyles.FunctionKeyDescriptionStyle.Render(label)
+		style := uistyles.FunctionKeyDescriptionStyle
+		if !enabled {
+			style = uistyles.FunctionKeyDisabledStyle
+		}
+		segment := uistyles.FunctionKeyStyle.Render(key) + style.Render(label)
 		segWidth := lipgloss.Width(segment)
 		m.footerHotspots = append(m.footerHotspots, footerHotspot{
-			key:   key,
-			start: currentWidth,
-			end:   currentWidth + segWidth,
+			key:     key,
+			start:   currentWidth,
+			end:     currentWidth + segWidth,
+			enabled: enabled,
 		})
 		builder.WriteString(segment)
 		currentWidth += segWidth
 	}
 	if includeEsc && m.closeOnSingleEsc {
-		appendHint("Esc", "Close")
+		appendHint("Esc", "Close", true)
 	}
 	if provider, ok := m.content.(ModalFooterHints); ok {
-		for _, kv := range provider.FooterHints() {
-			appendHint(kv[0], kv[1])
+		for _, hint := range provider.FooterHints() {
+			if hint.Key == "" || hint.Label == "" {
+				continue
+			}
+			appendHint(hint.Key, hint.Label, hint.Enabled)
+		}
+	}
+	if statusProvider, ok := m.content.(ModalFooterStatus); ok {
+		avail := m.width - currentWidth
+		if builder.Len() > 0 {
+			builder.WriteString(" ")
+			currentWidth++
+			avail--
+		}
+		if avail > 0 {
+			if status := statusProvider.FooterStatus(avail); strings.TrimSpace(status) != "" {
+				segment := status
+				segWidth := lipgloss.Width(segment)
+				m.footerHotspots = append(m.footerHotspots, footerHotspot{
+					key:     "",
+					start:   currentWidth,
+					end:     currentWidth + segWidth,
+					enabled: false,
+				})
+				builder.WriteString(segment)
+			}
 		}
 	}
 	return builder.String()

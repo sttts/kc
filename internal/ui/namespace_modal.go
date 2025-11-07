@@ -293,6 +293,9 @@ func (m *NamespaceCreateModel) renderInput(fieldWidth int) string {
 }
 
 // FooterHints wires the modal footer hints.
-func (m *NamespaceCreateModel) FooterHints() [][2]string {
-	return [][2]string{{"Enter", "Create"}, {"Esc", "Cancel"}}
+func (m *NamespaceCreateModel) FooterHints() []FooterHint {
+	return []FooterHint{
+		{Key: "Enter", Label: "Create", Enabled: true},
+		{Key: "Esc", Label: "Cancel", Enabled: true},
+	}
 }
