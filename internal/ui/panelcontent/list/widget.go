@@ -299,6 +299,7 @@ func (w *Widget) Enter(ctx context.Context) tea.Cmd {
 func (w *Widget) SetFolder(ctx context.Context, f models.Folder, hasBack bool) {
 	w.folder = f
 	w.folderHasBack = hasBack
+	w.applyObjectOrderToFolder()
 	if w.useFolder && w.folder != nil {
 		w.ensureBigTable(ctx)
 	} else {
@@ -315,7 +316,9 @@ func (w *Widget) UseFolder(on bool) {
 	w.useFolder = on
 	if !on {
 		w.bt = nil
+		return
 	}
+	w.applyObjectOrderToFolder()
 }
 
 func (w *Widget) ClearFolder() {
@@ -403,16 +406,21 @@ func (w *Widget) SetColumnsMode(ctx context.Context, mode string) {
 func (w *Widget) ColumnsMode() string { return w.columnsMode }
 
 func (w *Widget) SetObjectOrder(ctx context.Context, order string) {
-	switch strings.ToLower(order) {
-	case "name", "-name", "creation", "-creation":
-		w.objOrder = strings.ToLower(order)
-	default:
-		w.objOrder = "name"
-	}
+	w.objOrder = models.NormalizeObjectOrder(order)
+	w.applyObjectOrderToFolder()
 	w.RefreshFolder(ctx)
 }
 
 func (w *Widget) ObjectOrder() string { return w.objOrder }
+
+func (w *Widget) applyObjectOrderToFolder() {
+	if !w.useFolder || w.folder == nil {
+		return
+	}
+	if configurable, ok := w.folder.(models.ObjectOrderConfigurable); ok {
+		configurable.ApplyObjectOrder(w.objOrder)
+	}
+}
 
 func (w *Widget) ToggleColumnsMode(ctx context.Context) tea.Cmd {
 	if w.columnsMode == "wide" {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 
+	models "github.com/sttts/kc/internal/models"
+	table "github.com/sttts/kc/internal/table"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 )
 
@@ -59,4 +61,43 @@ func TestFrameInfoIndicatorsAndStatus(t *testing.T) {
 	if got := info.FooterStatus; got != "7/10 • 90%" {
 		t.Fatalf("expected footer status '7/10 • 90%%', got %q", got)
 	}
+}
+
+func TestWidgetAppliesObjectOrderToFolder(t *testing.T) {
+	ctx := context.Background()
+	w := New(panelcontent.WidgetDeps{})
+	w.UseFolder(true)
+
+	folder := &orderCaptureFolder{}
+	w.SetFolder(ctx, folder, false)
+	if len(folder.orders) != 1 || folder.orders[0] != models.NormalizeObjectOrder("name") {
+		t.Fatalf("expected default object order to be applied, got %+v", folder.orders)
+	}
+
+	w.SetObjectOrder(ctx, "Creation")
+	if len(folder.orders) != 2 {
+		t.Fatalf("expected second object order application, got %+v", folder.orders)
+	}
+	if got := folder.orders[1]; got != models.NormalizeObjectOrder("creation") {
+		t.Fatalf("expected creation order to be applied, got %q", got)
+	}
+}
+
+type orderCaptureFolder struct {
+	orders []string
+}
+
+func (f *orderCaptureFolder) ApplyObjectOrder(order string) { f.orders = append(f.orders, order) }
+
+func (f *orderCaptureFolder) Columns() []table.Column { return nil }
+func (f *orderCaptureFolder) Path() []string          { return nil }
+func (f *orderCaptureFolder) ItemByID(context.Context, string) (models.Item, bool) {
+	return nil, false
+}
+func (f *orderCaptureFolder) Lines(context.Context, int, int) []table.Row    { return nil }
+func (f *orderCaptureFolder) Above(context.Context, string, int) []table.Row { return nil }
+func (f *orderCaptureFolder) Below(context.Context, string, int) []table.Row { return nil }
+func (f *orderCaptureFolder) Len(context.Context) int                        { return 0 }
+func (f *orderCaptureFolder) Find(context.Context, string) (int, table.Row, bool) {
+	return -1, nil, false
 }

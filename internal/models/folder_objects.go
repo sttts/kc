@@ -25,9 +25,11 @@ import (
 // ObjectsFolder provides shared scaffolding for object list folders.
 type ObjectsFolder struct {
 	*BaseFolder
-	gvr       schema.GroupVersionResource
-	namespace string
-	rows      *liveObjectRowSource
+	gvr         schema.GroupVersionResource
+	namespace   string
+	rows        *liveObjectRowSource
+	objectOrder string
+	hasObjOrder bool
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
@@ -49,6 +51,9 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	cfg := o.Deps.AppConfig
 	columnsMode := cfg.Objects.Columns
 	order := cfg.Objects.Order
+	if o.hasObjOrder && o.objectOrder != "" {
+		order = o.objectOrder
+	}
 	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
 		return o.rowsFromRowList(rl, columnsMode, order), nil
 	}
@@ -153,6 +158,17 @@ func (o *ObjectsFolder) childConstructor() (ChildConstructor, bool) {
 	return ChildFor(o.gvr)
 }
 
+// ApplyObjectOrder overrides the object ordering strategy until changed again.
+func (o *ObjectsFolder) ApplyObjectOrder(order string) {
+	order = normalizeObjectOrder(order)
+	if order == "" {
+		return
+	}
+	o.objectOrder = order
+	o.hasObjOrder = true
+	o.Refresh()
+}
+
 func visibleColumns(cols []metav1.TableColumnDefinition, mode string) []int {
 	vis := make([]int, 0, len(cols))
 	for i, c := range cols {
@@ -195,6 +211,25 @@ func orderRowIndices(items []tablecache.Row, order string) []int {
 		sort.Slice(idxs, func(i, j int) bool { return nameOf(&items[idxs[i]]) < nameOf(&items[idxs[j]]) })
 	}
 	return idxs
+}
+
+func normalizeObjectOrder(order string) string {
+	switch strings.ToLower(strings.TrimSpace(order)) {
+	case "", appconfig.ObjectsOrderName:
+		return appconfig.ObjectsOrderName
+	case appconfig.ObjectsOrderNameDesc:
+		return appconfig.ObjectsOrderNameDesc
+	case appconfig.ObjectsOrderCreation:
+		return appconfig.ObjectsOrderCreation
+	case appconfig.ObjectsOrderCreationDesc:
+		return appconfig.ObjectsOrderCreationDesc
+	}
+	return appconfig.ObjectsOrderName
+}
+
+// NormalizeObjectOrder exposes the canonical form of object ordering for other packages.
+func NormalizeObjectOrder(order string) string {
+	return normalizeObjectOrder(order)
 }
 
 func buildCells(cells []interface{}, vis []int, hasChild bool) []string {

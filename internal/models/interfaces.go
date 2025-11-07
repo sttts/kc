@@ -66,6 +66,11 @@ type ResourceViewConfigurable interface {
 	ApplyResourceViewOptions(showNonEmpty bool, order appconfig.ResourcesViewOrder, favorites []string)
 }
 
+// ObjectOrderConfigurable allows folders to override object ordering at runtime.
+type ObjectOrderConfigurable interface {
+	ApplyObjectOrder(order string)
+}
+
 // BackItem renders the synthetic ".." row.
 type BackItem struct{}
 
