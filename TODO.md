@@ -29,7 +29,7 @@ Detailed next steps (post‑compaction anchors)
 - Tests: panel navigation logic, sorting and enablement state, selection behavior.
 
 Current tasks
-- [ ] Implement per-panel sorting toggle UI and apply to list model.
+- [x] Implement per-panel sorting toggle UI and apply to list model.
  - [ ] Use Watch events to drive live updates; keep cursor stable as much as possible.
   - [ ] Ensure initial `Synced` event triggers first render to avoid empty flashes.
   - [ ] Extend live listings to namespace resources (e.g., `/namespaces/<ns>/pods`).
