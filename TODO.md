@@ -35,7 +35,7 @@ Current tasks
   - [x] Extend live listings to namespace resources (e.g., `/namespaces/<ns>/pods`).
 
 ## Object Views (Core UX)
-- [ ] Unify F-key and `Esc+digit` handling across app and modals (everywhere F-keys work, Esc+digit should too).
+- [x] Unify F-key and `Esc+digit` handling across app and modals (everywhere F-keys work, Esc+digit should too).
 - [ ] YAML viewer search: start with `F7`/`Ctrl+F`/`/` (documented as `F7`+`F` in function bar); `F2` to continue to next match; highlight matches.
 - [ ] Pods detail: entering a pod shows container list (containers + initContainers). Under each container, add a `logs` subresource. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + watch). `Esc` closes.
 - [ ] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal; `F4` edits the field in an editor modal. Handle binary secret data gracefully.
