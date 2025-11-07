@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -39,6 +40,11 @@ type EscTimeoutMsg struct{}
 
 // FolderTickMsg triggers periodic folder refresh (debounced to ~1s).
 type FolderTickMsg struct{}
+
+// FolderDirtyMsg requests an immediate refresh for the given panel.
+type FolderDirtyMsg struct {
+	PanelIdx int
+}
 
 // DiscoveryRefreshedMsg is emitted when API discovery invalidates; resource folders should refresh.
 type DiscoveryRefreshedMsg struct{}
@@ -122,6 +128,7 @@ type App struct {
 	toastUntil  time.Time
 	// Logger that emits toasts on errors with rate limiting
 	toastLogger            *ToastLogger
+	pendingCmdsMu          sync.Mutex
 	pendingCmds            []tea.Cmd
 	leftConfig             *appconfig.Config
 	rightConfig            *appconfig.Config
@@ -131,6 +138,8 @@ type App struct {
 	namespaceCreatePanel   int
 	leftPanelWidthPercent  int
 	rightPanelWidthPercent int
+	leftFolderDirtyCancel  func()
+	rightFolderDirtyCancel func()
 	// Discovery refresh notifications
 	discoveryCh     chan struct{}
 	discoveryCancel func()
@@ -211,7 +220,9 @@ func (a *App) enqueueCmd(cmd tea.Cmd) {
 	if cmd == nil {
 		return
 	}
+	a.pendingCmdsMu.Lock()
 	a.pendingCmds = append(a.pendingCmds, cmd)
+	a.pendingCmdsMu.Unlock()
 }
 
 func cloneConfig(cfg *appconfig.Config) *appconfig.Config {
@@ -318,6 +329,51 @@ func (a *App) panelByIndex(idx int) *Panel {
 		return a.rightPanel
 	}
 	return a.leftPanel
+}
+
+func (a *App) setPanelFolder(ctx context.Context, panelIdx int, folder models.Folder, hasBack bool) {
+	panel := a.panelByIndex(panelIdx)
+	if panel == nil {
+		return
+	}
+	panel.SetFolder(ctx, folder, hasBack)
+	a.attachFolderDirtyListener(panelIdx, folder)
+}
+
+func (a *App) attachFolderDirtyListener(panelIdx int, folder models.Folder) {
+	var cancelPrev func()
+	switch panelIdx {
+	case 0:
+		cancelPrev = a.leftFolderDirtyCancel
+	case 1:
+		cancelPrev = a.rightFolderDirtyCancel
+	default:
+		return
+	}
+	if cancelPrev != nil {
+		cancelPrev()
+	}
+	assign := func(func()) {}
+	switch panelIdx {
+	case 0:
+		assign = func(fn func()) { a.leftFolderDirtyCancel = fn }
+	case 1:
+		assign = func(fn func()) { a.rightFolderDirtyCancel = fn }
+	}
+	if folder == nil {
+		assign(nil)
+		return
+	}
+	obs, ok := folder.(models.DirtyObservable)
+	if !ok {
+		assign(nil)
+		return
+	}
+	cancel := obs.RegisterDirtyListener(func() {
+		idx := panelIdx
+		a.enqueueCmd(func() tea.Msg { return FolderDirtyMsg{PanelIdx: idx} })
+	})
+	assign(cancel)
 }
 
 func (a *App) panelIndexFor(panel *Panel) (int, bool) {
@@ -574,10 +630,12 @@ func (a *App) makeEnterContextFunc(cfg *appconfig.Config) func(string, []string)
 // Update handles messages and updates the application state
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+	a.pendingCmdsMu.Lock()
 	if len(a.pendingCmds) > 0 {
 		cmds = append(cmds, a.pendingCmds...)
 		a.pendingCmds = nil
 	}
+	a.pendingCmdsMu.Unlock()
 
 	// Always adapt size
 	switch msg := msg.(type) {
@@ -752,7 +810,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if rf, ok := a.leftNav.Current().(interface{ Refresh() }); ok {
 							rf.Refresh()
 						}
-						a.leftPanel.SetFolder(ctx, a.leftNav.Current(), a.leftNav.HasBack())
+						a.setPanelFolder(ctx, 0, a.leftNav.Current(), a.leftNav.HasBack())
 						a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
 						cancel()
 						ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -764,7 +822,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if rf, ok := a.rightNav.Current().(interface{ Refresh() }); ok {
 							rf.Refresh()
 						}
-						a.rightPanel.SetFolder(ctx, a.rightNav.Current(), a.rightNav.HasBack())
+						a.setPanelFolder(ctx, 1, a.rightNav.Current(), a.rightNav.HasBack())
 						a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
 						cancel()
 						ctxRefresh, cancelRefresh := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -1016,6 +1074,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EscTimeoutMsg:
 		// Escape sequence timed out
 		a.escPressed = false
+		return a, nil
+	case FolderDirtyMsg:
+		panel := a.panelByIndex(msg.PanelIdx)
+		if panel == nil {
+			return a, nil
+		}
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		panel.RefreshFolder(ctx)
+		cancel()
 		return a, nil
 	case FolderTickMsg:
 		// Refresh only when current folders report dirty to avoid unnecessary redraws.
@@ -1553,7 +1620,7 @@ func (a *App) refreshFoldersAfterViewChange() {
 	if a.leftNav != nil {
 		cur := a.leftNav.Current()
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-		a.leftPanel.SetFolder(ctx, cur, a.leftNav.HasBack())
+		a.setPanelFolder(ctx, 0, cur, a.leftNav.HasBack())
 		a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
 		a.leftPanel.RefreshFolder(ctx)
 		cancel()
@@ -1561,7 +1628,7 @@ func (a *App) refreshFoldersAfterViewChange() {
 	if a.rightNav != nil {
 		cur := a.rightNav.Current()
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-		a.rightPanel.SetFolder(ctx, cur, a.rightNav.HasBack())
+		a.setPanelFolder(ctx, 1, cur, a.rightNav.HasBack())
 		a.rightPanel.SetCurrentPath(a.navigatorPath(a.rightNav))
 		a.rightPanel.RefreshFolder(ctx)
 		cancel()
@@ -2986,10 +3053,10 @@ func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 	curR := a.rightNav.Current()
 	hasBackR := a.rightNav.HasBack()
 	ctxLeft, cancelLeft := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.leftPanel.SetFolder(ctxLeft, curL, hasBackL)
+	a.setPanelFolder(ctxLeft, 0, curL, hasBackL)
 	cancelLeft()
 	ctxRight, cancelRight := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.rightPanel.SetFolder(ctxRight, curR, hasBackR)
+	a.setPanelFolder(ctxRight, 1, curR, hasBackR)
 	cancelRight()
 	// Use navigator paths for breadcrumbs
 	a.leftPanel.SetCurrentPath(a.navigatorPath(a.leftNav))
@@ -3124,7 +3191,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		}
 		nav = a.leftNav
 		panelSet = func(ctx context.Context, folder models.Folder, hasBack bool) {
-			a.leftPanel.SetFolder(ctx, folder, hasBack)
+			a.setPanelFolder(ctx, 0, folder, hasBack)
 		}
 		panelSelectByID = func(ctx context.Context, id string) { a.leftPanel.SelectByRowID(ctx, id) }
 		panelReset = func(ctx context.Context) { a.leftPanel.ResetSelectionTop(ctx) }
@@ -3139,7 +3206,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		}
 		nav = a.rightNav
 		panelSet = func(ctx context.Context, folder models.Folder, hasBack bool) {
-			a.rightPanel.SetFolder(ctx, folder, hasBack)
+			a.setPanelFolder(ctx, 1, folder, hasBack)
 		}
 		panelSelectByID = func(ctx context.Context, id string) { a.rightPanel.SelectByRowID(ctx, id) }
 		panelReset = func(ctx context.Context) { a.rightPanel.ResetSelectionTop(ctx) }

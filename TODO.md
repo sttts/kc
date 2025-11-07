@@ -30,9 +30,9 @@ Detailed next steps (post‑compaction anchors)
 
 Current tasks
 - [x] Implement per-panel sorting toggle UI and apply to list model.
- - [ ] Use Watch events to drive live updates; keep cursor stable as much as possible.
-  - [ ] Ensure initial `Synced` event triggers first render to avoid empty flashes.
-  - [ ] Extend live listings to namespace resources (e.g., `/namespaces/<ns>/pods`).
+ - [x] Use Watch events to drive live updates; keep cursor stable as much as possible.
+  - [x] Ensure initial `Synced` event triggers first render to avoid empty flashes.
+  - [x] Extend live listings to namespace resources (e.g., `/namespaces/<ns>/pods`).
 
 ## Object Views (Core UX)
 - [ ] Unify F-key and `Esc+digit` handling across app and modals (everywhere F-keys work, Esc+digit should too).

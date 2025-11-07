@@ -16,9 +16,11 @@ type BaseFolder struct {
 	columns []table.Column
 	path    []string
 
-	mu     sync.Mutex
-	dirty  bool
-	source rowSource
+	mu                  sync.Mutex
+	dirty               bool
+	source              rowSource
+	dirtyListeners      map[int]func()
+	nextDirtyListenerID int
 }
 
 // NewBaseFolder constructs a BaseFolder with the provided dependencies,
@@ -174,6 +176,7 @@ func (b *BaseFolder) markDirty() {
 	if src != nil {
 		src.MarkDirty()
 	}
+	b.notifyDirtyListeners()
 }
 
 func (b *BaseFolder) clearDirty() {
@@ -186,6 +189,7 @@ func (b *BaseFolder) markDirtyFromSource() {
 	b.mu.Lock()
 	b.dirty = true
 	b.mu.Unlock()
+	b.notifyDirtyListeners()
 }
 
 func (b *BaseFolder) rowSource() rowSource {
@@ -205,6 +209,44 @@ func (b *BaseFolder) SetRowSource(src rowSource) {
 	b.mu.Unlock()
 	if src != nil {
 		src.MarkDirty()
+	}
+}
+
+// RegisterDirtyListener subscribes to dirty state changes and returns a cancel func.
+func (b *BaseFolder) RegisterDirtyListener(fn func()) func() {
+	if fn == nil {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.dirtyListeners == nil {
+		b.dirtyListeners = make(map[int]func())
+	}
+	id := b.nextDirtyListenerID
+	b.nextDirtyListenerID++
+	b.dirtyListeners[id] = fn
+	return func() {
+		b.mu.Lock()
+		delete(b.dirtyListeners, id)
+		b.mu.Unlock()
+	}
+}
+
+func (b *BaseFolder) notifyDirtyListeners() {
+	b.mu.Lock()
+	if len(b.dirtyListeners) == 0 {
+		b.mu.Unlock()
+		return
+	}
+	listeners := make([]func(), 0, len(b.dirtyListeners))
+	for _, fn := range b.dirtyListeners {
+		listeners = append(listeners, fn)
+	}
+	b.mu.Unlock()
+	for _, fn := range listeners {
+		if fn != nil {
+			fn()
+		}
 	}
 }
 

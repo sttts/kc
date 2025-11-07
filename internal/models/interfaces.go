@@ -71,6 +71,11 @@ type ObjectOrderConfigurable interface {
 	ApplyObjectOrder(order string)
 }
 
+// DirtyObservable folders notify listeners when their data changes.
+type DirtyObservable interface {
+	RegisterDirtyListener(func()) func()
+}
+
 // BackItem renders the synthetic ".." row.
 type BackItem struct{}
 
