@@ -68,6 +68,17 @@ go build -o kc ./cmd/kc
 go run ./cmd/kc
 ```
 
+### Kubectl-Compatible Shortcuts
+
+`kc` understands a subset of `kubectl` command lines so you can jump straight into the TUI from familiar syntax. Supported forms:
+
+- `kc get <resource>` — positions the left panel on the requested resource list.
+- `kc get <resource> <name>` or `kc get <resource>/<name>` — highlights the object in the list (without entering its child folder). Add `-o yaml` to open the right panel’s manifest view for that object.
+- `kc get <resource> <name1> <name2>` or `kc get pods,svc` — multi-selects every requested row so list actions can operate on the full set.
+- `kc logs <pod> [-c <container>] [--follow]` — dives into the pod’s logs entry and opens the streaming logs viewer.
+
+All commands honour the global `-n/--namespace` flag (or the current kubeconfig namespace when omitted). See `docs/designs/cli-intents.md` for the full design.
+
 ### Debug Logging
 - By default, controller-runtime and Kubernetes logs are discarded.
 - Set `DEBUG=1` to enable debug logs written to `~/.kc/debug.log` using a human-friendly zap encoder:
