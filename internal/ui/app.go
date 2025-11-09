@@ -68,6 +68,8 @@ type namespaceRetryMsg struct {
 	namespace string
 }
 
+type startupIntentMsg struct{}
+
 type deleteTarget struct {
 	panelIdx  int
 	gvr       schema.GroupVersionResource
@@ -151,10 +153,12 @@ type App struct {
 	discoveryCh     chan struct{}
 	discoveryCancel func()
 	// Namespace auto-navigation state
-	namespaceAutoTarget   string
-	namespaceAutoAttempts int
-	namespaceOverride     string
-	startupIntent         StartupIntent
+	namespaceAutoTarget    string
+	namespaceAutoAttempts  int
+	namespaceOverride      string
+	startupIntent          StartupIntent
+	startupIntentScheduled bool
+	startupIntentApplied   bool
 }
 
 const (
@@ -647,6 +651,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Always adapt size
 	switch msg := msg.(type) {
+	case startupIntentMsg:
+		if cmd := a.applyStartupIntent(); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		return a, tea.Batch(cmds...)
 	case namespaceRetryMsg:
 		a.goToNamespaceWithRetry(msg.namespace, false)
 		return a, tea.Batch(cmds...)
@@ -2851,6 +2860,132 @@ func kubectlResourceRef(gvr schema.GroupVersionResource, name string) string {
 	return fmt.Sprintf("%s/%s", resource, name)
 }
 
+func (a *App) applyStartupIntent() tea.Cmd {
+	if a.startupIntentApplied || a.startupIntent.Verb == KubectlVerbNone {
+		return nil
+	}
+	a.startupIntentApplied = true
+	switch a.startupIntent.Verb {
+	case KubectlVerbGet:
+		return a.applyStartupIntentGet()
+	default:
+		return nil
+	}
+}
+
+func (a *App) applyStartupIntentGet() tea.Cmd {
+	intent := a.startupIntent.Get
+	if intent == nil || a.leftNav == nil {
+		return nil
+	}
+	resource, name, ok := primaryGetTarget(intent)
+	if !ok {
+		return nil
+	}
+	gvr, namespaced, err := a.resolveResource(resource)
+	if err != nil {
+		a.notifyIntentError("kubectl get %s: %v", resource, err)
+		return nil
+	}
+	ns := strings.TrimSpace(a.startupIntent.Namespace)
+	if ns == "" {
+		ns = a.currentNamespace()
+	}
+	if namespaced && ns == "" {
+		ns = corev1.NamespaceDefault
+	}
+	rowID := resourceRowID(ns, gvr, namespaced)
+	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+	defer cancel()
+	if _, err := navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: rowID, Enter: true}}); err != nil {
+		a.notifyIntentError("kubectl get %s: %v", resource, err)
+		return nil
+	}
+	a.syncPanelWithNavigator(0)
+	a.activePanel = 0
+	if name != "" {
+		ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+		a.leftPanel.SelectByRowID(ctxSel, name)
+		cancelSel()
+	}
+	return nil
+}
+
+func (a *App) currentNamespace() string {
+	if a.currentCtx != nil {
+		return strings.TrimSpace(a.currentCtx.Namespace)
+	}
+	return ""
+}
+
+func (a *App) resolveResource(resource string) (schema.GroupVersionResource, bool, error) {
+	var zero schema.GroupVersionResource
+	if a.cl == nil {
+		return zero, false, fmt.Errorf("cluster not ready")
+	}
+	mapper := a.cl.RESTMapper()
+	gvr, err := mapper.ResourceFor(schema.GroupVersionResource{Resource: resource})
+	if err != nil {
+		return zero, false, err
+	}
+	namespaced := true
+	if kind, err := mapper.KindFor(gvr); err == nil {
+		if mapping, err := mapper.RESTMapping(kind.GroupKind(), gvr.Version); err == nil && mapping.Scope != nil {
+			namespaced = mapping.Scope.Name() == metamapper.RESTScopeNameNamespace
+		}
+	}
+	return gvr, namespaced, nil
+}
+
+func resourceRowID(namespace string, gvr schema.GroupVersionResource, namespaced bool) string {
+	if namespaced {
+		return fmt.Sprintf("%s/%s/%s/%s", namespace, gvr.Group, gvr.Version, gvr.Resource)
+	}
+	return fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource)
+}
+
+func primaryGetTarget(intent *GetIntent) (resource string, name string, ok bool) {
+	if intent == nil {
+		return "", "", false
+	}
+	for idx, tok := range intent.Tokens {
+		if resource == "" {
+			switch {
+			case tok.Resource != "":
+				resource = tok.Resource
+				if tok.Name != "" {
+					name = tok.Name
+					return resource, name, true
+				}
+			case tok.ExplicitResource || idx == 0:
+				resource = tok.Value
+				if tok.Name != "" {
+					name = tok.Name
+					return resource, name, true
+				}
+			default:
+				continue
+			}
+			continue
+		}
+		if name == "" && !tok.ExplicitResource && tok.Name == "" {
+			name = tok.Value
+			break
+		}
+	}
+	if resource == "" {
+		return "", "", false
+	}
+	return resource, name, true
+}
+
+func (a *App) notifyIntentError(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	if a.toastLogger != nil {
+		a.enqueueCmd(a.toastLogger.Errorf("%s", msg))
+	}
+}
+
 func (a *App) logCommandToTerminal(command string) {
 	if command == "" {
 		return
@@ -3223,6 +3358,7 @@ func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 	ctxResetR, cancelResetR := context.WithTimeout(a.ctx, panelContextTimeout)
 	a.rightPanel.ResetSelectionTop(ctxResetR)
 	cancelResetR()
+	a.scheduleStartupIntent()
 }
 
 func (a *App) namespaceRetryCmd(ns string) tea.Cmd {
@@ -3281,6 +3417,14 @@ func (a *App) forceNamespaceNavigation(ns string, depsLeft, depsRight models.Dep
 	return true
 }
 
+func (a *App) scheduleStartupIntent() {
+	if a.startupIntentScheduled || a.startupIntent.Verb == KubectlVerbNone {
+		return
+	}
+	a.startupIntentScheduled = true
+	a.enqueueCmd(func() tea.Msg { return startupIntentMsg{} })
+}
+
 func (a *App) initialNamespace() string {
 	if ns := strings.TrimSpace(a.namespaceOverride); ns != "" {
 		return ns
@@ -3309,6 +3453,31 @@ func (a *App) navigatorDepth(nav *navui.Navigator) int {
 	count := 0
 	nav.ForEach(func(models.Folder) { count++ })
 	return count
+}
+
+func (a *App) syncPanelWithNavigator(panelIdx int) {
+	var nav *navui.Navigator
+	var panel *Panel
+	switch panelIdx {
+	case 0:
+		nav = a.leftNav
+		panel = a.leftPanel
+	case 1:
+		nav = a.rightNav
+		panel = a.rightPanel
+	}
+	if nav == nil || panel == nil {
+		return
+	}
+	cur := nav.Current()
+	hasBack := nav.HasBack()
+	ctxSet, cancelSet := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.setPanelFolder(ctxSet, panelIdx, cur, hasBack)
+	cancelSet()
+	panel.SetCurrentPath(a.navigatorPath(nav))
+	ctxUse, cancelUse := context.WithTimeout(a.ctx, panelContextTimeout)
+	panel.UseFolder(ctxUse, true)
+	cancelUse()
 }
 
 func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
