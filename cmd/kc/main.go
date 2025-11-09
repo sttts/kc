@@ -26,9 +26,12 @@ type cliFlags struct {
 	Version    bool        `help:"Show version information"`
 	Kubeconfig string      `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
 	Namespace  string      `help:"Namespace to open on startup" short:"n"`
-	Get        getCommand  `cmd:"" help:"Mirror kubectl get"`
-	Logs       logsCommand `cmd:"" help:"Mirror kubectl logs"`
+	Root       rootCommand `cmd:"" hidden:"true" default:"1"`
+	Get        getCommand  `cmd:"get" help:"Mirror kubectl get"`
+	Logs       logsCommand `cmd:"logs" help:"Mirror kubectl logs"`
 }
+
+type rootCommand struct{}
 
 type getCommand struct {
 	Output  string   `help:"Output format (supports yaml)" short:"o"`
@@ -91,7 +94,7 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 	}
 
 	switch strings.TrimSpace(cmd) {
-	case "", "kc":
+	case "", "kc", "kc root", "root":
 		return intent, strings.TrimSpace(cli.Namespace), nil
 	case "kc get":
 		if len(cli.Get.Targets) == 0 {
