@@ -1,5 +1,6 @@
 viewer:
   theme: dracula
+  mode: scroll
 
 panel:
   scrolling:

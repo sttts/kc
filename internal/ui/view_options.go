@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
+	"github.com/sttts/kc/pkg/appconfig"
 )
 
 // ViewOptionsCommittedMsg aggregates the selections made in the sectioned view
@@ -21,6 +22,7 @@ type ViewOptionsCommittedMsg struct {
 	HasTableMode      bool
 	Resources         *ViewOptionsResourcesPayload
 	Objects           *ViewOptionsObjectsPayload
+	Viewer            *ViewOptionsViewerPayload
 	SaveDefault       bool
 	Accept            bool
 	Close             bool
@@ -42,9 +44,16 @@ type ViewOptionsObjectsPayload struct {
 	Order           string
 }
 
+// ViewOptionsViewerPayload carries viewer-specific options.
+type ViewOptionsViewerPayload struct {
+	Theme    string
+	WrapMode string
+}
+
 // ViewOptionsConfig seeds the sectioned view options model.
 type ViewOptionsConfig struct {
-	PanelIndex int
+	PanelIndex       int
+	SkipPanelSection bool
 
 	PanelModes        []PanelViewMode
 	ActivePanelMode   PanelViewMode
@@ -54,6 +63,7 @@ type ViewOptionsConfig struct {
 
 	Resources *ViewOptionsResourcesConfig
 	Objects   *ViewOptionsObjectsConfig
+	Viewer    *ViewOptionsViewerConfig
 }
 
 // ViewOptionsResourcesConfig configures the Resources section.
@@ -70,6 +80,13 @@ type ViewOptionsObjectsConfig struct {
 	ShowTableMode bool
 	Columns       string
 	Order         string
+}
+
+// ViewOptionsViewerConfig configures the Viewer section.
+type ViewOptionsViewerConfig struct {
+	ThemeNames []string
+	Theme      string
+	WrapMode   string
 }
 
 type viewOptionEntryKind int
@@ -91,6 +108,8 @@ const (
 	viewOptionObjectTableMode
 	viewOptionObjectColumns
 	viewOptionObjectOrder
+	viewOptionViewerTheme
+	viewOptionViewerWrapMode
 )
 
 type viewOptionEntry struct {
@@ -134,33 +153,45 @@ type ViewOptionsModel struct {
 		columnsIdx int
 		orderIdx   int
 	}
+
+	viewer struct {
+		enabled    bool
+		themeNames []string
+		themeIdx   int
+		wrapMode   string
+	}
 }
 
 // NewViewOptionsModel constructs a sectioned view options dialog model.
 func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 	model := &ViewOptionsModel{
 		panelIdx:     cfg.PanelIndex,
-		panelModes:   append([]PanelViewMode(nil), cfg.PanelModes...),
 		hasTableMode: cfg.Resources != nil && cfg.Resources.ShowTableMode || cfg.Objects != nil && cfg.Objects.ShowTableMode,
 	}
-	if len(model.panelModes) == 0 {
-		model.panelModes = []PanelViewMode{PanelModeList}
-	}
-	model.panelModeIndex = indexOfPanelMode(model.panelModes, cfg.ActivePanelMode)
-	model.tableModeIndex = tableModeIndexFor(cfg.TableMode)
-
-	model.entries = append(model.entries, viewOptionEntry{
-		kind:   viewOptionEntryOption,
-		option: viewOptionPanelMode,
-	})
-	model.hasPanelWidth = cfg.PanelWidthPercent >= 0
-	if model.hasPanelWidth {
-		model.panelWidthIndex = viewWidthIndexFor(cfg.PanelWidthPercent)
+	if !cfg.SkipPanelSection {
+		model.panelModes = append([]PanelViewMode(nil), cfg.PanelModes...)
+		if len(model.panelModes) == 0 {
+			model.panelModes = []PanelViewMode{PanelModeList}
+		}
+		model.panelModeIndex = indexOfPanelMode(model.panelModes, cfg.ActivePanelMode)
 		model.entries = append(model.entries, viewOptionEntry{
 			kind:   viewOptionEntryOption,
-			option: viewOptionPanelWidth,
+			option: viewOptionPanelMode,
 		})
+		model.hasPanelWidth = cfg.PanelWidthPercent >= 0
+		if model.hasPanelWidth {
+			model.panelWidthIndex = viewWidthIndexFor(cfg.PanelWidthPercent)
+			model.entries = append(model.entries, viewOptionEntry{
+				kind:   viewOptionEntryOption,
+				option: viewOptionPanelWidth,
+			})
+		}
+	} else {
+		model.panelModes = append([]PanelViewMode(nil), cfg.PanelModes...)
+		model.panelModeIndex = indexOfPanelMode(model.panelModes, cfg.ActivePanelMode)
+		model.hasPanelWidth = false
 	}
+	model.tableModeIndex = tableModeIndexFor(cfg.TableMode)
 
 	if cfg.Resources != nil {
 		model.resources.enabled = true
@@ -216,6 +247,32 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectColumns},
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectOrder},
 		)
+	}
+
+	if cfg.Viewer != nil {
+		model.viewer.enabled = true
+		model.viewer.themeNames = append([]string{}, cfg.Viewer.ThemeNames...)
+		if len(model.viewer.themeNames) == 0 {
+			model.viewer.themeNames = []string{cfg.Viewer.Theme}
+		}
+		model.viewer.themeIdx = viewerThemeIndexFor(model.viewer.themeNames, cfg.Viewer.Theme)
+		model.viewer.wrapMode = cfg.Viewer.WrapMode
+		if model.viewer.wrapMode != appconfig.ViewerModeWrap {
+			model.viewer.wrapMode = appconfig.ViewerModeScroll
+		}
+		model.appendSectionSpacerIfNeeded()
+		model.entries = append(model.entries, viewOptionEntry{
+			kind:  viewOptionEntrySection,
+			title: "Viewer:",
+		})
+		model.entries = append(model.entries, viewOptionEntry{
+			kind:   viewOptionEntryOption,
+			option: viewOptionViewerTheme,
+		})
+		model.entries = append(model.entries, viewOptionEntry{
+			kind:   viewOptionEntryOption,
+			option: viewOptionViewerWrapMode,
+		})
 	}
 
 	if len(model.entries) == 0 {
@@ -287,6 +344,19 @@ func viewWidthIndexFor(percent int) int {
 		}
 	}
 	return best
+}
+
+func viewerThemeIndexFor(names []string, current string) int {
+	if len(names) == 0 {
+		return 0
+	}
+	cur := strings.ToLower(current)
+	for i, name := range names {
+		if strings.ToLower(name) == cur {
+			return i
+		}
+	}
+	return 0
 }
 
 func absInt(v int) int {
@@ -501,27 +571,59 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 		} else {
 			m.objects.orderIdx = (m.objects.orderIdx + 1) % len(objOrderKeys)
 		}
+	case viewOptionViewerTheme:
+		if !m.viewer.enabled || len(m.viewer.themeNames) == 0 {
+			return
+		}
+		if delta < 0 {
+			m.viewer.themeIdx--
+			if m.viewer.themeIdx < 0 {
+				m.viewer.themeIdx = len(m.viewer.themeNames) - 1
+			}
+		} else {
+			m.viewer.themeIdx = (m.viewer.themeIdx + 1) % len(m.viewer.themeNames)
+		}
+	case viewOptionViewerWrapMode:
+		if !m.viewer.enabled {
+			return
+		}
+		if m.viewer.wrapMode == appconfig.ViewerModeWrap {
+			m.viewer.wrapMode = appconfig.ViewerModeScroll
+		} else {
+			m.viewer.wrapMode = appconfig.ViewerModeWrap
+		}
 	}
 }
 
 func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
+	panelMode := PanelModeList
+	setPanelMode := false
+	if len(m.panelModes) > 0 {
+		panelMode = m.panelModes[m.panelModeIndex]
+		setPanelMode = true
+	}
+	panelWidthPercent := 0
+	if m.hasPanelWidth {
+		options := panelWidthPercentOptions
+		if len(options) > 0 {
+			panelWidthPercent = options[m.panelWidthIndex]
+		}
+	}
+	tableMode := "scroll"
+	if len(tableModeKeys) > 0 {
+		tableMode = tableModeKeys[m.tableModeIndex]
+	}
 	msg := ViewOptionsCommittedMsg{
-		PanelIndex:    m.panelIdx,
-		SetPanelMode:  true,
-		PanelMode:     m.panelModes[m.panelModeIndex],
-		SetPanelWidth: m.hasPanelWidth,
-		PanelWidthPercent: func() int {
-			options := panelWidthPercentOptions
-			if !m.hasPanelWidth || len(options) == 0 {
-				return 0
-			}
-			return options[m.panelWidthIndex]
-		}(),
-		TableMode:    tableModeKeys[m.tableModeIndex],
-		HasTableMode: m.hasTableMode,
-		SaveDefault:  save,
-		Accept:       accept,
-		Close:        accept,
+		PanelIndex:        m.panelIdx,
+		SetPanelMode:      setPanelMode,
+		PanelMode:         panelMode,
+		SetPanelWidth:     m.hasPanelWidth,
+		PanelWidthPercent: panelWidthPercent,
+		TableMode:         tableMode,
+		HasTableMode:      m.hasTableMode,
+		SaveDefault:       save,
+		Accept:            accept,
+		Close:             accept,
 	}
 	if !save {
 		// Save keeps the dialog open in parity with previous behaviour.
@@ -541,6 +643,20 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 			ShowTableOption: m.objects.showTable,
 			Columns:         objColumnsKeys[m.objects.columnsIdx],
 			Order:           objOrderKeys[m.objects.orderIdx],
+		}
+	}
+	if m.viewer.enabled {
+		theme := ""
+		if len(m.viewer.themeNames) > 0 {
+			theme = m.viewer.themeNames[m.viewer.themeIdx]
+		}
+		mode := appconfig.ViewerModeScroll
+		if strings.EqualFold(m.viewer.wrapMode, appconfig.ViewerModeWrap) {
+			mode = appconfig.ViewerModeWrap
+		}
+		msg.Viewer = &ViewOptionsViewerPayload{
+			Theme:    theme,
+			WrapMode: mode,
 		}
 	}
 	return msg
@@ -570,6 +686,17 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, stri
 		return "Columns", objColumnsLabels[m.objects.columnsIdx]
 	case viewOptionObjectOrder:
 		return "Objects order", objOrderLabels[m.objects.orderIdx]
+	case viewOptionViewerTheme:
+		if len(m.viewer.themeNames) == 0 {
+			return "Theme", "-"
+		}
+		return "Theme", m.viewer.themeNames[m.viewer.themeIdx]
+	case viewOptionViewerWrapMode:
+		val := "Scroll"
+		if strings.EqualFold(m.viewer.wrapMode, appconfig.ViewerModeWrap) {
+			val = "Wrap"
+		}
+		return "Line mode", val
 	default:
 		return "", ""
 	}

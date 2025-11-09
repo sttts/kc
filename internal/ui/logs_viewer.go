@@ -29,7 +29,7 @@ type LogsViewer struct {
 	autoFollow bool
 	done       bool
 	err        error
-	onTheme    func() tea.Cmd
+	onOptions  func() tea.Cmd
 	onClose    func() tea.Cmd
 }
 
@@ -128,7 +128,7 @@ func (v *LogsViewer) FooterHints() []FooterHint {
 		}
 	}
 	return []FooterHint{
-		{Key: "F2", Label: "Options", Enabled: v.onTheme != nil},
+		{Key: "F2", Label: "Options", Enabled: v.onOptions != nil},
 		{Key: "F3", Label: "Next", Enabled: v.inner.HasSearchMatches()},
 		{Key: "F7", Label: "Search", Enabled: true},
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
@@ -158,8 +158,8 @@ func (v *LogsViewer) HandleModalEscape(key tea.KeyMsg) (bool, tea.Cmd) {
 	return false, nil
 }
 
-func (v *LogsViewer) SetOnTheme(fn func() tea.Cmd) {
-	v.onTheme = fn
+func (v *LogsViewer) SetOnOptions(fn func() tea.Cmd) {
+	v.onOptions = fn
 	v.refreshCallbacks()
 }
 
@@ -171,6 +171,12 @@ func (v *LogsViewer) SetOnClose(fn func() tea.Cmd) {
 func (v *LogsViewer) SetTheme(name string) {
 	v.inner.SetTheme(name)
 }
+
+func (v *LogsViewer) Theme() string { return v.inner.Theme() }
+
+func (v *LogsViewer) SetWrapMode(on bool) { v.inner.SetWrapMode(on) }
+
+func (v *LogsViewer) WrapMode() bool { return v.inner.WrapMode() }
 
 func (v *LogsViewer) Close() {
 	if v.reader == nil && v.cancel == nil {
@@ -220,8 +226,8 @@ func (v *LogsViewer) refreshCallbacks() {
 		return
 	}
 	v.inner.SetCallbacks(nil, func() tea.Cmd {
-		if v.onTheme != nil {
-			return v.onTheme()
+		if v.onOptions != nil {
+			return v.onOptions()
 		}
 		return nil
 	}, func() tea.Cmd {

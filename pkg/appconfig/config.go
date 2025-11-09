@@ -14,7 +14,13 @@ import (
 
 type ViewerConfig struct {
 	Theme string `json:"theme"`
+	Mode  string `json:"mode"`
 }
+
+const (
+	ViewerModeScroll = "scroll"
+	ViewerModeWrap   = "wrap"
+)
 
 const (
 	ColumnsModeNormal = "normal"
@@ -90,7 +96,7 @@ type ResourcesViewConfig struct {
 	Columns string `json:"columns"`
 	// ObjectsOrder controls ordering within object lists when drilling into resources. Valid values are "name", "-name", "creation", "-creation".
 	ObjectsOrder string `json:"objectsOrder"`
-    // PeekInterval throttles how often empty-resource peeks hit the API (default 10s).
+	// PeekInterval throttles how often empty-resource peeks hit the API (default 10s).
 	PeekInterval metav1.Duration `json:"peekInterval"`
 }
 
@@ -127,7 +133,7 @@ type TableConfig struct {
 
 func Default() *Config {
 	return &Config{
-		Viewer: ViewerConfig{Theme: "dracula"},
+		Viewer: ViewerConfig{Theme: "dracula", Mode: ViewerModeScroll},
 		Panel: PanelConfig{
 			Scrolling: ScrollingConfig{Horizontal: HorizontalConfig{Step: 4}},
 			Table:     TableConfig{Mode: TableModeScroll},
@@ -180,6 +186,10 @@ func Load() (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err == nil {
 		if cfg.Viewer.Theme == "" {
 			cfg.Viewer.Theme = "dracula"
+		}
+		cfg.Viewer.Mode = strings.ToLower(cfg.Viewer.Mode)
+		if cfg.Viewer.Mode != ViewerModeWrap {
+			cfg.Viewer.Mode = ViewerModeScroll
 		}
 		if cfg.Panel.Scrolling.Horizontal.Step <= 0 {
 			cfg.Panel.Scrolling.Horizontal.Step = 4
@@ -247,17 +257,25 @@ func Load() (*Config, error) {
 		}
 	}
 	if m, ok := viewer.(map[string]any); ok {
-		// Find "theme" key case-insensitively
+		// Find viewer keys case-insensitively
 		for k, v := range m {
 			if strings.EqualFold(k, "theme") {
 				if s, ok := v.(string); ok && s != "" {
 					cfg.Viewer.Theme = strings.ToLower(s)
 				}
 			}
+			if strings.EqualFold(k, "mode") {
+				if s, ok := v.(string); ok && s != "" {
+					cfg.Viewer.Mode = strings.ToLower(s)
+				}
+			}
 		}
 	}
 	if cfg.Viewer.Theme == "" {
 		cfg.Viewer.Theme = "dracula"
+	}
+	if cfg.Viewer.Mode != ViewerModeWrap {
+		cfg.Viewer.Mode = ViewerModeScroll
 	}
 
 	// Try to read panel.scrolling.horizontal.step in a case-insensitive way
@@ -360,6 +378,10 @@ func Save(cfg *Config) error {
 	// Enforce lower-case style names for consistency
 	out := *cfg
 	out.Viewer.Theme = strings.ToLower(out.Viewer.Theme)
+	out.Viewer.Mode = strings.ToLower(out.Viewer.Mode)
+	if out.Viewer.Mode != ViewerModeWrap {
+		out.Viewer.Mode = ViewerModeScroll
+	}
 	// Normalize order value
 	switch out.Resources.Order {
 	case OrderAlpha, OrderGroup, OrderFavorites:

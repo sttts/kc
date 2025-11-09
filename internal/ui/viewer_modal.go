@@ -7,28 +7,28 @@ import (
 
 // TextViewer wraps the shared viewer widget for modal usage.
 type TextViewer struct {
-	inner   *viewer.Widget
-	width   int
-	height  int
-	onEdit  func() tea.Cmd
-	onTheme func() tea.Cmd
-	onClose func() tea.Cmd
+	inner     *viewer.Widget
+	width     int
+	height    int
+	onEdit    func() tea.Cmd
+	onOptions func() tea.Cmd
+	onClose   func() tea.Cmd
 }
 
-func newViewer(theme string, onEdit, onTheme, onClose func() tea.Cmd) *TextViewer {
+func newViewer(theme string, onEdit, onOptions, onClose func() tea.Cmd) *TextViewer {
 	w := viewer.New(theme)
-	w.SetCallbacks(onEdit, onTheme, onClose)
-	return &TextViewer{inner: w, onEdit: onEdit, onTheme: onTheme, onClose: onClose}
+	w.SetCallbacks(onEdit, onOptions, onClose)
+	return &TextViewer{inner: w, onEdit: onEdit, onOptions: onOptions, onClose: onClose}
 }
 
 // NewYAMLViewer preserves backwards compatibility for callers expecting YAML defaults.
-func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
-	return NewTextViewer(title, text, "yaml", "application/yaml", title, theme, onEdit, onTheme, onClose)
+func NewYAMLViewer(title, text, theme string, onEdit func() tea.Cmd, onOptions func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
+	return NewTextViewer(title, text, "yaml", "application/yaml", title, theme, onEdit, onOptions, onClose)
 }
 
 // NewTextViewer creates a syntax-highlighted viewer for arbitrary text.
-func NewTextViewer(title, text, lang, mime, filename, theme string, onEdit func() tea.Cmd, onTheme func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
-	tv := newViewer(theme, onEdit, onTheme, onClose)
+func NewTextViewer(title, text, lang, mime, filename, theme string, onEdit func() tea.Cmd, onOptions func() tea.Cmd, onClose func() tea.Cmd) *TextViewer {
+	tv := newViewer(theme, onEdit, onOptions, onClose)
 	tv.inner.SetContent(text, viewer.Metadata{
 		Title:    title,
 		Language: lang,
@@ -64,7 +64,7 @@ func (v *TextViewer) FooterHints() []FooterHint {
 		}
 	}
 	return []FooterHint{
-		{Key: "F2", Label: "Options", Enabled: v.onTheme != nil},
+		{Key: "F2", Label: "Options", Enabled: v.onOptions != nil},
 		{Key: "F3", Label: "Next", Enabled: v.inner.HasSearchMatches()},
 		{Key: "F4", Label: "Edit", Enabled: v.onEdit != nil},
 		{Key: "F7", Label: "Search", Enabled: true},
@@ -76,19 +76,25 @@ func (v *TextViewer) SetTheme(theme string) {
 	v.inner.SetTheme(theme)
 }
 
-func (v *TextViewer) SetOnTheme(fn func() tea.Cmd) {
-	v.onTheme = fn
-	v.inner.SetCallbacks(v.onEdit, v.onTheme, v.onClose)
+func (v *TextViewer) Theme() string { return v.inner.Theme() }
+
+func (v *TextViewer) SetWrapMode(on bool) { v.inner.SetWrapMode(on) }
+
+func (v *TextViewer) WrapMode() bool { return v.inner.WrapMode() }
+
+func (v *TextViewer) SetOnOptions(fn func() tea.Cmd) {
+	v.onOptions = fn
+	v.inner.SetCallbacks(v.onEdit, v.onOptions, v.onClose)
 }
 
 func (v *TextViewer) SetOnClose(fn func() tea.Cmd) {
 	v.onClose = fn
-	v.inner.SetCallbacks(v.onEdit, v.onTheme, v.onClose)
+	v.inner.SetCallbacks(v.onEdit, v.onOptions, v.onClose)
 }
 
 func (v *TextViewer) RequestTheme() tea.Cmd {
-	if v.onTheme != nil {
-		return v.onTheme()
+	if v.onOptions != nil {
+		return v.onOptions()
 	}
 	return nil
 }

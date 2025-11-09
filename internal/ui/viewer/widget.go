@@ -14,6 +14,11 @@ import (
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
+const (
+	ansiDisableWrap = "\x1b[?7l"
+	ansiEnableWrap  = "\x1b[?7h"
+)
+
 var searchInputStyle = lipgloss.NewStyle().
 	Background(lipgloss.Color("#d7d7d7")).
 	Foreground(lipgloss.Black)
@@ -40,18 +45,20 @@ type Widget struct {
 	width  int
 	height int
 
-	raw      string
-	rawLines []string
-	lines    []string
-	theme    string
-	plain    bool
+	raw          string
+	rawLines     []string
+	lines        []string
+	theme        string
+	plain        bool
+	wrapMode     bool
+	maxLineWidth int
 
 	offset  int
 	hOffset int
 
-	onEdit  func() tea.Cmd
-	onTheme func() tea.Cmd
-	onClose func() tea.Cmd
+	onEdit    func() tea.Cmd
+	onOptions func() tea.Cmd
+	onClose   func() tea.Cmd
 
 	searchField      textinput.Model
 	searchMode       bool
@@ -102,6 +109,7 @@ func (w *Widget) SetContent(text string, meta Metadata) {
 	w.raw = text
 	w.metadata = meta
 	w.rawLines = strings.Split(text, "\n")
+	w.updateMaxLineWidth()
 	if w.plain {
 		w.lines = append([]string{}, w.rawLines...)
 	} else {
@@ -118,6 +126,21 @@ func (w *Widget) SetPlainMode(on bool) {
 	w.plain = on
 }
 
+// SetWrapMode toggles whether lines wrap within the viewport or scroll horizontally.
+func (w *Widget) SetWrapMode(on bool) {
+	if w.wrapMode == on {
+		return
+	}
+	w.wrapMode = on
+	if on {
+		w.hOffset = 0
+	}
+	w.clampHorizontalOffset()
+}
+
+// WrapMode reports whether wrapping is enabled.
+func (w *Widget) WrapMode() bool { return w.wrapMode }
+
 // SetTheme updates the chroma theme name and re-highlights the content.
 func (w *Widget) SetTheme(theme string) {
 	if theme == "" || theme == w.theme {
@@ -126,6 +149,9 @@ func (w *Widget) SetTheme(theme string) {
 	w.theme = theme
 	w.highlight()
 }
+
+// Theme returns the active chroma theme.
+func (w *Widget) Theme() string { return w.theme }
 
 // AppendLines appends raw text lines (used by logs viewer). In highlighted mode
 // this forces a full re-render; in plain mode we simply extend the backing
@@ -139,6 +165,7 @@ func (w *Widget) AppendLines(lines []string) {
 	}
 	start := len(w.rawLines)
 	w.rawLines = append(w.rawLines, lines...)
+	w.updateMaxLineWidth()
 	appendText := strings.Join(lines, "\n")
 	if w.raw == "" {
 		w.raw = appendText
@@ -162,7 +189,7 @@ func (w *Widget) AppendLines(lines []string) {
 // SetCallbacks configures optional edit/theme/close handlers.
 func (w *Widget) SetCallbacks(onEdit, onTheme, onClose func() tea.Cmd) {
 	w.onEdit = onEdit
-	w.onTheme = onTheme
+	w.onOptions = onTheme
 	w.onClose = onClose
 }
 
@@ -170,6 +197,7 @@ func (w *Widget) SetCallbacks(onEdit, onTheme, onClose func() tea.Cmd) {
 func (w *Widget) Resize(width, height int) {
 	w.width = width
 	w.height = height
+	w.clampHorizontalOffset()
 }
 
 // Update processes key/mouse input. Returns a command when an action is triggered.
@@ -206,11 +234,20 @@ func (w *Widget) View(frame Frame) string {
 		lines = []string{""}
 	}
 	body := strings.Join(lines, "\n")
-	style := uistyles.PanelContentStyle.Width(max(1, frame.Width)).Height(max(1, frame.Height))
+	contentW := max(1, frame.Width)
+	contentH := max(1, frame.Height)
+	style := uistyles.PanelContentStyle.Copy().Height(contentH).MaxHeight(contentH)
+	if w.wrapMode {
+		style = style.Width(contentW).MaxWidth(contentW)
+	}
 	if frame.Focused {
 		style = style.Bold(true)
 	}
-	return style.Render(body)
+	rendered := style.Render(body)
+	if !w.wrapMode {
+		rendered = ansiDisableWrap + rendered + ansiEnableWrap
+	}
+	return rendered
 }
 
 // Footer returns viewer status (title/position) rendered into a footer row.
@@ -404,11 +441,9 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 	case "down", "j":
 		w.scrollBy(1)
 	case "left", "h":
-		if w.hOffset > 0 {
-			w.hOffset--
-		}
+		w.adjustHorizontal(-1)
 	case "right", "l":
-		w.hOffset++
+		w.adjustHorizontal(1)
 	case "pgup", "ctrl+b":
 		w.scrollBy(-w.page())
 	case "pgdown":
@@ -424,16 +459,17 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 		w.offset = max(0, len(w.lines)-w.page())
 	case "ctrl+a":
 		w.hOffset = 0
+		w.clampHorizontalOffset()
 	case "ctrl+e":
-		w.alignToEnd()
+		w.hOffset = w.maxHorizontalOffset()
 	case "f7", "/":
 		if cmd := w.beginSearch(); cmd != nil {
 			return cmd, true
 		}
 		return nil, true
 	case "f2":
-		if w.onTheme != nil {
-			return w.onTheme(), true
+		if w.onOptions != nil {
+			return w.onOptions(), true
 		}
 		return nil, false
 	case "f3":
@@ -543,6 +579,62 @@ func (w *Widget) alignToEnd() {
 	} else {
 		w.hOffset = 0
 	}
+}
+
+func (w *Widget) adjustHorizontal(delta int) {
+	if delta == 0 || w.wrapMode {
+		w.hOffset = 0
+		return
+	}
+	w.hOffset += delta
+	w.clampHorizontalOffset()
+}
+
+func (w *Widget) clampHorizontalOffset() {
+	if w.wrapMode {
+		w.hOffset = 0
+		return
+	}
+	if w.hOffset < 0 {
+		w.hOffset = 0
+	}
+	maxOff := w.maxHorizontalOffset()
+	if w.hOffset > maxOff {
+		w.hOffset = maxOff
+	}
+}
+
+func (w *Widget) maxHorizontalOffset() int {
+	if w.wrapMode || w.width <= 0 {
+		return 0
+	}
+	effective := w.viewportWidth()
+	if w.maxLineWidth <= effective {
+		return 0
+	}
+	return w.maxLineWidth - effective
+}
+
+func (w *Widget) updateMaxLineWidth() {
+	maxWidth := 0
+	for _, line := range w.rawLines {
+		if lw := runeWidth(line); lw > maxWidth {
+			maxWidth = lw
+		}
+	}
+	w.maxLineWidth = maxWidth
+	w.clampHorizontalOffset()
+}
+
+func (w *Widget) viewportWidth() int {
+	width := w.width
+	if width <= 0 {
+		return 1
+	}
+	if !w.wrapMode && width > 2 {
+		return width - 2
+	}
+	return width
 }
 
 func (w *Widget) updateSearchMatches() {
@@ -662,6 +754,7 @@ func (w *Widget) visibleLines() []string {
 	if len(w.lines) == 0 {
 		return []string{applyPanelBackground("", w.width)}
 	}
+	viewWidth := w.viewportWidth()
 	start := w.offset
 	end := min(len(w.lines), start+w.page())
 	segment := w.lines[start:end]
@@ -669,9 +762,13 @@ func (w *Widget) visibleLines() []string {
 	for i := range result {
 		if i < len(segment) {
 			lineIdx := start + i
-			line := trimANSI(segment[i], w.hOffset, w.width)
 			matches := w.lineMatches(lineIdx)
-			result[i] = renderLineWithMatches(line, w.width, matches, w.hOffset)
+			if w.wrapMode {
+				result[i] = renderWrappedLine(segment[i], matches)
+			} else {
+				line := trimANSI(segment[i], w.hOffset, viewWidth)
+				result[i] = renderLineWithMatches(line, viewWidth, matches, w.hOffset)
+			}
 		} else {
 			result[i] = applyPanelBackground("", w.width)
 		}
@@ -825,6 +922,7 @@ func applyBackground(line string, width int, bg string) string {
 		return bg + reset
 	}
 	line = padLine(strings.TrimSuffix(line, reset), width)
+	line = sliceANSI(line, 0, width)
 	line = bg + line + reset
 	return line
 }
@@ -847,6 +945,57 @@ func renderLineWithMatches(line string, width int, matches []displayMatch, hOffs
 	return applyHighlightedBackground(line, width, adjusted)
 }
 
+func renderWrappedLine(line string, matches []displayMatch) string {
+	const (
+		baseBg    = "\033[44m"
+		matchBg   = "\033[45m"
+		activeBg  = "\033[43m"
+		resetCode = "\033[0m"
+	)
+	line = trimBackgroundPrefix(strings.TrimSuffix(line, resetCode))
+	var b strings.Builder
+	b.WriteString(baseBg)
+	currentBg := baseBg
+	displayPos := 0
+	matchIdx := 0
+	for i := 0; i < len(line); {
+		if seq := ansiSequenceLength(line[i:]); seq > 0 {
+			b.WriteString(line[i : i+seq])
+			i += seq
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(line[i:])
+		seg := line[i : i+size]
+		for matchIdx < len(matches) && displayPos >= matches[matchIdx].end {
+			if currentBg != baseBg {
+				b.WriteString(baseBg)
+				currentBg = baseBg
+			}
+			matchIdx++
+		}
+		if matchIdx < len(matches) && displayPos >= matches[matchIdx].start && displayPos < matches[matchIdx].end {
+			desired := matchBg
+			if matches[matchIdx].active {
+				desired = activeBg
+			}
+			if desired != currentBg {
+				b.WriteString(desired)
+				currentBg = desired
+			}
+		} else if currentBg != baseBg {
+			b.WriteString(baseBg)
+			currentBg = baseBg
+		}
+		b.WriteString(seg)
+		displayPos += runeWidth(seg)
+		i += size
+	}
+	if currentBg != baseBg {
+		b.WriteString(baseBg)
+	}
+	b.WriteString(resetCode)
+	return b.String()
+}
 func applyHighlightedBackground(line string, width int, matches []displayMatch) string {
 	const (
 		baseBg    = "\033[44m"

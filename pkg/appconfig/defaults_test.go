@@ -1,12 +1,14 @@
 package appconfig
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"
 	"path/filepath"
 	"reflect"
-	yaml "sigs.k8s.io/yaml"
+	"strings"
 	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	yaml "sigs.k8s.io/yaml"
 )
 
 // TestConfigDefaultsYAMLMatchesCode reads config-default.yaml from the repo root
@@ -47,6 +49,10 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 		if out.Viewer.Theme == "" {
 			out.Viewer.Theme = "dracula"
 		}
+		out.Viewer.Mode = strings.ToLower(out.Viewer.Mode)
+		if out.Viewer.Mode != ViewerModeWrap {
+			out.Viewer.Mode = ViewerModeScroll
+		}
 		if out.Panel.Scrolling.Horizontal.Step == 0 {
 			out.Panel.Scrolling.Horizontal.Step = 4
 		}
@@ -78,6 +84,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	// Field-by-field comparison with clearer failure messages
 	if a.Viewer.Theme != b.Viewer.Theme {
 		t.Fatalf("viewer.theme mismatch: yaml=%q code=%q", a.Viewer.Theme, b.Viewer.Theme)
+	}
+	if a.Viewer.Mode != b.Viewer.Mode {
+		t.Fatalf("viewer.mode mismatch: yaml=%q code=%q", a.Viewer.Mode, b.Viewer.Mode)
 	}
 	if a.Panel.Scrolling.Horizontal.Step != b.Panel.Scrolling.Horizontal.Step {
 		t.Fatalf("panel.scrolling.horizontal.step mismatch: yaml=%d code=%d", a.Panel.Scrolling.Horizontal.Step, b.Panel.Scrolling.Horizontal.Step)

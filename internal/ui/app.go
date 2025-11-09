@@ -21,6 +21,7 @@ import (
 	"github.com/sttts/kc/internal/overlay"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
+	viewpkg "github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
@@ -79,6 +80,13 @@ type resourceDeletedMsg struct {
 	err    error
 }
 
+type viewerOptionsTarget interface {
+	SetTheme(string)
+	Theme() string
+	SetWrapMode(bool)
+	WrapMode() bool
+}
+
 // App represents the main application state
 type App struct {
 	leftPanel    *Panel
@@ -101,9 +109,6 @@ type App struct {
 	currentCtx *kubeconfig.Context
 	viewConfig *ViewConfig
 	cfg        *appconfig.Config
-	// Theme dialog state
-	prevTheme           string
-	suppressThemeRevert bool
 	// New navigation (folder-backed) using a Navigator
 	leftNav  *navui.Navigator
 	rightNav *navui.Navigator
@@ -141,6 +146,7 @@ type App struct {
 	rightPanelWidthPercent int
 	leftFolderDirtyCancel  func()
 	rightFolderDirtyCancel func()
+	viewerOptionsTarget    viewerOptionsTarget
 	// Discovery refresh notifications
 	discoveryCh     chan struct{}
 	discoveryCancel func()
@@ -148,10 +154,6 @@ type App struct {
 	namespaceAutoTarget   string
 	namespaceAutoAttempts int
 	namespaceOverride     string
-}
-
-type themeableViewer interface {
-	SetTheme(string)
 }
 
 const (
@@ -659,7 +661,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m := a.modalManager.GetActiveModal(); m != nil {
 				m.SetDimensions(a.width, a.height)
 				if vm, ok := m.content.(*ViewOptionsModel); ok {
-					a.layoutViewOptionsModal(m, vm, vm.PanelIndex())
+					a.layoutViewOptionsModal(m, vm, vm.PanelIndex(), "")
 				}
 			}
 		}
@@ -686,6 +688,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Intercept modal-scoped commits while the dialog is open.
 			switch m := msg.(type) {
 			case ViewOptionsCommittedMsg:
+				if m.Viewer != nil {
+					cmd := a.applyViewerOptions(m)
+					return a, cmd
+				}
 				targetIdx := m.PanelIndex
 				if targetIdx < 0 || targetIdx > 1 {
 					targetIdx = a.activePanel
@@ -1833,11 +1839,6 @@ func (a *App) setupModals() {
 	viewModal := NewModal("View Options", viewOpts)
 	a.modalManager.Register("view_options", viewModal)
 
-	// Theme selector modal; content is set dynamically when opened
-	themeSelector := NewThemeSelector(nil)
-	themeModal := NewModal("YAML Theme", themeSelector)
-	a.modalManager.Register("theme_selector", themeModal)
-
 	// Namespace creation modal (configured on open)
 	nsModel := NewNamespaceCreateModel()
 	nsModal := NewModal("Create Namespace", nsModel)
@@ -2170,17 +2171,111 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 		modal.title = "View Options"
 	}
 
-	a.layoutViewOptionsModal(modal, content, panelIdx)
+	a.layoutViewOptionsModal(modal, content, panelIdx, "")
 	modal.SetOnClose(func() tea.Cmd { return nil })
 	a.modalManager.Show("view_options")
 	return nil
 }
 
-func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int) {
+func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
+	if target == nil {
+		return nil
+	}
+	themes := viewpkg.AvailableThemes()
+	currentTheme := target.Theme()
+	if currentTheme == "" {
+		currentTheme = a.viewerTheme()
+	}
+	wrapMode := appconfig.ViewerModeScroll
+	if target.WrapMode() {
+		wrapMode = appconfig.ViewerModeWrap
+	}
+	content := NewViewOptionsModel(ViewOptionsConfig{
+		PanelIndex:       -1,
+		SkipPanelSection: true,
+		Viewer: &ViewOptionsViewerConfig{
+			ThemeNames: themes,
+			Theme:      currentTheme,
+			WrapMode:   wrapMode,
+		},
+	})
+	modal := a.modalManager.modals["viewer_options"]
+	if modal == nil {
+		modal = NewModal("Viewer Options", content)
+		modal.SetCloseOnSingleEsc(true)
+		a.modalManager.Register("viewer_options", modal)
+	} else {
+		modal.SetContent(content)
+		modal.title = "Viewer Options"
+	}
+	modal.SetOnClose(func() tea.Cmd {
+		a.viewerOptionsTarget = nil
+		return nil
+	})
+	base := ""
+	if active := a.modalManager.GetActiveModal(); active != nil {
+		if view, _ := active.View(); view != "" {
+			base = view
+		}
+	}
+	a.layoutViewOptionsModal(modal, content, -1, base)
+	a.viewerOptionsTarget = target
+	a.modalManager.Show("viewer_options")
+	return nil
+}
+
+func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
+	target := a.viewerOptionsTarget
+	if msg.Viewer == nil {
+		if msg.Close {
+			a.modalManager.Hide()
+		}
+		return nil
+	}
+	if target == nil {
+		if msg.Close {
+			a.modalManager.Hide()
+		}
+		return nil
+	}
+	apply := msg.Accept || msg.SaveDefault
+	if apply {
+		theme := msg.Viewer.Theme
+		if theme == "" {
+			theme = target.Theme()
+		}
+		target.SetTheme(theme)
+		wrap := strings.EqualFold(msg.Viewer.WrapMode, appconfig.ViewerModeWrap)
+		target.SetWrapMode(wrap)
+		if a.cfg == nil {
+			a.cfg = appconfig.Default()
+		}
+		a.cfg.Viewer.Theme = theme
+		if wrap {
+			a.cfg.Viewer.Mode = appconfig.ViewerModeWrap
+		} else {
+			a.cfg.Viewer.Mode = appconfig.ViewerModeScroll
+		}
+		if msg.SaveDefault {
+			_ = appconfig.Save(a.cfg)
+		}
+	}
+	if msg.Close {
+		a.modalManager.Hide()
+	}
+	a.viewerOptionsTarget = nil
+	return nil
+}
+
+func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {
 	leftPanelWidth, rightPanelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
 	panelWidth := leftPanelWidth
 	panelOffset := 0
-	if panelIdx == 1 {
+	centered := panelIdx < 0
+	if centered {
+		panelWidth = a.width
+		panelOffset = 0
+	} else if panelIdx == 1 {
 		panelWidth = rightPanelWidth
 		panelOffset = leftPanelWidth
 	}
@@ -2224,7 +2319,10 @@ func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, pa
 		innerH = max(1, winH-2)
 	}
 
-	bg, _ := a.renderMainView()
+	bg := background
+	if bg == "" {
+		bg, _ = a.renderMainView()
+	}
 	modal.SetWindowed(winW, winH, bg)
 	if setter, ok := interface{}(content).(interface{ SetDimensions(int, int) }); ok {
 		setter.SetDimensions(max(1, winW-2), max(1, winH-2))
@@ -2242,6 +2340,13 @@ func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, pa
 	maxOffsetY := max(0, (a.height-1)-winH)
 	if offsetY > maxOffsetY {
 		offsetY = maxOffsetY
+	}
+	if centered {
+		offsetX = max(0, (a.width-winW)/2)
+		offsetY = headerOffset + max(0, (panelHeight-winH)/2)
+		if offsetY > maxOffsetY {
+			offsetY = maxOffsetY
+		}
 	}
 	modal.SetWindowOffset(offsetX, offsetY)
 	modal.SetDimensions(a.width, a.height)
@@ -2506,13 +2611,14 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	if _, ok := item.(models.ObjectItem); ok {
 		onEdit = func() tea.Cmd { return a.editSelectionForPanel(panel) }
 	}
-	viewer := NewTextViewer(title, body, lang, mime, filename, theme, onEdit, nil, func() tea.Cmd {
+	view := NewTextViewer(title, body, lang, mime, filename, theme, onEdit, nil, func() tea.Cmd {
 		a.modalManager.Hide()
 		return nil
 	})
-	viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
+	view.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
+	view.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(view) })
 	modalTitle := a.modalTitleFromItem(item, title)
-	modal := NewModal(modalTitle, viewer)
+	modal := NewModal(modalTitle, view)
 	modal.SetMode(ModalModeFullscreen)
 	modal.SetDimensions(a.width, a.height)
 	modal.SetCloseOnSingleEsc(false)
@@ -2560,7 +2666,8 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	}
 	title := fmt.Sprintf("logs:%s/%s/%s", spec.Namespace, spec.Pod, spec.Container)
 	logsViewer := NewLogsViewer(title, stream, cancel, a.viewerTheme())
-	logsViewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(logsViewer) })
+	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
+	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
 	logsViewer.SetOnClose(func() tea.Cmd {
 		a.modalManager.Hide()
 		return nil
@@ -2599,63 +2706,6 @@ func (a *App) viewerTheme() string {
 		theme = a.cfg.Viewer.Theme
 	}
 	return theme
-}
-
-// showThemeSelector opens the theme selector modal and wires selection to save
-// config and re-highlight the currently open viewer.
-func (a *App) showThemeSelector(v themeableViewer) tea.Cmd {
-	modal := a.modalManager.modals["theme_selector"]
-	if modal == nil {
-		return nil
-	}
-	// Remember previous theme to restore on cancel
-	a.prevTheme = a.cfg.Viewer.Theme
-	a.suppressThemeRevert = false
-
-	selector := NewThemeSelector(func(name string) tea.Cmd {
-		if name == "" {
-			return nil
-		}
-		if a.cfg == nil {
-			a.cfg = appconfig.Default()
-		}
-		a.cfg.Viewer.Theme = name
-		_ = appconfig.Save(a.cfg)
-		v.SetTheme(name)
-		a.suppressThemeRevert = true
-		a.modalManager.Hide()
-		return nil
-	})
-	selector.SetDimensions(a.width-2, a.height-6)
-	// Preselect current theme if available
-	if a.cfg != nil {
-		selector.SetSelectedByName(a.cfg.Viewer.Theme)
-	}
-	// Live preview on selection change
-	selector.SetOnChange(func(name string) tea.Cmd { v.SetTheme(name); return nil })
-	modal.SetContent(selector)
-	modal.SetDimensions(a.width, a.height)
-	// Configure as centered window overlay so YAML viewer remains visible
-	winW := min(max(40, a.width*2/3), a.width-4)
-	winH := min(max(10, a.height*2/3), a.height-4)
-	bg := ""
-	if active := a.modalManager.GetActiveModal(); active != nil {
-		bgView, _ := active.View()
-		bg = bgView
-	}
-	modal.SetWindowed(winW, winH, bg)
-	// onClose not needed; Esc handling hides the top modal and reveals viewer beneath
-	modal.SetOnClose(func() tea.Cmd {
-		if !a.suppressThemeRevert {
-			if a.prevTheme != "" {
-				v.SetTheme(a.prevTheme)
-			}
-		}
-		a.suppressThemeRevert = false
-		return nil
-	})
-	a.modalManager.Show("theme_selector")
-	return nil
 }
 
 // editSelection triggers kubectl edit for the selected object.
