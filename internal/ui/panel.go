@@ -352,6 +352,16 @@ func (p *Panel) SelectByRowID(ctx context.Context, id string) {
 	p.notifySelectionListeners(ctx, panelcontent.Selection{ID: id, Path: p.currentPath})
 }
 
+// SelectRowIDs marks multiple rows as selected and focuses the first match.
+func (p *Panel) SelectRowIDs(ctx context.Context, ids []string) {
+	if lw := p.listWidget(ctx); lw != nil {
+		lw.SelectRowIDs(ctx, ids)
+	}
+	if len(ids) > 0 {
+		p.notifySelectionListeners(ctx, panelcontent.Selection{ID: ids[0], Path: p.currentPath})
+	}
+}
+
 func (p *Panel) currentSelectionID(ctx context.Context) string {
 	if lw := p.listWidget(ctx); lw != nil {
 		return lw.CurrentSelectionID(ctx)

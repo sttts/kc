@@ -466,6 +466,66 @@ func (w *Widget) SelectByRowID(ctx context.Context, id string) {
 	w.saveCurrentPosition()
 }
 
+// SelectRowIDs marks multiple row IDs as selected, focusing the first match.
+func (w *Widget) SelectRowIDs(ctx context.Context, ids []string) {
+	clean := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		clean = append(clean, id)
+	}
+	if len(clean) == 0 {
+		w.ResetSelection(ctx)
+		return
+	}
+	if !w.useFolder || w.folder == nil {
+		return
+	}
+	w.syncFromFolder(ctx)
+	rowCount := w.folderLen(ctx)
+	rows := w.folderLines(ctx, 0, rowCount)
+	firstIdx := -1
+	firstID := ""
+	matches := make(map[string]struct{}, len(clean))
+	for _, id := range clean {
+		matches[id] = struct{}{}
+	}
+	for idx := range rows {
+		rowID, _, _, ok := rows[idx].Columns()
+		if !ok || rowID == "" {
+			continue
+		}
+		if _, ok := matches[rowID]; ok {
+			if idx < len(w.items) {
+				w.items[idx].Selected = true
+			}
+			if firstIdx == -1 {
+				firstIdx = idx
+				firstID = rowID
+			}
+		} else if idx < len(w.items) {
+			w.items[idx].Selected = false
+		}
+	}
+	if firstIdx == -1 {
+		w.ResetSelection(ctx)
+		return
+	}
+	w.selected = firstIdx
+	w.adjustScroll()
+	if w.bt != nil && firstID != "" {
+		w.bt.Select(ctx, firstID)
+	}
+	w.saveCurrentPosition()
+}
+
 func (w *Widget) ResetSelection(ctx context.Context) {
 	w.selected = 0
 	w.scroll = 0

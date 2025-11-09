@@ -2878,37 +2878,66 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 	if intent == nil || a.leftNav == nil {
 		return nil
 	}
-	resource, name, ok := primaryGetTarget(intent)
-	if !ok {
-		return nil
-	}
-	gvr, namespaced, err := a.resolveResource(resource)
+	order, groups, err := groupGetTargets(intent)
 	if err != nil {
-		a.notifyIntentError("kubectl get %s: %v", resource, err)
+		a.notifyIntentError("kubectl get: %v", err)
 		return nil
 	}
 	ns := strings.TrimSpace(a.startupIntent.Namespace)
 	if ns == "" {
 		ns = a.currentNamespace()
 	}
-	if namespaced && ns == "" {
-		ns = corev1.NamespaceDefault
-	}
-	rowID := resourceRowID(ns, gvr, namespaced)
-	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
-	defer cancel()
-	if _, err := navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: rowID, Enter: true}}); err != nil {
-		a.notifyIntentError("kubectl get %s: %v", resource, err)
+	resolved, warn := a.resolveGetResources(ns, order)
+	if len(resolved) == 0 {
+		if warn != "" {
+			a.notifyIntentError("kubectl get: %s", warn)
+		}
 		return nil
 	}
-	a.syncPanelWithNavigator(0)
-	a.activePanel = 0
-	if name != "" {
-		ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-		a.leftPanel.SelectByRowID(ctxSel, name)
-		cancelSel()
+	if warn != "" {
+		a.notifyIntentError("kubectl get: %s", warn)
 	}
-	return nil
+	var cmds []tea.Cmd
+	if len(order) == 1 {
+		res := resolved[order[0]]
+		group := groups[order[0]]
+		if err := a.goToResourceFolder(res); err != nil {
+			a.notifyIntentError("kubectl get %s: %v", res.name, err)
+			return nil
+		}
+		a.activePanel = 0
+		names := group.Names
+		switch len(names) {
+		case 0:
+			// already at resource list
+		case 1:
+			if cmd := a.selectSingleObject(res, ns, names[0], intent.OutputFormat); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		default:
+			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+			a.leftPanel.SelectRowIDs(ctxSel, names)
+			cancelSel()
+			if strings.EqualFold(intent.OutputFormat, "yaml") {
+				if cmd := a.ensureManifestPreview(res, ns, names[0]); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
+			}
+		}
+	} else {
+		idList := make([]string, 0, len(order))
+		for _, resName := range order {
+			if res, ok := resolved[resName]; ok {
+				idList = append(idList, res.rowID)
+			}
+		}
+		if len(idList) > 0 {
+			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+			a.leftPanel.SelectRowIDs(ctxSel, idList)
+			cancelSel()
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 func (a *App) currentNamespace() string {
@@ -2944,39 +2973,105 @@ func resourceRowID(namespace string, gvr schema.GroupVersionResource, namespaced
 	return fmt.Sprintf("%s/%s/%s", gvr.Group, gvr.Version, gvr.Resource)
 }
 
-func primaryGetTarget(intent *GetIntent) (resource string, name string, ok bool) {
-	if intent == nil {
-		return "", "", false
-	}
-	for idx, tok := range intent.Tokens {
-		if resource == "" {
-			switch {
-			case tok.Resource != "":
-				resource = tok.Resource
-				if tok.Name != "" {
-					name = tok.Name
-					return resource, name, true
-				}
-			case tok.ExplicitResource || idx == 0:
-				resource = tok.Value
-				if tok.Name != "" {
-					name = tok.Name
-					return resource, name, true
-				}
-			default:
-				continue
+type resolvedResource struct {
+	name       string
+	gvr        schema.GroupVersionResource
+	namespaced bool
+	rowID      string
+}
+
+func (a *App) resolveGetResources(namespace string, order []string) (map[string]resolvedResource, string) {
+	resolved := make(map[string]resolvedResource, len(order))
+	var warn string
+	for _, res := range order {
+		gvr, namespaced, err := a.resolveResource(res)
+		if err != nil {
+			if warn == "" {
+				warn = fmt.Sprintf("%s: %v", res, err)
 			}
 			continue
 		}
-		if name == "" && !tok.ExplicitResource && tok.Name == "" {
-			name = tok.Value
-			break
+		if !namespaced {
+			if warn == "" {
+				warn = fmt.Sprintf("%s: cluster-scoped resources not yet supported", res)
+			}
+			continue
+		}
+		ns := namespace
+		if namespaced && ns == "" {
+			ns = corev1.NamespaceDefault
+		}
+		resolved[res] = resolvedResource{
+			name:       res,
+			gvr:        gvr,
+			namespaced: namespaced,
+			rowID:      resourceRowID(ns, gvr, namespaced),
 		}
 	}
-	if resource == "" {
-		return "", "", false
+	return resolved, warn
+}
+
+func (a *App) goToResourceFolder(res resolvedResource) error {
+	if a.leftNav == nil {
+		return fmt.Errorf("navigation not ready")
 	}
-	return resource, name, true
+	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+	defer cancel()
+	if _, err := navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: res.rowID, Enter: true}}); err != nil {
+		return err
+	}
+	a.syncPanelWithNavigator(0)
+	return nil
+}
+
+func (a *App) selectSingleObject(res resolvedResource, namespace, name, outputFormat string) tea.Cmd {
+	if name == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+	defer cancel()
+	entered := false
+	if _, err := navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: name, Enter: true}}); err == nil {
+		entered = true
+	} else {
+		_, _ = navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: name, Enter: false}})
+	}
+	a.syncPanelWithNavigator(0)
+	if !entered {
+		ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+		a.leftPanel.SelectByRowID(ctxSel, name)
+		cancelSel()
+	}
+	if strings.EqualFold(outputFormat, "yaml") {
+		return a.ensureManifestPreview(res, namespace, name)
+	}
+	return nil
+}
+
+func (a *App) ensureManifestPreview(res resolvedResource, namespace, name string) tea.Cmd {
+	if a.rightNav == nil || name == "" {
+		return nil
+	}
+	ns := namespace
+	if res.namespaced && ns == "" {
+		ns = corev1.NamespaceDefault
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+	defer cancel()
+	steps := []navui.GoToStep{{SelectionID: resourceRowID(ns, res.gvr, res.namespaced), Enter: true}, {SelectionID: name, Enter: false}}
+	if _, err := navui.GoTo(ctx, a.rightNav, steps); err != nil {
+		a.notifyIntentError("manifest %s/%s: %v", res.name, name, err)
+		return nil
+	}
+	a.syncPanelWithNavigator(1)
+	ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.rightPanel.SelectByRowID(ctxSel, name)
+	cancelSel()
+	ctxMode, cancelMode := context.WithTimeout(a.ctx, panelContextTimeout)
+	cmd := a.rightPanel.SetMode(ctxMode, PanelModeManifest)
+	cancelMode()
+	a.activePanel = 1
+	return cmd
 }
 
 func (a *App) notifyIntentError(format string, args ...interface{}) {
