@@ -1,12 +1,12 @@
 # kc Development Plan
 
 ### Immediate plan — Kubectl-compatible CLI intents (docs/designs/cli-intents.md)
-1. Extend `cmd/kc` CLI parsing: add `get`/`logs` subcommands, accept multi-resource/name syntaxes (`TYPE`, `TYPE NAME`, `TYPE/NAME`, comma-separated lists), and capture supported flags (`-n/--namespace`, `-o yaml`, `-c`, `--follow`).
-2. Add `StartupIntent` to `ui.RunConfig`, store it on `App`, and invoke `applyStartupIntent` once navigation is initialized.
-3. Implement `applyStartupIntent` helpers: resolve resources via RESTMapper, compute shared navigation paths, execute `navigation.GoTo`, and multi-select panels per intent (resource groups, object lists, mixed `TYPE/NAME` requests).
-4. Wire `get -o yaml` to switch the right panel into manifest mode while leaving the left panel on the requested list/object, selecting multiple objects when provided.
-5. Implement `logs` intent flow: container resolution heuristics, GoTo down to the logs row, enqueue `openViewerForPanel`, and propagate follow/container flags.
-6. Surface partial failures via toasts, ensure navigators stay consistent, and add tests (CLI parsing, envtest navigation/logs flows) plus README updates describing supported kubectl syntax.
+1. ✅ Extend `cmd/kc` CLI parsing: add `get`/`logs` subcommands, accept multi-resource/name syntaxes (`TYPE`, `TYPE NAME`, `TYPE/NAME`, comma-separated lists), and capture supported flags (`-n/--namespace`, `-o yaml`, `-c`, `--follow`).
+2. ✅ Add `StartupIntent` to `ui.RunConfig`, store it on `App`, and invoke `applyStartupIntent` once navigation is initialized.
+3. ✅ Implement `applyStartupIntent` helpers: resolve resources via RESTMapper, compute shared navigation paths, execute `navigation.GoTo`, and multi-select panels per intent (resource groups, object lists, mixed `TYPE/NAME` requests).
+4. ✅ Wire `get -o yaml` to switch the right panel into manifest mode while leaving the left panel on the requested list/object, selecting multiple objects when provided.
+5. ✅ Implement `logs` intent flow: container resolution heuristics, GoTo down to the logs row, enqueue `openViewerForPanel`, and propagate follow/container flags.
+6. ☐ Finish polish: document supported kubectl syntax in README/designs, and add envtest-style navigation/logs tests exercising multi-target selection and manifest preview.
 
 ## Milestone 1 — Hierarchy Model (Informer-Based)
 - Path schema and router: `/cluster`, `/cluster/<res>`, `/cluster/namespaces/<ns>/<res>`, `/contexts/<ctx>/...`, `/kubeconfigs`, optional `/groups/<group>/<version>/...`.
