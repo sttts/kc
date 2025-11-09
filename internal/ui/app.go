@@ -29,6 +29,7 @@ import (
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -2868,6 +2869,8 @@ func (a *App) applyStartupIntent() tea.Cmd {
 	switch a.startupIntent.Verb {
 	case KubectlVerbGet:
 		return a.applyStartupIntentGet()
+	case KubectlVerbLogs:
+		return a.applyStartupIntentLogs()
 	default:
 		return nil
 	}
@@ -2938,6 +2941,56 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 		}
 	}
 	return tea.Batch(cmds...)
+}
+
+func (a *App) applyStartupIntentLogs() tea.Cmd {
+	intent := a.startupIntent.Logs
+	if intent == nil || a.leftNav == nil {
+		return nil
+	}
+	ns := strings.TrimSpace(a.startupIntent.Namespace)
+	if ns == "" {
+		ns = a.currentNamespace()
+	}
+	if ns == "" {
+		ns = corev1.NamespaceDefault
+	}
+	order := []string{"pods"}
+	resolved, warn := a.resolveGetResources(ns, order)
+	if warn != "" {
+		a.notifyIntentError("kubectl logs: %s", warn)
+	}
+	res, ok := resolved["pods"]
+	if !ok {
+		return nil
+	}
+	if err := a.goToResourceFolder(res); err != nil {
+		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
+		return nil
+	}
+	target, err := a.resolveLogsContainer(ns, intent)
+	if err != nil {
+		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
+	defer cancel()
+	steps := []navui.GoToStep{
+		{SelectionID: intent.Pod, Enter: true},
+		{SelectionID: target.SectionID, Enter: true},
+		{SelectionID: target.Container, Enter: true},
+		{SelectionID: "latest", Enter: false},
+	}
+	if _, err := navui.GoTo(ctx, a.leftNav, steps); err != nil {
+		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
+		return nil
+	}
+	a.syncPanelWithNavigator(0)
+	ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.leftPanel.SelectByRowID(ctxSel, "latest")
+	cancelSel()
+	a.activePanel = 0
+	return a.openLogsViewerForIntent(intent)
 }
 
 func (a *App) currentNamespace() string {
@@ -3079,6 +3132,105 @@ func (a *App) notifyIntentError(format string, args ...interface{}) {
 	if a.toastLogger != nil {
 		a.enqueueCmd(a.toastLogger.Errorf("%s", msg))
 	}
+}
+
+type logsContainerTarget struct {
+	Container string
+	SectionID string
+}
+
+const (
+	logSectionContainers = "containers"
+	logSectionInit       = "init"
+	logSectionEphemeral  = "ephemeral"
+)
+
+func (a *App) resolveLogsContainer(namespace string, intent *LogsIntent) (logsContainerTarget, error) {
+	var zero logsContainerTarget
+	if a.cl == nil {
+		return zero, fmt.Errorf("cluster not ready")
+	}
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	obj, err := a.cl.GetByGVR(a.ctx, gvr, namespace, intent.Pod)
+	if err != nil {
+		return zero, err
+	}
+	var pod corev1.Pod
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &pod); err != nil {
+		return zero, err
+	}
+	return choosePodContainer(&pod, intent.Container)
+}
+
+func choosePodContainer(pod *corev1.Pod, requested string) (logsContainerTarget, error) {
+	var zero logsContainerTarget
+	req := strings.TrimSpace(requested)
+	if req != "" {
+		if containsContainer(pod.Spec.Containers, req) {
+			return logsContainerTarget{Container: req, SectionID: logSectionContainers}, nil
+		}
+		if containsContainer(pod.Spec.InitContainers, req) {
+			return logsContainerTarget{Container: req, SectionID: logSectionInit}, nil
+		}
+		if containsEphemeral(pod.Spec.EphemeralContainers, req) {
+			return logsContainerTarget{Container: req, SectionID: logSectionEphemeral}, nil
+		}
+		return zero, fmt.Errorf("container %q not found in pod %s", req, pod.Name)
+	}
+	if len(pod.Spec.Containers) == 1 {
+		return logsContainerTarget{Container: pod.Spec.Containers[0].Name, SectionID: logSectionContainers}, nil
+	}
+	if len(pod.Spec.Containers) == 0 && len(pod.Spec.InitContainers) == 1 {
+		return logsContainerTarget{Container: pod.Spec.InitContainers[0].Name, SectionID: logSectionInit}, nil
+	}
+	if len(pod.Spec.Containers) == 0 && len(pod.Spec.EphemeralContainers) == 1 {
+		return logsContainerTarget{Container: pod.Spec.EphemeralContainers[0].Name, SectionID: logSectionEphemeral}, nil
+	}
+	if len(pod.Spec.Containers) == 0 && len(pod.Spec.InitContainers) == 0 && len(pod.Spec.EphemeralContainers) == 0 {
+		return zero, fmt.Errorf("pod %s has no containers", pod.Name)
+	}
+	names := make([]string, 0, len(pod.Spec.Containers))
+	for _, c := range pod.Spec.Containers {
+		names = append(names, c.Name)
+	}
+	return zero, fmt.Errorf("pod %s has multiple containers (%s); specify -c", pod.Name, strings.Join(names, ", "))
+}
+
+func containsContainer(list []corev1.Container, name string) bool {
+	for _, c := range list {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEphemeral(list []corev1.EphemeralContainer, name string) bool {
+	for _, c := range list {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) openLogsViewerForIntent(intent *LogsIntent) tea.Cmd {
+	if intent == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	item, ok := a.leftPanel.SelectedNavItem(ctx)
+	if !ok || item == nil {
+		return nil
+	}
+	logsProvider, ok := item.(models.LogsProvider)
+	if !ok {
+		return nil
+	}
+	spec := logsProvider.LogsSpec()
+	spec.Follow = intent.Follow
+	return a.openLogsViewer(item, spec)
 }
 
 func (a *App) logCommandToTerminal(command string) {

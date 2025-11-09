@@ -39,7 +39,7 @@ type getCommand struct {
 type logsCommand struct {
 	Namespace string `help:"Namespace override" short:"n"`
 	Container string `help:"Container name" short:"c"`
-	Follow    bool   `help:"Stream logs (follow)"`
+	Follow    bool   `help:"Stream logs (follow)" short:"f"`
 	Pod       string `arg:"" help:"Pod name"`
 }
 
