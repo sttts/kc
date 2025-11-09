@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 
@@ -87,7 +86,20 @@ func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if v.reader != nil {
 			return v, v.readNextChunk()
 		}
-	case tea.KeyMsg, tea.MouseWheelMsg:
+	case tea.KeyMsg:
+		switch m.String() {
+		case "end":
+			if !v.autoFollow {
+				v.autoFollow = true
+				v.inner.ScrollToEnd()
+				return v, nil
+			}
+		}
+		if cmd, handled := v.inner.Update(m); handled {
+			v.autoFollow = v.inner.AtEnd()
+			return v, cmd
+		}
+	case tea.MouseWheelMsg:
 		if cmd, handled := v.inner.Update(m); handled {
 			v.autoFollow = v.inner.AtEnd()
 			return v, cmd
@@ -116,10 +128,11 @@ func (v *LogsViewer) FooterHints() []FooterHint {
 		}
 	}
 	return []FooterHint{
-		{Key: "F2", Label: "Next", Enabled: v.inner.HasSearchMatches()},
-		{Key: "F6", Label: "Theme", Enabled: v.onTheme != nil},
+		{Key: "F2", Label: "Options", Enabled: v.onTheme != nil},
+		{Key: "F3", Label: "Next", Enabled: v.inner.HasSearchMatches()},
 		{Key: "F7", Label: "Search", Enabled: true},
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
+		{Key: "End", Label: "Follow", Enabled: !v.autoFollow},
 	}
 }
 
@@ -128,18 +141,7 @@ func (v *LogsViewer) FooterStatus(width int) string {
 		return ""
 	}
 	base := v.inner.FooterStatusText(width)
-	state := "FOLLOW"
-	if !v.autoFollow {
-		state = "PAUSED"
-	}
-	status := appendFooterStatus(base, state, width)
-	switch {
-	case v.err != nil:
-		status = appendFooterStatus(status, fmt.Sprintf("ERR: %v", v.err), width)
-	case v.done:
-		status = appendFooterStatus(status, "END", width)
-	}
-	return status
+	return lipgloss.NewStyle().Width(width).Render(base)
 }
 
 func (v *LogsViewer) FooterCursor(width int) *tea.Cursor {
@@ -211,46 +213,6 @@ func (v *LogsViewer) readNextChunk() tea.Cmd {
 		}
 		return logStreamMsg{}
 	}
-}
-
-func appendFooterStatus(base, extra string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	if extra == "" {
-		return trimStatusToWidth(base, width)
-	}
-	if base == "" {
-		return trimStatusToWidth(extra, width)
-	}
-	combined := fmt.Sprintf("%s • %s", base, extra)
-	return trimStatusToWidth(combined, width)
-}
-
-func trimStatusToWidth(text string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	display := lipgloss.Width(text)
-	if display <= width {
-		return text
-	}
-	if width <= 1 {
-		return "…"
-	}
-	limit := width - 1
-	var b strings.Builder
-	current := 0
-	for _, r := range text {
-		seg := string(r)
-		rw := lipgloss.Width(seg)
-		if current+rw > limit {
-			break
-		}
-		b.WriteRune(r)
-		current += rw
-	}
-	return b.String() + "…"
 }
 
 func (v *LogsViewer) refreshCallbacks() {

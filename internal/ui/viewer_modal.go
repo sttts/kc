@@ -64,9 +64,9 @@ func (v *TextViewer) FooterHints() []FooterHint {
 		}
 	}
 	return []FooterHint{
-		{Key: "F2", Label: "Next", Enabled: v.inner.HasSearchMatches()},
+		{Key: "F2", Label: "Options", Enabled: v.onTheme != nil},
+		{Key: "F3", Label: "Next", Enabled: v.inner.HasSearchMatches()},
 		{Key: "F4", Label: "Edit", Enabled: v.onEdit != nil},
-		{Key: "F6", Label: "Theme", Enabled: v.onTheme != nil},
 		{Key: "F7", Label: "Search", Enabled: true},
 		{Key: "F10", Label: "Close", Enabled: v.onClose != nil},
 	}

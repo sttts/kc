@@ -432,12 +432,6 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 		}
 		return nil, true
 	case "f2":
-		if strings.TrimSpace(w.searchQuery) != "" {
-			if w.advanceMatch() {
-				return nil, true
-			}
-			return nil, false
-		}
 		if w.onTheme != nil {
 			return w.onTheme(), true
 		}
@@ -455,11 +449,6 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 		if w.previousMatch() {
 			return nil, true
 		}
-	case "f6":
-		if w.onTheme != nil {
-			return w.onTheme(), true
-		}
-		return nil, false
 	case "f4":
 		if w.onEdit != nil {
 			return w.onEdit(), true
