@@ -1466,8 +1466,8 @@ func (a *App) View() (string, *tea.Cursor) {
 
 	// Overlay modal if visible
 	if a.modalManager.IsModalVisible() {
-		// Render modal as an overlay covering the UI for clarity
-		return a.modalManager.View(), nil
+		modalView, modalCursor := a.modalManager.ViewWithCursor()
+		return modalView, modalCursor
 	}
 
 	return mainView, mainCursor

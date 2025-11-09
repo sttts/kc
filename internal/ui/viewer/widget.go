@@ -65,14 +65,15 @@ func New(theme string) *Widget {
 		theme = "dracula"
 	}
 	ti := textinput.New()
-	ti.Prompt = "/"
+	ti.Prompt = ""
 	styles := textinput.DefaultLightStyles()
 	styles.Focused.Text = searchInputStyle
 	styles.Focused.Prompt = searchInputStyle
 	styles.Focused.Placeholder = searchInputStyle.Copy().Foreground(lipgloss.Color("#808080"))
 	styles.Blurred = styles.Focused
-	styles.Cursor.Color = lipgloss.Color("#000000")
+	styles.Cursor.Color = lipgloss.Color("#ff8c00")
 	ti.Styles = styles
+	ti.VirtualCursor = false
 	ti.Blur()
 	return &Widget{
 		theme:            theme,
@@ -214,7 +215,7 @@ func (w *Widget) FooterStatusText(width int) string {
 	if w.searchMode {
 		w.searchField.SetWidth(width)
 		view := w.searchField.View()
-		return searchInputStyle.Copy().Width(width).Render(view)
+		return lipgloss.NewStyle().Width(width).Render(view)
 	}
 	summary := w.searchSummary()
 	if summary == "" {
@@ -222,6 +223,23 @@ func (w *Widget) FooterStatusText(width int) string {
 	}
 	trimmed := trimToWidth(summary, width)
 	return searchInputStyle.Copy().Width(width).Render(trimmed)
+}
+
+// FooterCursor returns a real cursor relative to the footer status line.
+func (w *Widget) FooterCursor(width int) *tea.Cursor {
+	if !w.searchMode {
+		return nil
+	}
+	w.searchField.SetWidth(width)
+	cur := w.searchField.Cursor()
+	if cur == nil {
+		return nil
+	}
+	clone := tea.NewCursor(cur.X, cur.Y)
+	clone.Blink = cur.Blink
+	clone.Color = cur.Color
+	clone.Shape = cur.Shape
+	return clone
 }
 
 func (w *Widget) searchSummary() string {

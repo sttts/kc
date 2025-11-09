@@ -105,3 +105,7 @@ func (v *TextViewer) SetThemeAndContent(theme, text string, meta viewer.Metadata
 func (v *TextViewer) FooterStatus(width int) string {
 	return v.inner.FooterStatusText(width)
 }
+
+func (v *TextViewer) FooterCursor(width int) *tea.Cursor {
+	return v.inner.FooterCursor(width)
+}

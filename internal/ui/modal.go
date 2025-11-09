@@ -33,6 +33,7 @@ type Modal struct {
 	contentOffsetX int
 	contentOffsetY int
 	footerHotspots []footerHotspot
+	footerCursor   *tea.Cursor
 	mode           ModalMode
 }
 
@@ -61,6 +62,11 @@ type ModalFooterHints interface {
 // ModalFooterStatus allows content to append a free-form status string to the footer.
 type ModalFooterStatus interface {
 	FooterStatus(width int) string
+}
+
+// ModalFooterCursor allows content to expose a real cursor within the footer status area.
+type ModalFooterCursor interface {
+	FooterCursor(width int) *tea.Cursor
 }
 
 // FooterHint describes a function key footer entry.
@@ -240,10 +246,17 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the modal
 func (m *Modal) View() string {
+	view, _ := m.ViewWithCursor()
+	return view
+}
+
+// ViewWithCursor renders the modal and returns the view plus an optional cursor.
+func (m *Modal) ViewWithCursor() (string, *tea.Cursor) {
 	if !m.visible {
-		return ""
+		return "", nil
 	}
 	m.footerHotspots = m.footerHotspots[:0]
+	m.footerCursor = nil
 	// Fullscreen modal styled like panel
 	// Reserve 1 line for overlay header and 1 terminal line for the function key bar outside the frame.
 	// The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
@@ -387,10 +400,11 @@ func (m *Modal) View() string {
 		composed = strings.Join(bgLines, "\n")
 		// Return composed screen without forcing a global background color so
 		// the 2-line terminal retains its original styling.
+		cursor := m.footerCursorForView()
 		return lipgloss.NewStyle().
 			Width(m.width).
 			Height(m.height).
-			Render(composed)
+			Render(composed), cursor
 	}
 	var inner string
 	if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
@@ -479,7 +493,8 @@ func (m *Modal) View() string {
 	// Function key bar outside the frame
 	footer := m.buildFooter(true)
 	footerLine := uistyles.FunctionKeyBarStyle.Width(m.width).Render(footer)
-	return lipgloss.JoinVertical(lipgloss.Left, frame, footerLine)
+	cursor := m.footerCursorForView()
+	return lipgloss.JoinVertical(lipgloss.Left, frame, footerLine), cursor
 }
 
 func shiftMouseMsg(msg tea.MouseMsg, dx, dy int) tea.MouseMsg {
@@ -548,6 +563,7 @@ func (m *Modal) keyAtFooterColumn(x int) (string, bool) {
 func (m *Modal) buildFooter(includeEsc bool) string {
 	var builder strings.Builder
 	currentWidth := 0
+	m.footerCursor = nil
 	appendHint := func(key, label string, enabled bool) {
 		if builder.Len() > 0 {
 			builder.WriteString(" ")
@@ -590,6 +606,7 @@ func (m *Modal) buildFooter(includeEsc bool) string {
 			if status := statusProvider.FooterStatus(avail); strings.TrimSpace(status) != "" {
 				segment := status
 				segWidth := lipgloss.Width(segment)
+				start := currentWidth
 				m.footerHotspots = append(m.footerHotspots, footerHotspot{
 					key:     "",
 					start:   currentWidth,
@@ -597,6 +614,16 @@ func (m *Modal) buildFooter(includeEsc bool) string {
 					enabled: false,
 				})
 				builder.WriteString(segment)
+				if cursorProvider, ok := m.content.(ModalFooterCursor); ok {
+					if cur := cursorProvider.FooterCursor(avail); cur != nil {
+						clone := tea.NewCursor(start+cur.X, cur.Y)
+						clone.Blink = cur.Blink
+						clone.Color = cur.Color
+						clone.Shape = cur.Shape
+						m.footerCursor = clone
+					}
+				}
+				currentWidth += segWidth
 			}
 		}
 	}
@@ -670,6 +697,17 @@ func keyMsgForLabel(label string) (tea.KeyMsg, bool) {
 		return nil, false
 	}
 	return nil, false
+}
+
+func (m *Modal) footerCursorForView() *tea.Cursor {
+	if m.footerCursor == nil || m.height <= 0 {
+		return nil
+	}
+	cur := tea.NewCursor(m.footerCursor.X, m.height-1)
+	cur.Blink = m.footerCursor.Blink
+	cur.Color = m.footerCursor.Color
+	cur.Shape = m.footerCursor.Shape
+	return cur
 }
 
 func functionKeyConstant(n int) (rune, bool) {
@@ -821,13 +859,19 @@ func (mm *ModalManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the modal manager
 func (mm *ModalManager) View() string {
+	view, _ := mm.ViewWithCursor()
+	return view
+}
+
+// ViewWithCursor renders the active modal and returns its optional cursor.
+func (mm *ModalManager) ViewWithCursor() (string, *tea.Cursor) {
 	if len(mm.stack) > 0 {
 		name := mm.stack[len(mm.stack)-1]
 		if modal, exists := mm.modals[name]; exists {
-			return modal.View()
+			return modal.ViewWithCursor()
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // sliceANSIByColumns returns a substring by visible columns, ignoring ANSI
