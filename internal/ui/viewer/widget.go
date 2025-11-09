@@ -215,7 +215,7 @@ func (w *Widget) FooterStatusText(width int) string {
 	if w.searchMode {
 		w.searchField.SetWidth(width)
 		view := w.searchField.View()
-		return lipgloss.NewStyle().Width(width).Render(view)
+		return searchInputStyle.Copy().Width(width).Render(view)
 	}
 	summary := w.searchSummary()
 	if summary == "" {
