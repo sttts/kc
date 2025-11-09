@@ -93,10 +93,10 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 		return intent, "", nil
 	}
 
-	switch strings.TrimSpace(cmd) {
-	case "", "kc", "kc root", "root":
+	switch {
+	case commandMatches(cmd, "", "kc", "kc root", "root"):
 		return intent, strings.TrimSpace(cli.Namespace), nil
-	case "kc get":
+	case commandMatches(cmd, "kc get", "get"):
 		if len(cli.Get.Targets) == 0 {
 			return intent, "", errors.New("kc get requires at least one target")
 		}
@@ -109,7 +109,7 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 		intent.Namespace = ns
 		intent.Get = getIntent
 		return intent, ns, nil
-	case "kc logs":
+	case commandMatches(cmd, "kc logs", "logs"):
 		if strings.TrimSpace(cli.Logs.Pod) == "" {
 			return intent, "", errors.New("kc logs requires a pod name")
 		}
@@ -126,6 +126,26 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 	default:
 		return intent, "", fmt.Errorf("unsupported command %q", cmd)
 	}
+}
+
+func commandMatches(cmd string, options ...string) bool {
+	clean := strings.TrimSpace(cmd)
+	for _, opt := range options {
+		opt = strings.TrimSpace(opt)
+		if opt == "" {
+			if clean == "" {
+				return true
+			}
+			continue
+		}
+		if clean == opt || strings.HasPrefix(clean, opt+" ") {
+			return true
+		}
+		if !strings.HasPrefix(opt, "kc ") && (clean == opt || strings.HasPrefix(clean, opt+" ")) {
+			return true
+		}
+	}
+	return false
 }
 
 func selectNamespace(global, override string) string {
