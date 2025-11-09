@@ -29,6 +29,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -146,6 +148,10 @@ type App struct {
 	namespaceAutoTarget   string
 	namespaceAutoAttempts int
 	namespaceOverride     string
+}
+
+type themeableViewer interface {
+	SetTheme(string)
 }
 
 const (
@@ -2468,6 +2474,9 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	if _, isBack := item.(models.Back); isBack {
 		return nil
 	}
+	if logs, ok := item.(models.LogsProvider); ok {
+		return a.openLogsViewer(item, logs.LogsSpec())
+	}
 	viewable, ok := item.(models.Viewable)
 	if !ok {
 		type vc interface {
@@ -2492,10 +2501,7 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	if filename == "" {
 		filename = title
 	}
-	theme := "dracula"
-	if a.cfg != nil && a.cfg.Viewer.Theme != "" {
-		theme = a.cfg.Viewer.Theme
-	}
+	theme := a.viewerTheme()
 	var onEdit func() tea.Cmd
 	if _, ok := item.(models.ObjectItem); ok {
 		onEdit = func() tea.Cmd { return a.editSelectionForPanel(panel) }
@@ -2505,15 +2511,7 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 		return nil
 	})
 	viewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(viewer) })
-	modalTitle := ""
-	if pa, ok := item.(interface{ Path() []string }); ok {
-		if segs := pa.Path(); len(segs) > 0 {
-			modalTitle = "/" + strings.Join(segs, "/")
-		}
-	}
-	if modalTitle == "" {
-		modalTitle = "/" + title
-	}
+	modalTitle := a.modalTitleFromItem(item, title)
 	modal := NewModal(modalTitle, viewer)
 	modal.SetMode(ModalModeFullscreen)
 	modal.SetDimensions(a.width, a.height)
@@ -2523,9 +2521,89 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	return nil
 }
 
+func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
+	if a.cl == nil {
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Logs unavailable: no active cluster"))
+		}
+		return nil
+	}
+	cfg := rest.CopyConfig(a.cl.GetConfig())
+	clientset, err := kubernetes.NewForConfig(rest.AddUserAgent(cfg, "kc-log-viewer"))
+	if err != nil {
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Logs client: %v", err))
+		}
+		return nil
+	}
+	opts := &corev1.PodLogOptions{
+		Container: spec.Container,
+		Follow:    true,
+	}
+	if spec.Follow {
+		opts.Follow = true
+	}
+	tail := spec.TailLines
+	if tail <= 0 {
+		tail = models.DefaultLogsTailLines
+	}
+	opts.TailLines = &tail
+	ctx, cancel := context.WithCancel(a.ctx)
+	req := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts)
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		cancel()
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Logs stream failed: %v", err))
+		}
+		return nil
+	}
+	title := fmt.Sprintf("logs:%s/%s/%s", spec.Namespace, spec.Pod, spec.Container)
+	logsViewer := NewLogsViewer(title, stream, cancel, a.viewerTheme())
+	logsViewer.SetOnTheme(func() tea.Cmd { return a.showThemeSelector(logsViewer) })
+	logsViewer.SetOnClose(func() tea.Cmd {
+		a.modalManager.Hide()
+		return nil
+	})
+	modalTitle := a.modalTitleFromItem(item, title)
+	modal := NewModal(modalTitle, logsViewer)
+	modal.SetMode(ModalModeFullscreen)
+	modal.SetDimensions(a.width, a.height)
+	modal.SetCloseOnSingleEsc(false)
+	modal.SetOnClose(func() tea.Cmd {
+		logsViewer.Close()
+		return nil
+	})
+	a.modalManager.Register("logs_viewer", modal)
+	a.modalManager.Show("logs_viewer")
+	return logsViewer.Init()
+}
+
+func (a *App) modalTitleFromItem(item models.Item, fallback string) string {
+	if item != nil {
+		if pa, ok := item.(interface{ Path() []string }); ok {
+			if segs := pa.Path(); len(segs) > 0 {
+				return "/" + strings.Join(segs, "/")
+			}
+		}
+	}
+	if fallback != "" {
+		return "/" + fallback
+	}
+	return "/"
+}
+
+func (a *App) viewerTheme() string {
+	theme := "dracula"
+	if a.cfg != nil && a.cfg.Viewer.Theme != "" {
+		theme = a.cfg.Viewer.Theme
+	}
+	return theme
+}
+
 // showThemeSelector opens the theme selector modal and wires selection to save
-// config and re-highlight the currently open YAML viewer.
-func (a *App) showThemeSelector(v *TextViewer) tea.Cmd {
+// config and re-highlight the currently open viewer.
+func (a *App) showThemeSelector(v themeableViewer) tea.Cmd {
 	modal := a.modalManager.modals["theme_selector"]
 	if modal == nil {
 		return nil
@@ -2561,8 +2639,8 @@ func (a *App) showThemeSelector(v *TextViewer) tea.Cmd {
 	winW := min(max(40, a.width*2/3), a.width-4)
 	winH := min(max(10, a.height*2/3), a.height-4)
 	bg := ""
-	if y := a.modalManager.modals["yaml_viewer"]; y != nil {
-		bgView, _ := y.View()
+	if active := a.modalManager.GetActiveModal(); active != nil {
+		bgView, _ := active.View()
 		bg = bgView
 	}
 	modal.SetWindowed(winW, winH, bg)

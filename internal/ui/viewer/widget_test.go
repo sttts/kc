@@ -58,3 +58,24 @@ func TestWidgetFooterCursor(t *testing.T) {
 		t.Fatalf("expected FooterCursor to return a clone")
 	}
 }
+
+func TestWidgetAppendLinesExtendsMatches(t *testing.T) {
+	w := New("")
+	w.SetPlainMode(true)
+	w.SetContent("alpha", Metadata{})
+	w.searchQuery = "beta"
+	w.updateSearchMatches()
+	if w.HasSearchMatches() {
+		t.Fatalf("did not expect initial matches")
+	}
+	w.AppendLines([]string{"beta"})
+	if !w.HasSearchMatches() {
+		t.Fatalf("expected matches after append")
+	}
+	if len(w.searchMatches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(w.searchMatches))
+	}
+	if !w.advanceMatch() {
+		t.Fatalf("expected advanceMatch to succeed on appended data")
+	}
+}

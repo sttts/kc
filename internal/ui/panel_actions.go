@@ -127,6 +127,9 @@ func isViewableItem(item models.Item) bool {
 	if item == nil {
 		return false
 	}
+	if _, ok := item.(models.LogsProvider); ok {
+		return true
+	}
 	if _, ok := item.(models.Viewable); ok {
 		return true
 	}

@@ -47,10 +47,14 @@ func (c *ContainerItem) ViewContent() (string, string, string, string, string, e
 // ContainerLogItem represents a log entry for a container.
 type ContainerLogItem struct {
 	*SimpleItem
+	spec LogsSpec
 }
 
-func NewContainerLogItem(id string, cells []string, path []string, view ViewContentFunc) *ContainerLogItem {
+func NewContainerLogItem(id string, cells []string, path []string, spec LogsSpec) *ContainerLogItem {
 	item := NewSimpleItem(id, cells, path, GreenStyle())
-	item.WithViewContent(view)
-	return &ContainerLogItem{SimpleItem: item}
+	return &ContainerLogItem{SimpleItem: item, spec: spec}
+}
+
+func (c *ContainerLogItem) LogsSpec() LogsSpec {
+	return c.spec
 }

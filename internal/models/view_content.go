@@ -8,8 +8,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"sigs.k8s.io/yaml"
 )
 
@@ -100,27 +98,6 @@ func containerViewContent(deps Deps, namespace, pod, container string) ViewConte
 		}
 		title := fmt.Sprintf("%s/%s", pod, container)
 		return title, string(out), "yaml", "application/yaml", container + ".yaml", nil
-	}
-}
-
-func containerLogsViewContent(deps Deps, namespace, pod, container string, tailLines int64) ViewContentFunc {
-	return func() (string, string, string, string, string, error) {
-		cfg := rest.CopyConfig(deps.Cl.GetConfig())
-		clientset, err := kubernetes.NewForConfig(rest.AddUserAgent(cfg, "kc-log-view"))
-		if err != nil {
-			return "", "", "", "", "", err
-		}
-		opts := &corev1.PodLogOptions{Container: container}
-		if tailLines > 0 {
-			opts.TailLines = &tailLines
-		}
-		req := clientset.CoreV1().Pods(namespace).GetLogs(pod, opts)
-		data, err := req.Do(deps.Ctx).Raw()
-		if err != nil {
-			return "", "", "", "", "", err
-		}
-		title := fmt.Sprintf("logs:%s/%s", pod, container)
-		return title, string(data), "", "text/plain", title + ".log", nil
 	}
 }
 

@@ -3,6 +3,7 @@ package viewer
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	chroma "github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
@@ -43,6 +44,7 @@ type Widget struct {
 	rawLines []string
 	lines    []string
 	theme    string
+	plain    bool
 
 	offset  int
 	hOffset int
@@ -54,9 +56,21 @@ type Widget struct {
 	searchField      textinput.Model
 	searchMode       bool
 	searchQuery      string
-	searchMatches    []int
-	searchMatchIndex map[int]int
+	searchMatches    []matchLocation
+	searchMatchIndex map[int][]int
 	activeMatch      int
+}
+
+type matchLocation struct {
+	line  int
+	start int
+	end   int
+}
+
+type displayMatch struct {
+	start  int
+	end    int
+	active bool
 }
 
 // New constructs a viewer widget with an optional theme name.
@@ -78,7 +92,7 @@ func New(theme string) *Widget {
 	return &Widget{
 		theme:            theme,
 		searchField:      ti,
-		searchMatchIndex: make(map[int]int),
+		searchMatchIndex: make(map[int][]int),
 		activeMatch:      -1,
 	}
 }
@@ -88,10 +102,20 @@ func (w *Widget) SetContent(text string, meta Metadata) {
 	w.raw = text
 	w.metadata = meta
 	w.rawLines = strings.Split(text, "\n")
-	w.highlight()
+	if w.plain {
+		w.lines = append([]string{}, w.rawLines...)
+	} else {
+		w.highlight()
+	}
 	w.offset = 0
 	w.hOffset = 0
 	w.clearSearchState()
+}
+
+// SetPlainMode toggles syntax highlighting; when plain mode is enabled, content
+// updates avoid chroma re-rendering so we can append lines cheaply (logs view).
+func (w *Widget) SetPlainMode(on bool) {
+	w.plain = on
 }
 
 // SetTheme updates the chroma theme name and re-highlights the content.
@@ -101,6 +125,38 @@ func (w *Widget) SetTheme(theme string) {
 	}
 	w.theme = theme
 	w.highlight()
+}
+
+// AppendLines appends raw text lines (used by logs viewer). In highlighted mode
+// this forces a full re-render; in plain mode we simply extend the backing
+// slices so appending remains cheap.
+func (w *Widget) AppendLines(lines []string) {
+	if len(lines) == 0 {
+		return
+	}
+	if len(w.rawLines) == 0 {
+		w.rawLines = make([]string, 0, len(lines))
+	}
+	start := len(w.rawLines)
+	w.rawLines = append(w.rawLines, lines...)
+	appendText := strings.Join(lines, "\n")
+	if w.raw == "" {
+		w.raw = appendText
+	} else {
+		if !strings.HasSuffix(w.raw, "\n") {
+			w.raw += "\n"
+		}
+		w.raw += appendText
+	}
+	if w.plain {
+		if len(w.lines) == 0 {
+			w.lines = make([]string, 0, len(lines))
+		}
+		w.lines = append(w.lines, lines...)
+	} else {
+		w.highlight()
+	}
+	w.extendSearchMatches(start, lines)
 }
 
 // SetCallbacks configures optional edit/theme/close handlers.
@@ -192,6 +248,30 @@ func (w *Widget) Position() (current int, total int) {
 // HasSearchMatches reports whether a committed search has any matches.
 func (w *Widget) HasSearchMatches() bool {
 	return len(w.searchMatches) > 0
+}
+
+// AtEnd reports whether the viewport currently shows the latest lines.
+func (w *Widget) AtEnd() bool {
+	if len(w.lines) <= w.page() {
+		return true
+	}
+	return w.offset+w.page() >= len(w.lines)
+}
+
+// ScrollToEnd jumps the viewport to the most recent lines.
+func (w *Widget) ScrollToEnd() {
+	page := w.page()
+	if page <= 0 {
+		page = 1
+	}
+	if len(w.lines) <= page {
+		w.offset = 0
+		return
+	}
+	w.offset = len(w.lines) - page
+	if w.offset < 0 {
+		w.offset = 0
+	}
 }
 
 // ScrollIndicators reports whether additional content exists above or below.
@@ -351,6 +431,17 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 			return cmd, true
 		}
 		return nil, true
+	case "f2":
+		if strings.TrimSpace(w.searchQuery) != "" {
+			if w.advanceMatch() {
+				return nil, true
+			}
+			return nil, false
+		}
+		if w.onTheme != nil {
+			return w.onTheme(), true
+		}
+		return nil, false
 	case "f3":
 		if w.advanceMatch() {
 			return nil, true
@@ -364,14 +455,14 @@ func (w *Widget) handleKey(key string) (tea.Cmd, bool) {
 		if w.previousMatch() {
 			return nil, true
 		}
+	case "f6":
+		if w.onTheme != nil {
+			return w.onTheme(), true
+		}
+		return nil, false
 	case "f4":
 		if w.onEdit != nil {
 			return w.onEdit(), true
-		}
-		return nil, false
-	case "f2":
-		if w.onTheme != nil {
-			return w.onTheme(), true
 		}
 		return nil, false
 	case "f10":
@@ -438,7 +529,7 @@ func (w *Widget) clearSearchState() {
 	w.searchMatches = nil
 	w.activeMatch = -1
 	if w.searchMatchIndex == nil {
-		w.searchMatchIndex = make(map[int]int)
+		w.searchMatchIndex = make(map[int][]int)
 	}
 	for k := range w.searchMatchIndex {
 		delete(w.searchMatchIndex, k)
@@ -466,17 +557,8 @@ func (w *Widget) alignToEnd() {
 }
 
 func (w *Widget) updateSearchMatches() {
-	if w.searchMatchIndex == nil {
-		w.searchMatchIndex = make(map[int]int)
-	}
-	for k := range w.searchMatchIndex {
-		delete(w.searchMatchIndex, k)
-	}
-	if w.searchMatches != nil {
-		w.searchMatches = w.searchMatches[:0]
-	} else {
-		w.searchMatches = make([]int, 0, 8)
-	}
+	w.searchMatchIndex = make(map[int][]int)
+	w.searchMatches = w.searchMatches[:0]
 	w.activeMatch = -1
 	query := strings.TrimSpace(w.searchQuery)
 	if query == "" {
@@ -484,14 +566,56 @@ func (w *Widget) updateSearchMatches() {
 	}
 	lower := strings.ToLower(query)
 	for idx, line := range w.rawLines {
-		if strings.Contains(strings.ToLower(line), lower) {
-			w.searchMatches = append(w.searchMatches, idx)
-			w.searchMatchIndex[idx] = len(w.searchMatches) - 1
-		}
+		w.appendMatchesForLine(idx, line, lower)
 	}
 	if len(w.searchMatches) > 0 {
 		w.activeMatch = 0
 		w.scrollToMatch(0)
+	}
+}
+
+func (w *Widget) extendSearchMatches(startLine int, lines []string) {
+	query := strings.TrimSpace(w.searchQuery)
+	if query == "" || len(lines) == 0 {
+		return
+	}
+	if w.searchMatchIndex == nil {
+		w.searchMatchIndex = make(map[int][]int)
+	}
+	lower := strings.ToLower(query)
+	for i, line := range lines {
+		w.appendMatchesForLine(startLine+i, line, lower)
+	}
+}
+
+func (w *Widget) appendMatchesForLine(lineIdx int, line string, lowerQuery string) {
+	if lowerQuery == "" {
+		return
+	}
+	lowerLine := strings.ToLower(line)
+	searchLen := len(lowerQuery)
+	offset := 0
+	for {
+		pos := strings.Index(lowerLine[offset:], lowerQuery)
+		if pos == -1 {
+			break
+		}
+		startByte := offset + pos
+		endByte := startByte + searchLen
+		startWidth := lipgloss.Width(line[:startByte])
+		matchWidth := lipgloss.Width(line[startByte:endByte])
+		loc := matchLocation{
+			line:  lineIdx,
+			start: startWidth,
+			end:   startWidth + matchWidth,
+		}
+		w.searchMatches = append(w.searchMatches, loc)
+		idx := len(w.searchMatches) - 1
+		w.searchMatchIndex[lineIdx] = append(w.searchMatchIndex[lineIdx], idx)
+		offset = endByte
+		if offset >= len(lowerLine) {
+			break
+		}
 	}
 }
 
@@ -528,7 +652,7 @@ func (w *Widget) scrollToMatch(matchIdx int) {
 	if matchIdx < 0 || matchIdx >= len(w.searchMatches) {
 		return
 	}
-	line := w.searchMatches[matchIdx]
+	line := w.searchMatches[matchIdx].line
 	page := w.page()
 	target := line - page/2
 	if target < 0 {
@@ -545,22 +669,9 @@ func (w *Widget) scrollToMatch(matchIdx int) {
 	w.hOffset = 0
 }
 
-func (w *Widget) matchState(line int) int {
-	if w.searchMatchIndex == nil {
-		return 0
-	}
-	if idx, ok := w.searchMatchIndex[line]; ok {
-		if idx == w.activeMatch {
-			return 2
-		}
-		return 1
-	}
-	return 0
-}
-
 func (w *Widget) visibleLines() []string {
 	if len(w.lines) == 0 {
-		return []string{""}
+		return []string{applyPanelBackground("", w.width)}
 	}
 	start := w.offset
 	end := min(len(w.lines), start+w.page())
@@ -568,20 +679,42 @@ func (w *Widget) visibleLines() []string {
 	result := make([]string, w.page())
 	for i := range result {
 		if i < len(segment) {
+			lineIdx := start + i
 			line := trimANSI(segment[i], w.hOffset, w.width)
-			switch w.matchState(start + i) {
-			case 2:
-				result[i] = applySearchActiveBackground(line, w.width)
-			case 1:
-				result[i] = applySearchMatchBackground(line, w.width)
-			default:
-				result[i] = applyPanelBackground(line, w.width)
-			}
+			matches := w.lineMatches(lineIdx)
+			result[i] = renderLineWithMatches(line, w.width, matches, w.hOffset)
 		} else {
 			result[i] = applyPanelBackground("", w.width)
 		}
 	}
 	return result
+}
+
+func (w *Widget) lineMatches(lineIdx int) []displayMatch {
+	if w.searchMatchIndex == nil {
+		return nil
+	}
+	indexes, ok := w.searchMatchIndex[lineIdx]
+	if !ok || len(indexes) == 0 {
+		return nil
+	}
+	matches := make([]displayMatch, 0, len(indexes))
+	activeIdx := -1
+	if w.activeMatch >= 0 && w.activeMatch < len(w.searchMatches) {
+		activeIdx = w.activeMatch
+	}
+	for _, idx := range indexes {
+		if idx < 0 || idx >= len(w.searchMatches) {
+			continue
+		}
+		loc := w.searchMatches[idx]
+		matches = append(matches, displayMatch{
+			start:  loc.start,
+			end:    loc.end,
+			active: idx == activeIdx,
+		})
+	}
+	return matches
 }
 
 func (w *Widget) page() int {
@@ -697,25 +830,12 @@ func applyPanelBackground(line string, width int) string {
 	return applyBackground(line, width, "\033[44m")
 }
 
-func applySearchMatchBackground(line string, width int) string {
-	return applyBackground(line, width, "\033[45m")
-}
-
-func applySearchActiveBackground(line string, width int) string {
-	return applyBackground(line, width, "\033[43m")
-}
-
 func applyBackground(line string, width int, bg string) string {
 	const reset = "\033[0m"
 	if width <= 0 {
 		return bg + reset
 	}
-	line = strings.TrimSuffix(line, reset)
-	line = trimBackgroundPrefix(line)
-	displayWidth := lipgloss.Width(line)
-	if displayWidth < width {
-		line += strings.Repeat(" ", width-displayWidth)
-	}
+	line = padLine(strings.TrimSuffix(line, reset), width)
 	line = bg + line + reset
 	return line
 }
@@ -728,4 +848,117 @@ func trimBackgroundPrefix(line string) string {
 		}
 	}
 	return line
+}
+
+func renderLineWithMatches(line string, width int, matches []displayMatch, hOffset int) string {
+	adjusted := adjustMatches(matches, hOffset, width)
+	if len(adjusted) == 0 {
+		return applyPanelBackground(line, width)
+	}
+	return applyHighlightedBackground(line, width, adjusted)
+}
+
+func applyHighlightedBackground(line string, width int, matches []displayMatch) string {
+	const (
+		baseBg    = "\033[44m"
+		matchBg   = "\033[45m"
+		activeBg  = "\033[43m"
+		resetCode = "\033[0m"
+	)
+	line = trimBackgroundPrefix(strings.TrimSuffix(line, resetCode))
+	line = padLine(line, width)
+	var b strings.Builder
+	b.WriteString(baseBg)
+	currentBg := baseBg
+	displayPos := 0
+	matchIdx := 0
+	for i := 0; i < len(line); {
+		if seq := ansiSequenceLength(line[i:]); seq > 0 {
+			b.WriteString(line[i : i+seq])
+			i += seq
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(line[i:])
+		seg := line[i : i+size]
+		for matchIdx < len(matches) && displayPos >= matches[matchIdx].end {
+			if currentBg != baseBg {
+				b.WriteString(baseBg)
+				currentBg = baseBg
+			}
+			matchIdx++
+		}
+		if matchIdx < len(matches) && displayPos >= matches[matchIdx].start && displayPos < matches[matchIdx].end {
+			desired := matchBg
+			if matches[matchIdx].active {
+				desired = activeBg
+			}
+			if desired != currentBg {
+				b.WriteString(desired)
+				currentBg = desired
+			}
+		} else if currentBg != baseBg {
+			b.WriteString(baseBg)
+			currentBg = baseBg
+		}
+		b.WriteString(seg)
+		displayPos += runeWidth(seg)
+		i += size
+	}
+	if currentBg != baseBg {
+		b.WriteString(baseBg)
+	}
+	b.WriteString(resetCode)
+	return b.String()
+}
+
+func adjustMatches(matches []displayMatch, offset, width int) []displayMatch {
+	if len(matches) == 0 || width <= 0 {
+		return nil
+	}
+	end := offset + width
+	out := make([]displayMatch, 0, len(matches))
+	for _, m := range matches {
+		if m.end <= offset {
+			continue
+		}
+		if m.start >= end {
+			break
+		}
+		adj := m
+		if adj.start < offset {
+			adj.start = offset
+		}
+		if adj.end > end {
+			adj.end = end
+		}
+		adj.start -= offset
+		adj.end -= offset
+		if adj.start < adj.end {
+			out = append(out, adj)
+		}
+	}
+	return out
+}
+
+func padLine(line string, width int) string {
+	line = trimBackgroundPrefix(line)
+	displayWidth := lipgloss.Width(line)
+	if displayWidth < width {
+		line += strings.Repeat(" ", width-displayWidth)
+	}
+	return line
+}
+
+func ansiSequenceLength(s string) int {
+	if len(s) < 2 || s[0] != 0x1b || s[1] != '[' {
+		return 0
+	}
+	j := 2
+	for j < len(s) && s[j] != 'm' {
+		j++
+	}
+	if j < len(s) {
+		return j + 1
+	}
+	return len(s)
 }

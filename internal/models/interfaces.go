@@ -43,6 +43,23 @@ type Viewable interface {
 	ViewContent() (title, body, lang, mime, filename string, err error)
 }
 
+// LogsSpec describes a container log stream.
+type LogsSpec struct {
+	Namespace string
+	Pod       string
+	Container string
+	Follow    bool
+	TailLines int64
+}
+
+// DefaultLogsTailLines controls how many lines to fetch before following.
+const DefaultLogsTailLines int64 = 200
+
+// LogsProvider identifies rows that can open a streaming logs viewer.
+type LogsProvider interface {
+	LogsSpec() LogsSpec
+}
+
 // Countable reports aggregate information for list-style rows (resource groups, context lists).
 type Countable interface {
 	Count() int

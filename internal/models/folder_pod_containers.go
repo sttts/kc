@@ -180,7 +180,14 @@ func NewPodContainerLogsFolder(deps Deps, path []string, namespace, pod, contain
 
 func (f *PodContainerLogsFolder) buildRows(context.Context) ([]table.Row, error) {
 	rows := make([]table.Row, 0, 1)
-	item := NewContainerLogItem("latest", []string{"logs"}, append(append([]string{}, f.Path()...), "latest"), containerLogsViewContent(f.Deps, f.Namespace, f.Pod, f.Container, 200))
+	spec := LogsSpec{
+		Namespace: f.Namespace,
+		Pod:       f.Pod,
+		Container: f.Container,
+		Follow:    true,
+		TailLines: DefaultLogsTailLines,
+	}
+	item := NewContainerLogItem("latest", []string{"logs"}, append(append([]string{}, f.Path()...), "latest"), spec)
 	rows = append(rows, item)
 	return rows, nil
 }
