@@ -109,3 +109,16 @@ func (v *TextViewer) FooterStatus(width int) string {
 func (v *TextViewer) FooterCursor(width int) *tea.Cursor {
 	return v.inner.FooterCursor(width)
 }
+
+func (v *TextViewer) HandleModalEscape(key tea.KeyMsg) (bool, tea.Cmd) {
+	if key.String() != "esc" {
+		return false, nil
+	}
+	if v.inner == nil {
+		return false, nil
+	}
+	if cmd, handled := v.inner.HandleEscape(); handled {
+		return true, cmd
+	}
+	return false, nil
+}

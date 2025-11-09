@@ -41,6 +41,10 @@ type cursorView interface {
 	View() (string, *tea.Cursor)
 }
 
+type modalEscapeHandler interface {
+	HandleModalEscape(tea.KeyMsg) (bool, tea.Cmd)
+}
+
 // ModalMode selects the rendering style for a modal.
 type ModalMode int
 
@@ -164,12 +168,21 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
+	var rerouted tea.Msg
 
 	// Handle modal-specific keys
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
+			if handler, ok := m.content.(modalEscapeHandler); ok {
+				if handled, hcmd := handler.HandleModalEscape(msg); handled {
+					if hcmd != nil {
+						cmds = append(cmds, hcmd)
+					}
+					return m, tea.Batch(cmds...)
+				}
+			}
 			// Double-ESC always closes, regardless of closeOnSingleEsc.
 			if m.escPressed {
 				m.escPressed = false
@@ -194,22 +207,10 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
 		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
 			if m.escPressed {
-				switch msg.String() {
-				case "2":
-					// ESC+2 → Theme (if supported by content)
-					if themable, ok := m.content.(interface{ RequestTheme() tea.Cmd }); ok {
-						m.escPressed = false
-						return m, themable.RequestTheme()
-					}
-				case "0":
-					// ESC+0 → Close (F10)
+				if fk, ok := functionKeyFromDigit(msg.String()); ok {
 					m.escPressed = false
-					m.Hide()
-					if m.onClose != nil {
-						cmd = m.onClose()
-						cmds = append(cmds, cmd)
-					}
-					return m, tea.Batch(cmds...)
+					rerouted = tea.KeyPressMsg(tea.Key{Code: fk})
+					break
 				}
 				// Unhandled number: cancel esc sequence
 				m.escPressed = false
@@ -232,6 +233,9 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Update the content
 	updateMsg := msg
+	if rerouted != nil {
+		updateMsg = rerouted
+	}
 	if mm, ok := msg.(tea.MouseMsg); ok {
 		updateMsg = shiftMouseMsg(mm, m.contentOffsetX, m.contentOffsetY)
 	}
@@ -709,6 +713,33 @@ func keyMsgForLabel(label string) (tea.KeyMsg, bool) {
 		return nil, false
 	}
 	return nil, false
+}
+
+func functionKeyFromDigit(d string) (rune, bool) {
+	switch d {
+	case "1":
+		return tea.KeyF1, true
+	case "2":
+		return tea.KeyF2, true
+	case "3":
+		return tea.KeyF3, true
+	case "4":
+		return tea.KeyF4, true
+	case "5":
+		return tea.KeyF5, true
+	case "6":
+		return tea.KeyF6, true
+	case "7":
+		return tea.KeyF7, true
+	case "8":
+		return tea.KeyF8, true
+	case "9":
+		return tea.KeyF9, true
+	case "0":
+		return tea.KeyF10, true
+	default:
+		return 0, false
+	}
 }
 
 func (m *Modal) footerCursorForView() *tea.Cursor {

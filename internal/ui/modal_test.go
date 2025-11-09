@@ -11,6 +11,10 @@ type mockModel struct {
 	content string
 }
 
+type capturingModel struct {
+	last tea.Msg
+}
+
 func (m *mockModel) Init() tea.Cmd {
 	return nil
 }
@@ -26,6 +30,17 @@ func (m *mockModel) View() string {
 func (m *mockModel) SetDimensions(width, height int) {
 	// Mock implementation
 }
+
+func (m *capturingModel) Init() tea.Cmd { return nil }
+
+func (m *capturingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.last = msg
+	return m, nil
+}
+
+func (m *capturingModel) View() string { return "" }
+
+func (m *capturingModel) SetDimensions(width, height int) {}
 
 func TestNewModal(t *testing.T) {
 	content := &mockModel{content: "test content"}
@@ -191,5 +206,63 @@ func TestModalManagerGetActiveModal(t *testing.T) {
 	activeModal := manager.GetActiveModal()
 	if activeModal != modal {
 		t.Error("Expected active modal to be returned")
+	}
+}
+
+func TestModalEscDigitMapsToFunctionKey(t *testing.T) {
+	content := &capturingModel{}
+	modal := NewModal("Fullscreen", content)
+	modal.SetCloseOnSingleEsc(false)
+	modal.Show()
+
+	if _, cmd := modal.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc})); cmd == nil {
+		// ignore; command schedules timeout
+	}
+	modal.Update(tea.KeyPressMsg(tea.Key{Code: '2', Text: "2"}))
+
+	keyMsg, ok := content.last.(tea.KeyMsg)
+	if !ok {
+		t.Fatalf("expected key message, got %T", content.last)
+	}
+	if got := keyMsg.Key().Code; got != tea.KeyF2 {
+		t.Fatalf("expected F2 key code, got %v", got)
+	}
+}
+
+func TestModalDoubleEscClose(t *testing.T) {
+	content := &capturingModel{}
+	modal := NewModal("Fullscreen", content)
+	modal.SetCloseOnSingleEsc(false)
+	modal.Show()
+
+	modal.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc}))
+	if !modal.IsVisible() {
+		t.Fatalf("modal should remain visible after first ESC when single-close disabled")
+	}
+
+	modal.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc}))
+	if modal.IsVisible() {
+		t.Fatalf("modal should close on second ESC")
+	}
+}
+
+func TestModalEscDelegatedToContent(t *testing.T) {
+	viewer := NewTextViewer("title", "body", "yaml", "application/yaml", "title", "dracula", nil, nil, nil)
+	modal := NewModal("Viewer", viewer)
+	modal.SetMode(ModalModeFullscreen)
+	modal.SetCloseOnSingleEsc(false)
+	modal.Show()
+
+	modal.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyF7}))
+	if !viewer.inner.SearchMode() {
+		t.Fatalf("viewer should enter search mode after F7")
+	}
+
+	modal.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEsc}))
+	if !modal.IsVisible() {
+		t.Fatalf("modal should remain visible when content handles ESC")
+	}
+	if viewer.inner.SearchMode() {
+		t.Fatalf("viewer search mode should be cleared after ESC")
 	}
 }

@@ -207,6 +207,15 @@ func (w *Widget) SearchMode() bool {
 	return w.searchMode
 }
 
+// HandleEscape consumes Escape presses for active inline modes (search).
+func (w *Widget) HandleEscape() (tea.Cmd, bool) {
+	if w.searchMode {
+		w.cancelSearch()
+		return nil, true
+	}
+	return nil, false
+}
+
 // FooterStatusText describes the active search prompt or summary for footer display.
 func (w *Widget) FooterStatusText(width int) string {
 	if width <= 0 {
