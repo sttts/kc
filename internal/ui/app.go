@@ -154,6 +154,7 @@ type App struct {
 	namespaceAutoTarget   string
 	namespaceAutoAttempts int
 	namespaceOverride     string
+	startupIntent         StartupIntent
 }
 
 const (
@@ -2907,7 +2908,8 @@ func (a *App) renameMoveItem() tea.Cmd {
 
 // RunConfig allows callers to customize the UI startup.
 type RunConfig struct {
-	Namespace string
+	Namespace     string
+	StartupIntent StartupIntent
 }
 
 // Run starts the application
@@ -2916,6 +2918,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	log := ctrllog.FromContext(ctx)
 	app := NewApp()
 	app.namespaceOverride = strings.TrimSpace(cfg.Namespace)
+	app.startupIntent = cfg.StartupIntent
 
 	// Initialize data model (best-effort; UI can still run without it)
 	log.Info("initializing data")

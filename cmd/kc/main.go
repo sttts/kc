@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,14 +23,29 @@ var (
 )
 
 type cliFlags struct {
-	Version    bool   `help:"Show version information"`
-	Kubeconfig string `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
-	Namespace  string `help:"Namespace to open on startup" short:"n"`
+	Version    bool        `help:"Show version information"`
+	Kubeconfig string      `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
+	Namespace  string      `help:"Namespace to open on startup" short:"n"`
+	Get        getCommand  `cmd:"" help:"Mirror kubectl get"`
+	Logs       logsCommand `cmd:"" help:"Mirror kubectl logs"`
+}
+
+type getCommand struct {
+	Namespace string   `help:"Namespace override" short:"n"`
+	Output    string   `help:"Output format (supports yaml)" short:"o"`
+	Targets   []string `arg:"" optional:"" name:"target" help:"Resource(s) and optional object names"`
+}
+
+type logsCommand struct {
+	Namespace string `help:"Namespace override" short:"n"`
+	Container string `help:"Container name" short:"c"`
+	Follow    bool   `help:"Stream logs (follow)"`
+	Pod       string `arg:"" help:"Pod name"`
 }
 
 func main() {
 	var cli cliFlags
-	kong.Parse(&cli,
+	ctx := kong.Parse(&cli,
 		kong.Name("kc"),
 		kong.Description("Kubernetes Commander (kc) - A TUI for Kubernetes."),
 		kong.UsageOnError(),
@@ -48,12 +64,74 @@ func main() {
 		return
 	}
 
+	intent, nsOverride, err := deriveStartupIntent(ctx.Command(), &cli)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	ns := strings.TrimSpace(nsOverride)
+	if ns == "" {
+		ns = strings.TrimSpace(cli.Namespace)
+	}
+
 	// Run the application
-	runCfg := ui.RunConfig{Namespace: strings.TrimSpace(cli.Namespace)}
+	runCfg := ui.RunConfig{
+		Namespace:     ns,
+		StartupIntent: intent,
+	}
 	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, error) {
+	var intent ui.StartupIntent
+	if cli == nil {
+		return intent, "", nil
+	}
+
+	switch strings.TrimSpace(cmd) {
+	case "", "kc":
+		return intent, strings.TrimSpace(cli.Namespace), nil
+	case "kc get":
+		if len(cli.Get.Targets) == 0 {
+			return intent, "", errors.New("kc get requires at least one target")
+		}
+		getIntent, err := parseGetIntent(cli.Get.Targets, cli.Get.Output)
+		if err != nil {
+			return intent, "", err
+		}
+		ns := selectNamespace(cli.Namespace, cli.Get.Namespace)
+		intent.Verb = ui.KubectlVerbGet
+		intent.Namespace = ns
+		intent.Get = getIntent
+		return intent, ns, nil
+	case "kc logs":
+		if strings.TrimSpace(cli.Logs.Pod) == "" {
+			return intent, "", errors.New("kc logs requires a pod name")
+		}
+		logsIntent := &ui.LogsIntent{
+			Pod:       strings.TrimSpace(cli.Logs.Pod),
+			Container: strings.TrimSpace(cli.Logs.Container),
+			Follow:    cli.Logs.Follow,
+		}
+		ns := selectNamespace(cli.Namespace, cli.Logs.Namespace)
+		intent.Verb = ui.KubectlVerbLogs
+		intent.Namespace = ns
+		intent.Logs = logsIntent
+		return intent, ns, nil
+	default:
+		return intent, "", fmt.Errorf("unsupported command %q", cmd)
+	}
+}
+
+func selectNamespace(global, override string) string {
+	if ns := strings.TrimSpace(override); ns != "" {
+		return ns
+	}
+	return strings.TrimSpace(global)
 }
 
 // setupControllerRuntimeLogger configures controller-runtime's global logger.
