@@ -31,13 +31,11 @@ type cliFlags struct {
 }
 
 type getCommand struct {
-	Namespace string   `help:"Namespace override" short:"n"`
-	Output    string   `help:"Output format (supports yaml)" short:"o"`
-	Targets   []string `arg:"" optional:"" name:"target" help:"Resource(s) and optional object names"`
+	Output  string   `help:"Output format (supports yaml)" short:"o"`
+	Targets []string `arg:"" optional:"" name:"target" help:"Resource(s) and optional object names"`
 }
 
 type logsCommand struct {
-	Namespace string `help:"Namespace override" short:"n"`
 	Container string `help:"Container name" short:"c"`
 	Follow    bool   `help:"Stream logs (follow)" short:"f"`
 	Pod       string `arg:"" help:"Pod name"`
@@ -103,7 +101,7 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 		if err != nil {
 			return intent, "", err
 		}
-		ns := selectNamespace(cli.Namespace, cli.Get.Namespace)
+		ns := selectNamespace(cli.Namespace, "")
 		intent.Verb = ui.KubectlVerbGet
 		intent.Namespace = ns
 		intent.Get = getIntent
@@ -117,7 +115,7 @@ func deriveStartupIntent(cmd string, cli *cliFlags) (ui.StartupIntent, string, e
 			Container: strings.TrimSpace(cli.Logs.Container),
 			Follow:    cli.Logs.Follow,
 		}
-		ns := selectNamespace(cli.Namespace, cli.Logs.Namespace)
+		ns := selectNamespace(cli.Namespace, "")
 		intent.Verb = ui.KubectlVerbLogs
 		intent.Namespace = ns
 		intent.Logs = logsIntent
