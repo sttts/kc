@@ -209,36 +209,10 @@ func (m *NamespaceCreateModel) View() (string, *tea.Cursor) {
 		Align(lipgloss.Center).
 		Render(renderedInput)
 
-	buttons := []string{
-		m.renderButton("Create"),
-		m.renderButton("Cancel"),
-	}
-	separator := lipgloss.NewStyle().
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Render(" ")
-	buttonRow := lipgloss.JoinHorizontal(lipgloss.Center, buttons[0], separator, buttons[1])
-	buttonRowView := bg.Copy().Align(lipgloss.Center).Render(buttonRow)
-	sepWidth := lipgloss.Width(separator)
-	buttonPad := max(0, (innerWidth-lipgloss.Width(buttonRow))/2)
-	buttonLine := 4 // header (0), blank (1), input (2), blank (3), buttons (4)
-	m.buttons = []buttonRect{
-		{x: buttonPad, y: buttonLine, w: lipgloss.Width(buttons[0]), h: 1},
-		{x: buttonPad + lipgloss.Width(buttons[0]) + sepWidth, y: buttonLine, w: lipgloss.Width(buttons[1]), h: 1},
-	}
-
-	help := bg.Copy().
-		Faint(true).
-		Align(lipgloss.Center).
-		Render("Enter: Create • Esc: Cancel")
-
 	lines := []string{
 		header,
 		bg.Copy().Render(""),
 		inputField,
-		bg.Copy().Render(""),
-		buttonRowView,
-		bg.Copy().Render(""),
-		help,
 	}
 	if m.err != "" {
 		errLine := bg.Copy().

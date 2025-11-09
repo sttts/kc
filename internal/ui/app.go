@@ -2293,14 +2293,18 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
 	winW := min(max(40, a.width/2), a.width-4)
-	winH := min(10, a.height-4)
 	if winW < 30 {
 		winW = 30
 	}
-	if winH < 8 {
-		winH = 8
+	winH := min(6, a.height-4)
+	if winH < 4 {
+		winH = 4
 	}
 	modal.SetWindowed(winW, winH, bg)
+	leftWidth, rightWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	offsetX := max(0, (leftWidth+rightWidth-winW)/2)
+	offsetY := headerOffset + max(0, (panelHeight-winH)/2)
+	modal.SetWindowOffset(offsetX, offsetY)
 	modal.SetOnClose(func() tea.Cmd {
 		a.namespaceInput.Reset()
 		return nil
