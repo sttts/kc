@@ -99,7 +99,6 @@ Notes:
 ```
 RowItem (minimal table-backed row)
 ├─ ObjectItem (adds GVR/Namespace/Name + ViewContent via handler registry)
-│  ├─ NamespaceItem (adds Enter into namespace resource groups)
 │  ├─ PodItem (plain pod object row)
 │  ├─ ConfigMapItem (plain ConfigMap object row)
 │  ├─ SecretItem (plain Secret object row)

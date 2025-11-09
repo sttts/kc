@@ -19,7 +19,6 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
-	table "github.com/sttts/kc/internal/table"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -3109,8 +3108,8 @@ func (a *App) forceNamespaceNavigation(ns string, depsLeft, depsRight models.Dep
 	nsPath := []string{"namespaces", ns}
 	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace").WithValues("namespace", ns)
 
-	leftList := newNamespaceShortcutFolder(depsLeft, ns, gvrNamespaces, nsListPath)
-	rightList := newNamespaceShortcutFolder(depsRight, ns, gvrNamespaces, nsListPath)
+	leftList := models.NewClusterObjectsFolder(depsLeft, gvrNamespaces, nsListPath)
+	rightList := models.NewClusterObjectsFolder(depsRight, gvrNamespaces, nsListPath)
 	leftResources := models.NewNamespacedResourcesFolder(depsLeft, ns, nsPath)
 	rightResources := models.NewNamespacedResourcesFolder(depsRight, ns, nsPath)
 
@@ -3316,39 +3315,6 @@ func (a *App) namespaceReady(ns string) (ready bool, terminal bool, err error) {
 	}
 	return true, true, nil
 }
-
-//
-
-type namespaceShortcutFolder struct {
-	*models.BaseFolder
-	rows []table.Row
-}
-
-func newNamespaceShortcutFolder(deps models.Deps, namespace string, gvr schema.GroupVersionResource, path []string) *namespaceShortcutFolder {
-	listPath := append([]string(nil), path...)
-	base := models.NewBaseFolder(deps, []table.Column{{Title: " Name"}}, listPath)
-	f := &namespaceShortcutFolder{BaseFolder: base}
-	f.rows = []table.Row{newNamespaceShortcutRow(deps, namespace, gvr, listPath)}
-	base.SetPopulate(f.populate)
-	return f
-}
-
-func (f *namespaceShortcutFolder) populate(context.Context) ([]table.Row, error) {
-	return append([]table.Row(nil), f.rows...), nil
-}
-
-func newNamespaceShortcutRow(deps models.Deps, namespace string, gvr schema.GroupVersionResource, parentPath []string) table.Row {
-	basePath := append(append([]string(nil), parentPath...), namespace)
-	cells := []string{"/" + namespace}
-	obj := models.NewObjectRow(namespace, cells, basePath, gvr, "", namespace, models.WhiteStyle())
-	item := models.NewNamespaceItem(obj, func() (models.Folder, error) {
-		nsPath := append(append([]string(nil), parentPath...), namespace)
-		return models.NewNamespacedResourcesFolder(deps, namespace, nsPath), nil
-	})
-	return item
-}
-
-//
 
 // selectCurrentContext prefers $KUBECONFIG current-context, else any current-context, else first discovered.
 func (a *App) selectCurrentContext() *kubeconfig.Context {

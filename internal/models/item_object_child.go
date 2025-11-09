@@ -1,22 +1,5 @@
 package models
 
-// NamespaceItem embeds an ObjectRow and adds Enter support.
-type NamespaceItem struct {
-	*ObjectRow
-	enter func() (Folder, error)
-}
-
-func NewNamespaceItem(obj *ObjectRow, enter func() (Folder, error)) *NamespaceItem {
-	return &NamespaceItem{ObjectRow: obj, enter: enter}
-}
-
-func (n *NamespaceItem) Enter() (Folder, error) {
-	if n.enter == nil {
-		return nil, nil
-	}
-	return n.enter()
-}
-
 // ObjectWithChildItem embeds an object row and adds Enter support for child folders.
 type ObjectWithChildItem struct {
 	*ObjectRow
