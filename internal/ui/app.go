@@ -3083,18 +3083,14 @@ func (a *App) selectSingleObject(res resolvedResource, namespace, name, outputFo
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 	defer cancel()
-	entered := false
-	if _, err := navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: name, Enter: true}}); err == nil {
-		entered = true
-	} else {
-		_, _ = navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: name, Enter: false}})
+	if _, err := navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: name, Enter: false}}); err != nil {
+		a.notifyIntentError("select %s/%s: %v", res.name, name, err)
+		return nil
 	}
 	a.syncPanelWithNavigator(0)
-	if !entered {
-		ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-		a.leftPanel.SelectByRowID(ctxSel, name)
-		cancelSel()
-	}
+	ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+	a.leftPanel.SelectByRowID(ctxSel, name)
+	cancelSel()
 	if strings.EqualFold(outputFormat, "yaml") {
 		return a.ensureManifestPreview(res, namespace, name)
 	}
@@ -3123,7 +3119,6 @@ func (a *App) ensureManifestPreview(res resolvedResource, namespace, name string
 	ctxMode, cancelMode := context.WithTimeout(a.ctx, panelContextTimeout)
 	cmd := a.rightPanel.SetMode(ctxMode, PanelModeManifest)
 	cancelMode()
-	a.activePanel = 1
 	return cmd
 }
 
