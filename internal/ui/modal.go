@@ -37,6 +37,10 @@ type Modal struct {
 	mode           ModalMode
 }
 
+type cursorView interface {
+	View() (string, *tea.Cursor)
+}
+
 // ModalMode selects the rendering style for a modal.
 type ModalMode int
 
@@ -252,6 +256,7 @@ func (m *Modal) View() (string, *tea.Cursor) {
 	}
 	m.footerHotspots = m.footerHotspots[:0]
 	m.footerCursor = nil
+	var contentCur *tea.Cursor
 	// Fullscreen modal styled like panel
 	// Reserve 1 line for overlay header and 1 terminal line for the function key bar outside the frame.
 	// The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
@@ -319,7 +324,10 @@ func (m *Modal) View() (string, *tea.Cursor) {
 		}
 		inner := ""
 		if m.content != nil {
-			if viewable, ok := m.content.(interface{ View() string }); ok {
+			switch viewable := m.content.(type) {
+			case cursorView:
+				inner, contentCur = viewable.View()
+			case interface{ View() string }:
 				inner = viewable.View()
 			}
 		}
@@ -395,7 +403,10 @@ func (m *Modal) View() (string, *tea.Cursor) {
 		composed = strings.Join(bgLines, "\n")
 		// Return composed screen without forcing a global background color so
 		// the 2-line terminal retains its original styling.
-		cursor := m.footerCursorForView()
+		cursor := m.contentCursorForView(contentCur)
+		if cursor == nil {
+			cursor = m.footerCursorForView()
+		}
 		return lipgloss.NewStyle().
 			Width(m.width).
 			Height(m.height).
@@ -406,7 +417,10 @@ func (m *Modal) View() (string, *tea.Cursor) {
 		setter.SetDimensions(contentW, contentH)
 	}
 	if m.content != nil {
-		if viewable, ok := m.content.(interface{ View() string }); ok {
+		switch viewable := m.content.(type) {
+		case cursorView:
+			inner, contentCur = viewable.View()
+		case interface{ View() string }:
 			inner = viewable.View()
 		}
 	}
@@ -488,7 +502,10 @@ func (m *Modal) View() (string, *tea.Cursor) {
 	// Function key bar outside the frame
 	footer := m.buildFooter(true)
 	footerLine := uistyles.FunctionKeyBarStyle.Width(m.width).Render(footer)
-	cursor := m.footerCursorForView()
+	cursor := m.contentCursorForView(contentCur)
+	if cursor == nil {
+		cursor = m.footerCursorForView()
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, frame, footerLine), cursor
 }
 
@@ -703,6 +720,25 @@ func (m *Modal) footerCursorForView() *tea.Cursor {
 	cur.Color = m.footerCursor.Color
 	cur.Shape = m.footerCursor.Shape
 	return cur
+}
+
+func (m *Modal) contentCursorForView(cur *tea.Cursor) *tea.Cursor {
+	if cur == nil || m.height <= 0 {
+		return nil
+	}
+	x := cur.X + m.contentOffsetX
+	y := cur.Y + m.contentOffsetY
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	c := tea.NewCursor(x, y)
+	c.Blink = cur.Blink
+	c.Color = cur.Color
+	c.Shape = cur.Shape
+	return c
 }
 
 func functionKeyConstant(n int) (rune, bool) {

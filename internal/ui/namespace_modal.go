@@ -182,7 +182,7 @@ func (m *NamespaceCreateModel) executeButton(idx int) tea.Cmd {
 	}
 }
 
-func (m *NamespaceCreateModel) View() string {
+func (m *NamespaceCreateModel) View() (string, *tea.Cursor) {
 	innerWidth := max(30, m.width-4)
 	bg := lipgloss.NewStyle().
 		Background(lipgloss.Color(uistyles.ColorModalBg)).
@@ -195,9 +195,19 @@ func (m *NamespaceCreateModel) View() string {
 		Render("Enter new namespace name")
 
 	fieldWidth := max(24, innerWidth-6)
+	renderedInput, cursorPos := m.renderInput(fieldWidth)
+	leftPad := max(0, (innerWidth-lipgloss.Width(renderedInput))/2)
+	cursorX := leftPad + cursorPos
+	if cursorX < 0 {
+		cursorX = 0
+	}
+	if cursorX >= innerWidth {
+		cursorX = innerWidth - 1
+	}
+	cursorY := 2 // header (0), blank (1), input (2)
 	inputField := bg.Copy().
 		Align(lipgloss.Center).
-		Render(m.renderInput(fieldWidth))
+		Render(renderedInput)
 
 	buttons := []string{
 		m.renderButton("Create"),
@@ -209,11 +219,11 @@ func (m *NamespaceCreateModel) View() string {
 	buttonRow := lipgloss.JoinHorizontal(lipgloss.Center, buttons[0], separator, buttons[1])
 	buttonRowView := bg.Copy().Align(lipgloss.Center).Render(buttonRow)
 	sepWidth := lipgloss.Width(separator)
-	leftPad := max(0, (innerWidth-lipgloss.Width(buttonRow))/2)
+	buttonPad := max(0, (innerWidth-lipgloss.Width(buttonRow))/2)
 	buttonLine := 4 // header (0), blank (1), input (2), blank (3), buttons (4)
 	m.buttons = []buttonRect{
-		{x: leftPad, y: buttonLine, w: lipgloss.Width(buttons[0]), h: 1},
-		{x: leftPad + lipgloss.Width(buttons[0]) + sepWidth, y: buttonLine, w: lipgloss.Width(buttons[1]), h: 1},
+		{x: buttonPad, y: buttonLine, w: lipgloss.Width(buttons[0]), h: 1},
+		{x: buttonPad + lipgloss.Width(buttons[0]) + sepWidth, y: buttonLine, w: lipgloss.Width(buttons[1]), h: 1},
 	}
 
 	help := bg.Copy().
@@ -236,7 +246,9 @@ func (m *NamespaceCreateModel) View() string {
 			Render(m.err)
 		lines = append(lines, bg.Copy().Render(""), errLine)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	view := lipgloss.JoinVertical(lipgloss.Left, lines...)
+	cursor := tea.NewCursor(cursorX, cursorY)
+	return view, cursor
 }
 
 func (m *NamespaceCreateModel) renderButton(label string) string {
@@ -248,14 +260,10 @@ func (m *NamespaceCreateModel) renderButton(label string) string {
 		Render(label)
 }
 
-func (m *NamespaceCreateModel) renderInput(fieldWidth int) string {
+func (m *NamespaceCreateModel) renderInput(fieldWidth int) (string, int) {
 	if fieldWidth <= 0 {
 		fieldWidth = 1
 	}
-	cursorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(uistyles.ColorWhite)).
-		Background(lipgloss.Color(uistyles.ColorModalSelBg)).
-		Bold(true)
 	textStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(uistyles.ColorWhite)).
 		Background(lipgloss.Color(uistyles.ColorDarkGrey))
@@ -269,7 +277,18 @@ func (m *NamespaceCreateModel) renderInput(fieldWidth int) string {
 	display := m.runes
 	cursor := m.cursor
 	if len(display) > fieldWidth {
-		display = display[:fieldWidth]
+		start := 0
+		if cursor > fieldWidth {
+			start = cursor - fieldWidth
+			if start > len(display)-fieldWidth {
+				start = len(display) - fieldWidth
+			}
+		}
+		display = display[start : start+fieldWidth]
+		cursor -= start
+		if cursor < 0 {
+			cursor = 0
+		}
 		if cursor > fieldWidth {
 			cursor = fieldWidth
 		}
@@ -283,13 +302,9 @@ func (m *NamespaceCreateModel) renderInput(fieldWidth int) string {
 		} else {
 			ch = " "
 		}
-		if i == cursor {
-			b.WriteString(cursorStyle.Render(ch))
-		} else {
-			b.WriteString(textStyle.Render(ch))
-		}
+		b.WriteString(textStyle.Render(ch))
 	}
-	return b.String()
+	return b.String(), cursor
 }
 
 // FooterHints wires the modal footer hints.
