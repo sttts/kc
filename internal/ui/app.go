@@ -1466,7 +1466,7 @@ func (a *App) View() (string, *tea.Cursor) {
 
 	// Overlay modal if visible
 	if a.modalManager.IsModalVisible() {
-		modalView, modalCursor := a.modalManager.ViewWithCursor()
+		modalView, modalCursor := a.modalManager.View()
 		return modalView, modalCursor
 	}
 
@@ -2558,7 +2558,8 @@ func (a *App) showThemeSelector(v *TextViewer) tea.Cmd {
 	winH := min(max(10, a.height*2/3), a.height-4)
 	bg := ""
 	if y := a.modalManager.modals["yaml_viewer"]; y != nil {
-		bg = y.View()
+		bgView, _ := y.View()
+		bg = bgView
 	}
 	modal.SetWindowed(winW, winH, bg)
 	// onClose not needed; Esc handling hides the top modal and reveals viewer beneath

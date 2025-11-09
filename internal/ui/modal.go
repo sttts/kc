@@ -244,14 +244,9 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// View renders the modal
-func (m *Modal) View() string {
-	view, _ := m.ViewWithCursor()
-	return view
-}
-
-// ViewWithCursor renders the modal and returns the view plus an optional cursor.
-func (m *Modal) ViewWithCursor() (string, *tea.Cursor) {
+// View renders the modal and optionally returns a cursor when the content
+// exposes one (e.g., viewer search input).
+func (m *Modal) View() (string, *tea.Cursor) {
 	if !m.visible {
 		return "", nil
 	}
@@ -857,18 +852,12 @@ func (mm *ModalManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return mm, nil
 }
 
-// View renders the modal manager
-func (mm *ModalManager) View() string {
-	view, _ := mm.ViewWithCursor()
-	return view
-}
-
-// ViewWithCursor renders the active modal and returns its optional cursor.
-func (mm *ModalManager) ViewWithCursor() (string, *tea.Cursor) {
+// View renders the active modal (if any) and returns its view/cursor.
+func (mm *ModalManager) View() (string, *tea.Cursor) {
 	if len(mm.stack) > 0 {
 		name := mm.stack[len(mm.stack)-1]
 		if modal, exists := mm.modals[name]; exists {
-			return modal.ViewWithCursor()
+			return modal.View()
 		}
 	}
 	return "", nil
