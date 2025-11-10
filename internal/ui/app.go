@@ -15,6 +15,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	readmedoc "github.com/sttts/kc"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
@@ -160,6 +161,7 @@ type App struct {
 	startupIntent          StartupIntent
 	startupIntentScheduled bool
 	startupIntentApplied   bool
+	helpViewer             *MarkdownHelpViewer
 }
 
 const (
@@ -1870,6 +1872,32 @@ func (a *App) setupModals() {
 		modeModal.SetCloseOnSingleEsc(true)
 		a.modalManager.Register(panelModeModalKey(idx), modeModal)
 	}
+
+	helpContent := helpMarkdownContent(strings.TrimSpace(readmedoc.README))
+	helpViewer := NewMarkdownHelpViewer(helpContent)
+	helpModal := NewModal("Kubernetes Commander Help", helpViewer)
+	helpModal.SetCloseOnSingleEsc(true)
+	a.modalManager.Register("help", helpModal)
+	a.helpViewer = helpViewer
+}
+
+func helpMarkdownContent(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	lines := strings.Split(raw, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trim := strings.TrimSpace(line)
+		if strings.Contains(line, "docs/screenshot.png") {
+			continue
+		}
+		if strings.HasPrefix(trim, "![") && strings.Contains(trim, "](") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.Join(filtered, "\n")
 }
 
 func (a *App) setupPanelInputs() {
@@ -1902,6 +1930,9 @@ func (a *App) setupPanelInputs() {
 
 func (a *App) panelActionHandlers() PanelActionHandlers {
 	handlers := PanelActionHandlers{
+		PanelActionHelp: func(*Panel) tea.Cmd {
+			return a.showHelp()
+		},
 		PanelActionOptions: func(p *Panel) tea.Cmd {
 			return a.showViewOptionsModalForPanel(p)
 		},
@@ -2560,7 +2591,45 @@ func (a *App) performDelete(target deleteTarget) tea.Cmd {
 
 // Function key action methods
 func (a *App) showHelp() tea.Cmd {
-	// TODO: Implement help dialog
+	if a.helpViewer == nil || a.modalManager == nil {
+		return nil
+	}
+	modal := a.modalManager.modals["help"]
+	if modal == nil {
+		return nil
+	}
+	a.helpViewer.ScrollTop()
+	modal.SetDimensions(a.width, a.height)
+	bg, _ := a.renderMainView()
+	winW := a.width - 8
+	if winW < 40 {
+		winW = max(20, a.width-2)
+	}
+	if winW > a.width {
+		winW = a.width
+	}
+	winH := a.height - 4
+	if winH < 18 {
+		winH = max(10, a.height-2)
+	}
+	if winH > a.height {
+		winH = a.height
+	}
+	if winW <= 0 {
+		winW = max(1, a.width)
+	}
+	if winH <= 0 {
+		winH = max(1, a.height-1)
+	}
+	modal.SetWindowed(winW, winH, bg)
+	offsetX := max(0, (a.width-winW)/2)
+	offsetY := max(0, (a.height-winH)/2)
+	modal.SetWindowOffset(offsetX, offsetY)
+	modal.SetOnClose(func() tea.Cmd {
+		a.helpViewer.ScrollTop()
+		return nil
+	})
+	a.modalManager.Show("help")
 	return nil
 }
 

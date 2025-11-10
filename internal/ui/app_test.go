@@ -98,7 +98,7 @@ func TestTerminalResizeViaWindowSize(t *testing.T) {
 	}
 }
 
-func TestPanelHelpAndMenuActionsDisabled(t *testing.T) {
+func TestPanelHelpAndMenuActions(t *testing.T) {
 	app := NewApp()
 	panel := NewPanel("test")
 	panel.SetActionHandlers(app.panelActionHandlers())
@@ -106,8 +106,8 @@ func TestPanelHelpAndMenuActionsDisabled(t *testing.T) {
 	ctx := t.Context()
 	caps := panel.Capabilities(ctx)
 
-	if caps.HasHelp {
-		t.Fatal("expected HasHelp to be false until help is implemented")
+	if !caps.HasHelp {
+		t.Fatal("expected HasHelp to be true when help is implemented")
 	}
 	if caps.HasContextMenu {
 		t.Fatal("expected HasContextMenu to be false until context menu is implemented")

@@ -11,7 +11,7 @@ const (
 	ColorGrey       = "7"  // prefer lipgloss.White (base white)
 	ColorDarkGrey   = "8"  // bright black (grey)
 	ColorWhite      = "15" // bright white
-	ColorModalBg    = ColorGrey
+	ColorModalBg    = ColorWhite
 	ColorModalFg    = ColorBlack
 	ColorModalSelBg = ColorCyan
 )

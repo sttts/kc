@@ -1,279 +1,90 @@
-# Experimental: Kubernetes Commander (kc)
+# Kubernetes Commander (kc)
 
 ![Kubernetes Commander TUI](docs/screenshot.png)
 
-A TUI (Terminal User Interface) for Kubernetes inspired by Midnight Commander, built with Go and BubbleTea.
+Experimental two-panel Kubernetes TUI inspired by Midnight Commander. Built with Go 1.24, Bubble Tea v2, and controller-runtime informers.
 
-> **Disclaimer:** this repo is heavily vibe coded.
+> **Status:** actively developed; expect breaking changes and rough edges. See `TODO.md` for the live roadmap.
 
-## Features
+## Highlights
 
-### ✅ Completed
-- **Two‑Panel TUI**: BubbleTea/Lipgloss interface with function‑key bar and integrated 2‑line terminal
-- **Kubeconfig Management**: Discover kubeconfigs and contexts; quick context switching
-- **Cluster Client + Cache**: Controller‑runtime clients with shared cache; dedicated Table cache for server‑side Tables
-- **Hierarchical Navigation**: Contexts → namespaces → resource groups → object lists → object details (containers, keys)
-- **Server‑Side Tables**: Object lists render API Table columns, support Normal/Wide columns, Age column, and object ordering
-- **F2 Options**: Context‑aware dialog for Objects vs Resources; per‑panel and persisted settings
-- **F3 View**: View object YAML; view ConfigMap/Secret key values with secret auto‑decoding when textual
-- **Config System**: `~/.kc/config.yaml` with sensible defaults; theme, table mode, object columns/order, mouse, TTL, etc.
-- **Tests**: Unit tests + envtests (where supported) for nav, UI rendering, viewers, and object ordering/age
+- **Kubectl-compatible startup intents:** `kc get ...` and `kc logs ...` parse familiar CLI syntax and launch directly into the matching folders, multi-selecting objects and opening manifest/log viewers when requested (`docs/designs/cli-intents.md`).
+- **Hierarchy-first navigation:** contexts → namespaces → resource groups → object folders → virtual subfolders (pod containers, ConfigMap/Secret keys, etc.). Every row is keyed by full `group/version/resource`.
+- **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
+- **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
+- **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, search (`F7`), and next-match (`F3`). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
+- **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. Runtime changes (theme, table mode, etc.) persist back to disk.
 
-### 🚧 In Progress
-- Resource informers for live updates across all folders
-- F4 Edit, F7 Create, F8 Delete workflows
-- F9 context menus
-- Terminal integration with kubectl commands
+## Getting Started
 
-## Architecture
+### Build and Run
 
-### Core Components
-
-1. **Handler System** (`pkg/handlers/`)
-   - `BaseHandler`: Generic operations for all resources
-   - `PodHandler`: Pod-specific functionality (logs, exec, status)
-   - `Registry`: Maps GVKs to handlers
-   - Extensible for any Kubernetes resource type
-
-2. **Kubeconfig Management** (`pkg/kubeconfig/`)
-   - Discovers all kubeconfigs in `~/.kube`
-   - Manages contexts and clusters
-   - Creates controller-runtime clients
-   - Supports multiple kubeconfig files
-
-3. **TUI Framework** (`internal/ui/`)
-   - `App`: Main application with two-panel layout
-   - `Panel`: File/resource browser with navigation
-   - `Terminal`: Integrated terminal with kubectl support
-   - Function key bindings (F1-F10)
-
-### Key Design Principles
-
-- **Use Existing Kubernetes Concepts**: No unnecessary wrapping of `client.Object`, `schema.GroupVersionKind`, etc.
-- **Generic Base Operations**: All resources get standard operations automatically
-- **Resource-Specific Extensions**: Only add functionality that's unique to specific resource types
-- **Modular and Extensible**: Easy to add new resource types and handlers
-
-## Usage
-
-### Building
 ```bash
-go build -o kc ./cmd/kc
-```
+go build -o kc ./cmd/kc   # build binary
+./kc                      # run built binary
 
-### Running
-```bash
-./kc
-# or without building first
+# or run directly
 go run ./cmd/kc
 ```
 
-### Kubectl-Compatible Shortcuts
+The headless wrapper (`cmd/bubbleheadless`) can drive kc non-interactively: `go run ./cmd/bubbleheadless -- go run ./cmd/kc`.
 
-`kc` understands a subset of `kubectl` command lines so you can jump straight into the TUI from familiar syntax. Supported forms:
+### Kubectl-style shortcuts
 
-- `kc get <resource>` — positions the left panel on the requested resource list.
-- `kc get <resource> <name>` or `kc get <resource>/<name>` — highlights the object in the list (without entering its child folder). Add `-o yaml` to open the right panel’s manifest view for that object.
-- `kc get <resource> <name1> <name2>` or `kc get pods,svc` — multi-selects every requested row so list actions can operate on the full set.
-- `kc logs <pod> [-c <container>] [--follow]` — dives into the pod’s logs entry and opens the streaming logs viewer.
+Kubernetes Commander accepts a subset of kubectl syntax so you can jump straight to the desired view:
 
-All commands honour the global `-n/--namespace` flag (or the current kubeconfig namespace when omitted). See `docs/designs/cli-intents.md` for the full design.
+- `kc get pods` – focuses the Pods list for the current/flagged namespace.
+- `kc get deploy myapp -o yaml` – highlights `myapp`, opens the manifest viewer in the opposite panel.
+- `kc get pods/nginx pods/api svc/frontend` – multi-selects rows across resources.
+- `kc logs payments-0 -c worker --follow` – drills down to the pod → container → logs row and opens the streaming viewer.
 
-### Debug Logging
-- By default, controller-runtime and Kubernetes logs are discarded.
-- Set `DEBUG=1` to enable debug logs written to `~/.kc/debug.log` using a human-friendly zap encoder:
+All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s default.
+
+### Examples
 
 ```bash
-DEBUG=1 ./kc
-# or
-DEBUG=1 go run ./cmd/kc
+go run examples/handler/main.go     # minimal handler wiring
+go run examples/kubeconfig/main.go  # kubeconfig discovery demo
 ```
 
-Notes:
-- Both controller-runtime and klog (k8s.io/klog/v2) are wired to the same logger.
-- When `DEBUG` is not set, both are redirected to a discard logger.
+## Key Bindings
 
+| Key        | Action                                                                          |
+|------------|---------------------------------------------------------------------------------|
+| `F1`       | Help – opens the README.md markdown viewer (windowed modal).                    |
+| `F2`       | Options – context-aware panel options or viewer theme dialog.                   |
+| `F3`       | View – YAML viewer, ConfigMap/Secret key viewer, pod logs viewer, etc.          |
+| `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
+| `F7`       | Create namespace (panels) / Search (viewers/logs).                              |
+| `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
+| `Tab`      | Switch panels.                                                                  |
+| `Ctrl+O`   | Toggle the integrated terminal.                                                 |
+| `Ctrl+C`   | Quit.                                                                           |
 
-### Configuration
-- Path: `~/.kc/config.yaml`
-- Keys are lower‑case; loader tolerates legacy/mixed‑case and normalizes.
+Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). Unimplemented slots (`F5/F6/F9`) are hidden/disabled until their workflows land.
 
-All settings (with defaults):
+## Configuration
 
-```yaml
-viewer:
-  # Chroma theme used by the YAML/text viewer (lower-case).
-  # You can change it at runtime from within the viewer (F9), which will persist this value.
-  theme: dracula
+`~/.kc/config.yaml` stores all user preferences. Key sections:
 
-panel:
-  table:
-    # Table mode for object lists: scroll or fit
-    mode: scroll
-  scrolling:
-    horizontal:
-      # Number of characters moved per left/right pan in horizontal-scrolling modes.
-      # Used by internal table components; keep >= 1. Default: 4.
-      step: 4
+- `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
+- `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
+- `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls.
+- `objects.order`, `objects.columns` – server-side Table ordering and wide/normal column display.
+- `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation and cluster pool TTLs.
+- `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
 
-input:
-  mouse:
-    # Double-click timeout; two clicks within this duration on the same row
-    # trigger Enter (same as pressing Enter). Default: 300ms.
-    doubleClickTimeout: 300ms
+Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
-kubernetes:
-  clusters:
-    # TTL for controller-runtime clusters in the shared pool; idle clusters are
-    # evicted after this time. Duration format (e.g., 2m, 30s). Default: 2m.
-    ttl: 2m
-  discovery:
-    # How frequently discovery/RESTMapper caches are invalidated. Default: 30s.
-    refresh: 30s
+## Development
 
-resources:
-  # Show only resource groups with non-zero counts (true) or all (false).
-  showNonEmptyOnly: true
-  # How often hidden resources are re-checked via API peeks (duration, default 10s).
-  peekInterval: 10s
-  # Ordering of resource groups: alpha | group | favorites
-  order: alpha
-  # Favorites for order=favorites. Plural names, lower-case.
-  favorites: [pods, services, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, configmaps, secrets, ingresses, networkpolicies, persistentvolumeclaims]
- 
-objects:
-  # Object list ordering:
-  # - name | -name | creation | -creation
-  order: name
-  # Columns mode for server-side Tables:
-  # - normal: show priority 0 columns (kubectl default)
-  # - wide: show all server-provided columns (like `kubectl get -o wide`)
-  columns: normal
-```
+Useful commands:
 
-Themes (lower-case)
-- turbo-pascal
-- dracula
-- monokai
-- github-dark
-- nord
-- solarized-dark
-- solarized-light
-- gruvbox-dark
-- friendly
-- borland
-- native
-
-Change theme at runtime: open a viewer (F3), then press F2 to open the theme dialog (or use Esc+2). Moving the cursor previews live; Enter applies and saves; Esc Esc or F10 cancels and restores the previous theme.
-
-
-### Key Bindings
-- `F1`: Help
-- `F2`: Options
-  - In lists: opens context‑aware dialog (Objects View Options or Resources View Options)
-  - In viewer: opens the Theme selector
-- `F3`: View
-  - On objects: YAML viewer
-  - On ConfigMap/Secret keys: value viewer (secrets auto‑decode when textual)
-- `F4`: Edit resource
-- `F5`: Copy
-- `F6`: Rename/Move
-- `F7`: Create namespace
-- `F8`: Delete resource
-- `F9`: Context menu
-- `F10`: Quit
-- `Ctrl+O`: Toggle terminal
-- `Ctrl+W`: Toggle Normal/Wide columns (priority 0 vs all server-side table columns)
-- `Tab`: Switch panels
-- `Ctrl+C`: Quit
-
-## Examples
-
-### Handler Usage
 ```bash
-go run examples/handler/main.go
-```
-
-### Kubeconfig Discovery
-```bash
-go run examples/kubeconfig/main.go
-```
-
-## Testing
-
-Run all tests:
-```bash
+go fmt ./...
 go test ./... -v
+go vet ./...
+go build ./cmd/kc
 ```
 
-With coverage summary:
-```bash
-go test ./... -cover
-```
-
-Run specific component tests:
-```bash
-go test ./pkg/handlers/... -v
-go test ./pkg/kubeconfig/... -v
-go test ./internal/ui/... -v
-```
-
-Notes:
-- Some tests use Kubernetes envtest to spin up a local control plane for integration coverage (navigation, viewers, ordering/Age). These require a non‑sandboxed environment with permission to bind local ports. In restricted sandboxes, run the unit‑only subset as shown above.
-
-### Pre‑commit Hook
-Add a Git pre‑commit hook to run `go build ./...` and tests before each commit.
-
-Setup once per clone:
-```bash
-git config core.hooksPath .githooks
-```
-
-By default, the hook runs the full test suite (`go test -v ./...`). For a faster loop that skips envtests, set:
-```bash
-PRECOMMIT_FAST=1 git commit -m "your message"
-```
-
-## Project Structure
-
-```
-kc/
-├── cmd/kc/                 # Main application entry point
-├── internal/ui/            # TUI components (App, Panel, Terminal)
-├── pkg/handlers/           # Resource handlers and registry
-├── pkg/kubeconfig/         # Kubeconfig management
-├── examples/               # Usage examples
-│   ├── handler/           # Handler system examples
-│   └── kubeconfig/        # Kubeconfig examples
-├── internal/navigation/   # Navigator + folders (contexts, namespaces, objects, containers, keys)
-├── internal/table/        # Grid/table rendering (BigTable, rows, lists)
-└── README.md              # This file
-```
-
-## Next Steps
-
-1. **Resource Informers**: Implement live updates using Kubernetes informers
-2. **Navigation Hierarchy**: Build the context → namespace → resource navigation
-3. **Resource Selection**: Create F2 resource selector with presets
-4. **View/Edit Commands**: Implement F3/F4 functionality
-5. **Create/Delete Operations**: Add F7/F8 operations
-6. **Context Menus**: Build F9 popup menus
-7. **Terminal Integration**: Complete kubectl integration
-8. **Configuration System**: Add `~/.kc/config.yaml` configuration
-9. **Custom Resources**: Support for CRDs
-10. **Documentation**: Complete user documentation
-
-## Contributing
-
-This project follows Go best practices:
-- Non-trivial logic MUST be covered by unit tests
-- Write tests first (TDD approach)
-- Use existing Kubernetes concepts directly
-- Keep components modular and extensible
-- Comprehensive testing for all functionality
-
-See AGENTS.md for detailed contributor guidelines.
-
-## License
-
-[License information to be added]
+Keep Bubble Tea imports on v2 modules (`github.com/charmbracelet/bubbletea/v2`). See `AGENTS.md` for contributor guidelines, logging conventions, and naming rules.

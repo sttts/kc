@@ -46,11 +46,11 @@ Current tasks
 - [x] Unify F-key and `Esc+digit` handling across app and modals (everywhere F-keys work, Esc+digit should too).
 - [x] YAML viewer search: start with `F7`/`Ctrl+F`/`/` (documented as `F7`+`F` in function bar); `F2` to continue to next match; highlight matches.
 - [ ] Pods detail: entering a pod shows container list (containers + initContainers). Under each container, add a `logs` subresource. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + watch). `Esc` closes.
-- [ ] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal; `F4` edits the field in an editor modal. Handle binary secret data gracefully.
+- [ ] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal. Handle binary secret data gracefully.
   - [ ] Wire viewers for `ConfigMapKeysFolder` and `SecretKeysFolder` (value rendering).
   - [ ] Add `LogsView` and wire under `PodContainersFolder`.
   - [ ] Logs: implement a logs viewer (follow mode, search). Wire container “logs” entries to open it.
-- [ ] `F4` Edit: launch `kubectl edit` for the current object; refresh on successful apply.
+- [x] `F1` Help: render `README.md` in a markdown viewer (Glow widget) inside a modal; available from any panel/context.
 - [ ] Function key bar: dynamic and context-aware (grey out unavailable actions per location/object).
 - [ ] Delete modal: Enter should activate the focused button (Yes/No) in addition to Left/Right selection.
 
@@ -115,3 +115,4 @@ Tracking
   - [ ] Add horizontal scrolling in panel object viewers similar to YAML (Left/Right, Ctrl-A/E), no wrapping.
 - [ ] Wire watchers for group-level counts, or document that counts update on next access; consider caching counts with debounce.
 - [ ] Extend GVR→child registry with more defaults as needed (e.g., deployments→replicasets) and provide a public registration hook.
+- [ ] ConfigMap/Secret key editing (`F4`): launch an editor modal or external tool to mutate individual keys, then refresh the parent object.

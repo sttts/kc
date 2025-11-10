@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Kubeconfig represents a kubeconfig file
@@ -54,12 +55,14 @@ func NewManager() *Manager {
 
 // DiscoverKubeconfigs discovers kubeconfigs from KUBECONFIG and ~/.kube
 func (m *Manager) DiscoverKubeconfigs() error {
+	log := ctrllog.Log.WithName("kubeconfig.manager")
 	m.kubeconfigs = make([]*Kubeconfig, 0)
 
 	seen := map[string]struct{}{}
 	envVar := strings.TrimSpace(os.Getenv("KUBECONFIG"))
 
 	homeDir, homeErr := os.UserHomeDir()
+	log.Info("kubeconfig discovery start", "hasEnv", envVar != "", "homeDirAvailable", homeErr == nil)
 
 	if envVar != "" {
 		for _, rawPath := range filepath.SplitList(envVar) {
@@ -76,9 +79,14 @@ func (m *Manager) DiscoverKubeconfigs() error {
 			if err := m.addKubeconfig(normalized, seen); err != nil {
 				return fmt.Errorf("loading kubeconfig from KUBECONFIG %q: %w", normalized, err)
 			}
+			log.Info("added kubeconfig from env", "path", normalized)
 		}
 
-		return m.buildContextsAndClusters()
+		if err := m.buildContextsAndClusters(); err != nil {
+			return err
+		}
+		log.Info("kubeconfig discovery completed", "kubeconfigs", len(m.kubeconfigs), "contexts", len(m.contexts), "clusters", len(m.clusters))
+		return nil
 	}
 
 	if homeErr != nil {
@@ -87,9 +95,12 @@ func (m *Manager) DiscoverKubeconfigs() error {
 
 	kubeDir := filepath.Join(homeDir, ".kube")
 	mainConfigPath := filepath.Join(kubeDir, "config")
+	log.Info("discovering kubeconfigs from default directory", "dir", kubeDir)
 
 	if err := m.addKubeconfig(mainConfigPath, seen); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
+	} else if err == nil {
+		log.Info("added kubeconfig", "path", mainConfigPath)
 	}
 
 	if _, err := os.Stat(kubeDir); err != nil {
@@ -116,6 +127,7 @@ func (m *Manager) DiscoverKubeconfigs() error {
 			// Skip files that cannot be parsed as kubeconfigs
 			return nil
 		}
+		log.V(1).Info("added kubeconfig candidate", "path", path)
 
 		return nil
 	})
@@ -123,7 +135,11 @@ func (m *Manager) DiscoverKubeconfigs() error {
 		return fmt.Errorf("failed to walk kube directory: %w", err)
 	}
 
-	return m.buildContextsAndClusters()
+	if err := m.buildContextsAndClusters(); err != nil {
+		return err
+	}
+	log.Info("kubeconfig discovery completed", "kubeconfigs", len(m.kubeconfigs), "contexts", len(m.contexts), "clusters", len(m.clusters))
+	return nil
 }
 
 func normalizeKubeconfigPath(path, homeDir string) (string, error) {
