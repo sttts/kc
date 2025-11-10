@@ -6,7 +6,7 @@
 3. ✅ Implement `applyStartupIntent` helpers: resolve resources via RESTMapper, compute shared navigation paths, execute `navigation.GoTo`, and multi-select panels per intent (resource groups, object lists, mixed `TYPE/NAME` requests).
 4. ✅ Wire `get -o yaml` to switch the right panel into manifest mode while leaving the left panel on the requested list/object, selecting multiple objects when provided.
 5. ✅ Implement `logs` intent flow: container resolution heuristics, GoTo down to the logs row, enqueue `openViewerForPanel`, and propagate follow/container flags.
-6. ☐ Add envtest-style navigation/logs tests exercising multi-target selection, manifest preview, and logs intents (README/design doc updated).
+6. ✅ Add envtest-style navigation/logs tests exercising multi-target selection, manifest preview, and logs intents (README/design doc updated).
 
 ## Milestone 1 — Hierarchy Model (Informer-Based)
 - Path schema and router: `/cluster`, `/cluster/<res>`, `/cluster/namespaces/<ns>/<res>`, `/contexts/<ctx>/...`, `/kubeconfigs`, optional `/groups/<group>/<version>/...`.
