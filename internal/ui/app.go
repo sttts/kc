@@ -598,16 +598,37 @@ func (a *App) aggregatedKubeConfig(current string) clientcmdapi.Config {
 	}
 }
 
-func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, current string) models.Deps {
+func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kccluster.Key) models.Deps {
 	if cfg == nil {
 		cfg = a.cfg
 	}
 	return models.Deps{
-		Cl:         cl,
-		Ctx:        a.ctx,
-		CtxName:    current,
-		KubeConfig: a.aggregatedKubeConfig(current),
-		AppConfig:  cfg,
+		Cl:               cl,
+		Ctx:              a.ctx,
+		CtxName:          key.ContextName,
+		KubeConfig:       a.aggregatedKubeConfig(key.ContextName),
+		AppConfig:        cfg,
+		ClusterKey:       key,
+		NamespaceFactory: a.namespaceClusterFactory(),
+	}
+}
+
+func (a *App) currentClusterKey() kccluster.Key {
+	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
+		return kccluster.Key{}
+	}
+	return kccluster.Key{
+		KubeconfigPath: a.currentCtx.Kubeconfig.Path,
+		ContextName:    a.currentCtx.Name,
+	}
+}
+
+func (a *App) namespaceClusterFactory() models.NamespaceClusterFactory {
+	return func(ctx context.Context, key kccluster.Key) (*kccluster.Cluster, error) {
+		if a.clPool == nil {
+			return nil, fmt.Errorf("cluster pool unavailable")
+		}
+		return a.clPool.Get(ctx, key)
 	}
 }
 
@@ -637,7 +658,7 @@ func (a *App) makeEnterContextFunc(cfg *appconfig.Config) func(string, []string)
 		if err != nil {
 			return nil, err
 		}
-		deps := a.makeDeps(cl, cfg, name)
+		deps := a.makeDeps(cl, cfg, key)
 		return models.NewContextRootFolder(deps, basePath), nil
 	}
 }
@@ -3562,12 +3583,9 @@ func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 	rightCfg := a.ensurePanelConfig(a.rightPanel)
 	a.syncPanelConfig(a.leftPanel)
 	a.syncPanelConfig(a.rightPanel)
-	currentName := ""
-	if a.currentCtx != nil {
-		currentName = a.currentCtx.Name
-	}
-	depsLeft := a.makeDeps(a.cl, leftCfg, currentName)
-	depsRight := a.makeDeps(a.cl, rightCfg, currentName)
+	key := a.currentClusterKey()
+	depsLeft := a.makeDeps(a.cl, leftCfg, key)
+	depsRight := a.makeDeps(a.cl, rightCfg, key)
 	enterLeft := a.makeEnterContextFunc(leftCfg)
 	enterRight := a.makeEnterContextFunc(rightCfg)
 	rootLeft := models.NewRootFolder(depsLeft, enterLeft)
@@ -3792,10 +3810,6 @@ func (a *App) syncPanelWithNavigator(panelIdx int) {
 }
 
 func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
-	currentName := ""
-	if a.currentCtx != nil {
-		currentName = a.currentCtx.Name
-	}
 	var nav *navui.Navigator
 	var panelSet func(context.Context, models.Folder, bool)
 	var panelSelectByID func(context.Context, string)
@@ -3805,7 +3819,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		cfg := a.ensurePanelConfig(a.leftPanel)
 		a.syncPanelConfig(a.leftPanel)
 		if a.leftNav == nil {
-			deps := a.makeDeps(a.cl, cfg, currentName)
+			deps := a.makeDeps(a.cl, cfg, a.currentClusterKey())
 			enter := a.makeEnterContextFunc(cfg)
 			a.leftNav = navui.NewNavigator(models.NewRootFolder(deps, enter))
 		}
@@ -3820,7 +3834,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		cfg := a.ensurePanelConfig(a.rightPanel)
 		a.syncPanelConfig(a.rightPanel)
 		if a.rightNav == nil {
-			deps := a.makeDeps(a.cl, cfg, currentName)
+			deps := a.makeDeps(a.cl, cfg, a.currentClusterKey())
 			enter := a.makeEnterContextFunc(cfg)
 			a.rightNav = navui.NewNavigator(models.NewRootFolder(deps, enter))
 		}

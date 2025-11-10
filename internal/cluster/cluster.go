@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -50,8 +51,9 @@ type Cluster struct {
 // Option configures Cluster.
 type Option func(*options)
 type options struct {
-	scheme  *runtime.Scheme
-	refresh time.Duration
+	scheme    *runtime.Scheme
+	refresh   time.Duration
+	namespace string
 }
 
 // WithScheme sets the runtime.Scheme used by the controller-runtime cluster.
@@ -59,6 +61,13 @@ func WithScheme(s *runtime.Scheme) Option { return func(o *options) { o.scheme =
 
 // WithRefreshInterval sets the discovery/RESTMapper refresh interval (default 30s).
 func WithRefreshInterval(d time.Duration) Option { return func(o *options) { o.refresh = d } }
+
+// WithNamespaceScope restricts the controller-runtime cache to a single namespace.
+func WithNamespaceScope(ns string) Option {
+	return func(o *options) {
+		o.namespace = strings.TrimSpace(ns)
+	}
+}
 
 // New creates a new Cluster embedding controller-runtime's Cluster and wiring a cached discovery client
 // plus a Resettable RESTMapper.
@@ -78,8 +87,16 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 
 	// controller-runtime cluster using the default cache; we keep it unchanged.
 	// We initialize discovery/mapper lazily in ensureDiscovery() before first use.
+	cacheHTTPClient, err := namespaceHTTPClient(cfg, o.namespace)
+	if err != nil {
+		return nil, err
+	}
+
 	cl, err := crcluster.New(cfg, func(co *crcluster.Options) {
 		co.Scheme = o.scheme
+		if cacheHTTPClient != nil {
+			co.Cache.HTTPClient = cacheHTTPClient
+		}
 	})
 	if err != nil {
 		return nil, err
@@ -93,7 +110,11 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 	// Build a dedicated table-aware cache for Row/RowList alongside the default cache.
 	// Register Row/RowList types in the scheme so the cache can marshal them.
 	_ = tablecache.AddToScheme(o.scheme)
-	tcache, err := tablecache.NewFromOptions(cfg, crcache.Options{Scheme: o.scheme})
+	tableCacheOpts := crcache.Options{Scheme: o.scheme}
+	if cacheHTTPClient != nil {
+		tableCacheOpts.HTTPClient = cacheHTTPClient
+	}
+	tcache, err := tablecache.NewFromOptions(cfg, tableCacheOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +276,21 @@ func (c *Cluster) restClientForGV(gv schema.GroupVersion) (*rest.RESTClient, err
 	}
 	cfg.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 	return rest.RESTClientFor(cfg)
+}
+
+func namespaceHTTPClient(cfg *rest.Config, namespace string) (*http.Client, error) {
+	if namespace == "" {
+		return nil, nil
+	}
+	copyCfg := rest.CopyConfig(cfg)
+	transport, err := rest.TransportFor(copyCfg)
+	if err != nil {
+		return nil, err
+	}
+	return &http.Client{
+		Transport: newNamespaceRoundTripper(namespace, transport),
+		Timeout:   copyCfg.Timeout,
+	}, nil
 }
 
 // -----------------------------------------------------------------------------

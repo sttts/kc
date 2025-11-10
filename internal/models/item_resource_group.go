@@ -88,7 +88,7 @@ func (r *ResourceGroupItem) Count() int {
 		return r.count
 	}
 	logger := crlog.FromContext(r.deps.Ctx)
-	logger.Info("initializing informer for resource count", "gvr", r.gvr.String(), "namespace", r.namespace)
+	logger.Info("ensuring informer for resource count", "gvr", r.gvr.String(), "namespace", r.namespace)
 	count, ok := r.countFromInformerLocked()
 	if ok {
 		r.count = count
@@ -175,7 +175,7 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 		crlog.FromContext(r.deps.Ctx).Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
 	}
 	if !hasAny {
-		r.scheduleNextPeek()
+		r.scheduleNextPeekLocked()
 		return 0, true
 	}
 	gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
@@ -197,30 +197,52 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 	if !informer.HasSynced() {
 		toolscache.WaitForCacheSync(ctx.Done(), informer.HasSynced)
 	}
-	type storeInformer interface {
-		GetStore() toolscache.Store
+	type storeInformer interface{ GetStore() toolscache.Store }
+	type indexerInformer interface{ GetIndexer() toolscache.Indexer }
+	switch {
+	case func() bool { _, ok := informer.(storeInformer); return ok }():
+		items := informer.(storeInformer).GetStore().List()
+		return r.countObjects(items), true
+	case func() bool { _, ok := informer.(indexerInformer); return ok }():
+		items := informer.(indexerInformer).GetIndexer().List()
+		return r.countObjects(items), true
+	default:
+		return r.countViaClient(ctx)
 	}
-	if si, ok := informer.(storeInformer); ok {
-		items := si.GetStore().List()
-		if r.namespace == "" {
-			return len(items), true
-		}
-		count := 0
-		for _, raw := range items {
-			switch o := raw.(type) {
-			case crclient.Object:
-				if o.GetNamespace() == r.namespace {
-					count++
-				}
-			case *unstructured.Unstructured:
-				if o.GetNamespace() == r.namespace {
-					count++
-				}
+}
+
+func (r *ResourceGroupItem) countObjects(items []interface{}) int {
+	if items == nil {
+		return 0
+	}
+	if r.namespace == "" {
+		return len(items)
+	}
+	count := 0
+	for _, raw := range items {
+		switch o := raw.(type) {
+		case crclient.Object:
+			if o.GetNamespace() == r.namespace {
+				count++
+			}
+		case *unstructured.Unstructured:
+			if o.GetNamespace() == r.namespace {
+				count++
 			}
 		}
-		return count, true
 	}
-	return 0, false
+	return count
+}
+
+func (r *ResourceGroupItem) countViaClient(ctx context.Context) (int, bool) {
+	list, err := r.deps.Cl.ListByGVR(ctx, r.gvr, r.namespace)
+	if err != nil || list == nil {
+		if err != nil {
+			crlog.FromContext(r.deps.Ctx).Error(err, "list fallback failed", "gvr", r.gvr.String(), "namespace", r.namespace)
+		}
+		return 0, false
+	}
+	return len(list.Items), true
 }
 
 func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
@@ -424,28 +446,57 @@ func (r *ResourceGroupItem) scheduleRecount() {
 }
 
 func (r *ResourceGroupItem) scheduleNextPeek() {
+	r.mu.Lock()
+	ctx, delay, ok := r.nextPeekScheduleLocked()
+	r.mu.Unlock()
+	if !ok {
+		return
+	}
+	go r.runPeekTimer(ctx, delay)
+}
+
+func (r *ResourceGroupItem) scheduleNextPeekLocked() {
+	ctx, delay, ok := r.nextPeekScheduleLocked()
+	if !ok {
+		return
+	}
+	go r.runPeekTimer(ctx, delay)
+}
+
+func (r *ResourceGroupItem) nextPeekScheduleLocked() (context.Context, time.Duration, bool) {
+	if r.nextPeekScheduled {
+		return nil, 0, false
+	}
+	r.nextPeekScheduled = true
+	interval := r.peekInterval()
+	ctx := r.deps.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return ctx, interval, true
+}
+
+func (r *ResourceGroupItem) runPeekTimer(ctx context.Context, delay time.Duration) {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		r.scheduleRecount()
+	case <-ctx.Done():
+	}
+}
+
+func (r *ResourceGroupItem) peekInterval() time.Duration {
 	cfg := r.deps.AppConfig
 	interval := 10 * time.Second
 	if cfg != nil && cfg.Resources.PeekInterval.Duration > 0 {
 		interval = cfg.Resources.PeekInterval.Duration
 	}
-	jitter := time.Duration(rand.Int63n(int64(interval / 5)))
-	interval += jitter
-	r.mu.Lock()
-	if r.nextPeekScheduled {
-		r.mu.Unlock()
-		return
+	if interval <= 0 {
+		interval = 10 * time.Second
 	}
-	r.nextPeekScheduled = true
-	ctx := r.deps.Ctx
-	r.mu.Unlock()
-	go func() {
-		timer := time.NewTimer(interval)
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-			r.scheduleRecount()
-		case <-ctx.Done():
-		}
-	}()
+	if jitterBase := interval / 5; jitterBase > 0 {
+		interval += time.Duration(rand.Int63n(int64(jitterBase)))
+	}
+	return interval
 }

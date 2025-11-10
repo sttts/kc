@@ -198,6 +198,7 @@ func TestDiscoveryRefreshAddsCRD(t *testing.T) {
 		},
 		AppConfig: appconfig.Default(),
 	}
+	deps.AppConfig.Resources.ShowNonEmptyOnly = false
 
 	folder := NewNamespacedResourcesFolder(deps, ns.Name, []string{"namespaces", ns.Name})
 	folder.Refresh()

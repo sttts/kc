@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 type Key struct {
 	KubeconfigPath string
 	ContextName    string
+	Namespace      string
 }
 
 type entry struct {
@@ -78,6 +80,9 @@ func (p *Pool) Get(ctx context.Context, k Key) (*Cluster, error) {
 	opts := []Option{}
 	if p.refresh > 0 {
 		opts = append(opts, WithRefreshInterval(p.refresh))
+	}
+	if ns := strings.TrimSpace(k.Namespace); ns != "" {
+		opts = append(opts, WithNamespaceScope(ns))
 	}
 	cl, err := New(cfg, opts...)
 	if err != nil {
