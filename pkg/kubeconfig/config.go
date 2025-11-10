@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -110,12 +112,20 @@ func (m *Manager) DiscoverKubeconfigs() error {
 		return fmt.Errorf("failed to stat kube directory: %w", err)
 	}
 
+	candidates := make([]string, 0, 64)
 	err := filepath.Walk(kubeDir, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 
-		if info.IsDir() || strings.HasPrefix(info.Name(), ".") {
+		if info.IsDir() {
+			if path != kubeDir && (strings.HasPrefix(info.Name(), ".") || info.Name() == "cache") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if strings.HasPrefix(info.Name(), ".") || strings.HasSuffix(info.Name(), ".lock") {
 			return nil
 		}
 
@@ -123,17 +133,40 @@ func (m *Manager) DiscoverKubeconfigs() error {
 			return nil
 		}
 
-		if err := m.addKubeconfig(path, seen); err != nil {
-			// Skip files that cannot be parsed as kubeconfigs
-			return nil
-		}
-		log.V(1).Info("added kubeconfig candidate", "path", path)
-
+		candidates = append(candidates, path)
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("failed to walk kube directory: %w", err)
 	}
+
+	var mu sync.Mutex
+	workerCount := runtime.NumCPU()
+	if workerCount < 2 {
+		workerCount = 2
+	}
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+	wg.Add(workerCount)
+	for i := 0; i < workerCount; i++ {
+		go func() {
+			defer wg.Done()
+			for path := range jobs {
+				mu.Lock()
+				err := m.addKubeconfig(path, seen)
+				mu.Unlock()
+				if err != nil {
+					continue
+				}
+				log.V(1).Info("added kubeconfig candidate", "path", path)
+			}
+		}()
+	}
+	for _, path := range candidates {
+		jobs <- path
+	}
+	close(jobs)
+	wg.Wait()
 
 	if err := m.buildContextsAndClusters(); err != nil {
 		return err
