@@ -2,9 +2,9 @@
 
 ![Kubernetes Commander TUI](docs/screenshot.png)
 
-Experimental two-panel Kubernetes TUI inspired by Midnight Commander. Built with Go 1.24, Bubble Tea v2, and controller-runtime informers.
+An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired by Midnight Commander, powered by Go 1.24, Bubble Tea v2, and controller-runtime informers.
 
-> **Status:** actively developed; expect breaking changes and rough edges. See `TODO.md` for the live roadmap.
+> ⚠️ **Vibe-coded warning:** this project is 100 % AI-authored. No human has reviewed the code, so expect sharp edges, missing affordances, and sudden regressions. See `TODO.md` for the evolving plan.
 
 ## Highlights
 
@@ -20,14 +20,15 @@ Experimental two-panel Kubernetes TUI inspired by Midnight Commander. Built with
 ### Build and Run
 
 ```bash
-go build -o kc ./cmd/kc   # build binary
-./kc                      # run built binary
-
-# or run directly
 go run ./cmd/kc
 ```
 
-The headless wrapper (`cmd/bubbleheadless`) can drive kc non-interactively: `go run ./cmd/bubbleheadless -- go run ./cmd/kc`.
+Prefer a compiled binary?
+
+```bash
+go build -o kc ./cmd/kc
+./kc
+```
 
 ### Kubectl-style shortcuts
 
@@ -39,13 +40,6 @@ Kubernetes Commander accepts a subset of kubectl syntax so you can jump straight
 - `kc logs payments-0 -c worker --follow` – drills down to the pod → container → logs row and opens the streaming viewer.
 
 All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s default.
-
-### Examples
-
-```bash
-go run examples/handler/main.go     # minimal handler wiring
-go run examples/kubeconfig/main.go  # kubeconfig discovery demo
-```
 
 ## Key Bindings
 
@@ -76,15 +70,65 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). Uni
 
 Run `kc` once to materialize defaults or inspect `config-default.yaml`.
 
-## Development
+### Full configuration (defaults + inline docs)
 
-Useful commands:
+Copy/paste into `~/.kc/config.yaml` to start customizing:
 
-```bash
-go fmt ./...
-go test ./... -v
-go vet ./...
-go build ./cmd/kc
+```yaml
+viewer:
+  theme: dracula
+  mode: scroll
+
+panel:
+  scrolling:
+    horizontal:
+      step: 4
+  width:
+    leftPercent: 50
+    rightPercent: 50
+
+input:
+  mouse:
+    doubleClickTimeout: 300ms
+
+kubernetes:
+  clusters:
+    ttl: 2m
+  discovery:
+    refresh: 30s
+
+resources:
+  # Default behavior: hide resources with zero objects
+  showNonEmptyOnly: true
+  # How often to re-peek hidden resources for changes when showNonEmptyOnly is true
+  peekInterval: 10s
+  # Default ordering: alphabetic by resource plural
+  order: alpha
+  # Favorites are used when order=favorites
+  favorites:
+    - pods
+    - services
+    - deployments
+    - replicasets
+    - statefulsets
+    - daemonsets
+    - jobs
+    - cronjobs
+    - configmaps
+    - secrets
+    - ingresses
+    - networkpolicies
+    - persistentvolumeclaims
+
+objects:
+  # Object list ordering: name | -name | creation | -creation
+  order: name
+  # Columns mode for server-side Tables:
+  # - normal: show priority 0 columns (kubectl default)
+  # - wide: show all server-provided columns (like `kubectl get -o wide`)
+  columns: normal
 ```
 
-Keep Bubble Tea imports on v2 modules (`github.com/charmbracelet/bubbletea/v2`). See `AGENTS.md` for contributor guidelines, logging conventions, and naming rules.
+## Contributing / Source
+
+This repo is intentionally vibe-coded. If you want to peek behind the curtain—or help civilize it—see `CONTRIBUTING.md` and `AGENTS.md` for expectations, logging conventions, and build/test commands.
