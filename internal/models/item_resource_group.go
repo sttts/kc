@@ -163,8 +163,17 @@ func (r *ResourceGroupItem) TryCount() (int, bool) {
 
 func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 	ctx := r.deps.Ctx
-	if ul, err := r.deps.Cl.ListByGVR(ctx, r.gvr, r.namespace); err == nil && ul != nil {
-		return len(ul.Items), true
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	hasAny := true
+	if ok, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace); err == nil {
+		hasAny = ok
+	} else {
+		crlog.FromContext(r.deps.Ctx).Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
+	}
+	if !hasAny {
+		return 0, true
 	}
 	gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
 	if err != nil {
@@ -208,17 +217,7 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 		}
 		return count, true
 	}
-	// Fallback: cache-backed list
-	ul := &unstructured.UnstructuredList{}
-	ul.SetGroupVersionKind(schema.GroupVersionKind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind + "List"})
-	opts := []crclient.ListOption{}
-	if r.namespace != "" {
-		opts = append(opts, crclient.InNamespace(r.namespace))
-	}
-	if err := r.deps.Cl.GetCache().List(ctx, ul, opts...); err != nil {
-		return 0, false
-	}
-	return len(ul.Items), true
+	return 0, false
 }
 
 func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {

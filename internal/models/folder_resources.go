@@ -124,10 +124,10 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 			continue
 		}
 		item.applySpec(spec, f.Deps, created)
-		if created {
-			item.SetOnChange(func() { f.BaseFolder.markDirty() })
-		}
-		item.ComputeCountAsync(nil)
+		current := item
+		handler := func() { f.onResourceGroupCountChanged(current) }
+		item.SetOnChange(handler)
+		item.ComputeCountAsync(handler)
 		visible := true
 		if showNonEmpty && item.Empty() {
 			visible = false
@@ -232,6 +232,16 @@ func sortResourceEntries(entries []resourceEntry, order appconfig.ResourcesViewO
 	default:
 		sort.SliceStable(entries, func(i, j int) bool { return entries[i].info.Resource < entries[j].info.Resource })
 	}
+}
+
+func (f *ResourcesFolder) onResourceGroupCountChanged(item *ResourceGroupItem) {
+	if f == nil || item == nil {
+		return
+	}
+	if count, ok := item.TryCount(); ok {
+		item.setCountCell(fmt.Sprintf("%d", count))
+	}
+	f.BaseFolder.markDirtyFromSource()
 }
 
 func favoritesMap(list []string) map[string]bool {
