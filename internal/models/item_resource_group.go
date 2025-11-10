@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -40,6 +41,7 @@ type ResourceGroupItem struct {
 	publishedEmptyKnown bool
 	recounting          bool // true while an async count recomputation is in flight
 	watchOnce           sync.Once
+	nextPeekScheduled   bool
 }
 
 func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, namespace, id string, cells []string, path []string, detail string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
@@ -173,6 +175,7 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 		crlog.FromContext(r.deps.Ctx).Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
 	}
 	if !hasAny {
+		r.scheduleNextPeek()
 		return 0, true
 	}
 	gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
@@ -374,6 +377,7 @@ func (r *ResourceGroupItem) scheduleRecount() {
 		return
 	}
 	r.recounting = true
+	r.nextPeekScheduled = false
 	r.countKnown = false
 	r.emptyKnown = false
 	r.lastPeek = time.Time{}
@@ -416,5 +420,32 @@ func (r *ResourceGroupItem) scheduleRecount() {
 			onChange()
 		}
 		log.Info("resource group recount finished", "gvr", r.gvr.String(), "namespace", r.namespace, "count", count, "countKnown", countKnown)
+	}()
+}
+
+func (r *ResourceGroupItem) scheduleNextPeek() {
+	cfg := r.deps.AppConfig
+	interval := 10 * time.Second
+	if cfg != nil && cfg.Resources.PeekInterval.Duration > 0 {
+		interval = cfg.Resources.PeekInterval.Duration
+	}
+	jitter := time.Duration(rand.Int63n(int64(interval / 5)))
+	interval += jitter
+	r.mu.Lock()
+	if r.nextPeekScheduled {
+		r.mu.Unlock()
+		return
+	}
+	r.nextPeekScheduled = true
+	ctx := r.deps.Ctx
+	r.mu.Unlock()
+	go func() {
+		timer := time.NewTimer(interval)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			r.scheduleRecount()
+		case <-ctx.Done():
+		}
 	}()
 }
