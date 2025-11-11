@@ -978,14 +978,10 @@ func (p *Panel) GetStatus() string {
 
 func (p *Panel) GetSelectedItems() []Item {
 	if lw := p.listWidget(nil); lw != nil {
-		items := lw.Items()
-		selected := make([]Item, 0, len(items))
-		for _, item := range items {
-			if item.Selected {
-				selected = append(selected, item)
-			}
+		ctx := context.Background()
+		if selected := lw.SelectedItems(ctx); len(selected) > 0 {
+			return selected
 		}
-		return selected
 	}
 	return nil
 }

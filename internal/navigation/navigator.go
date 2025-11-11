@@ -84,8 +84,6 @@ func (n *Navigator) Path(ctx context.Context) string {
 		return "/"
 	}
 	segments := make([]string, 0, len(n.stack))
-	// For each parent frame (exclude the last/current folder), use its selID
-	// to find the row and take the first cell (trim a single leading "/").
 	for i := 0; i < len(n.stack)-1; i++ {
 		fr := n.stack[i]
 		if fr.selID == "" || fr.selID == "__back__" || fr.f == nil {
@@ -107,18 +105,41 @@ func (n *Navigator) Path(ctx context.Context) string {
 			segments = append(segments, seg)
 		}
 	}
+	cur := n.Current()
+	if cur == nil {
+		if len(segments) == 0 {
+			return "/"
+		}
+		return "/" + strings.Join(segments, "/")
+	}
+	curPath := cur.Path()
 	if len(segments) == 0 {
-		cur := n.Current()
-		if cur == nil {
+		if len(curPath) == 0 {
 			return "/"
 		}
-		path := cur.Path()
-		if len(path) == 0 {
-			return "/"
-		}
-		return "/" + strings.Join(path, "/")
+		return "/" + strings.Join(curPath, "/")
+	}
+	if len(curPath) >= len(segments) && equalPrefix(curPath, segments) {
+		full := make([]string, len(curPath))
+		copy(full, curPath)
+		return "/" + strings.Join(full, "/")
 	}
 	return "/" + strings.Join(segments, "/")
+}
+
+func equalPrefix(path, prefix []string) bool {
+	if len(prefix) == 0 {
+		return true
+	}
+	if len(path) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if path[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // ForEach invokes fn for every folder in the navigation stack from root to current.

@@ -43,6 +43,17 @@ type Widget struct {
 	positionMemory map[string]PositionInfo
 }
 
+func displayNameFromItem(it models.Item) string {
+	if it == nil {
+		return ""
+	}
+	_, cells, _, ok := it.Columns()
+	if !ok || len(cells) == 0 {
+		return ""
+	}
+	return strings.TrimPrefix(cells[0], "/")
+}
+
 // New creates a list widget with the provided dependencies.
 func New(deps panelcontent.WidgetDeps) *Widget {
 	return &Widget{
@@ -101,6 +112,33 @@ func (w *Widget) Items() []Item {
 	cp := make([]Item, len(w.items))
 	copy(cp, w.items)
 	return cp
+}
+
+func (w *Widget) SelectedItems(ctx context.Context) []Item {
+	if w.useFolder && w.folder != nil && w.bt != nil {
+		ids := w.bt.SelectedIDs()
+		if len(ids) == 0 {
+			return nil
+		}
+		selected := make([]Item, 0, len(ids))
+		for _, id := range ids {
+			item, ok := w.folder.ItemByID(ctx, id)
+			if !ok || item == nil {
+				continue
+			}
+			name := displayNameFromItem(item)
+			selected = append(selected, Item{Item: item, Name: name, Selected: true})
+		}
+		return selected
+	}
+	items := w.Items()
+	selected := make([]Item, 0, len(items))
+	for _, item := range items {
+		if item.Selected {
+			selected = append(selected, item)
+		}
+	}
+	return selected
 }
 
 func (w *Widget) ColumnTitles() []string {
@@ -497,11 +535,16 @@ func (w *Widget) SelectRowIDs(ctx context.Context, ids []string) {
 	for _, id := range clean {
 		matches[id] = struct{}{}
 	}
+	rowIDs := make([]string, len(rows))
+	if w.bt != nil {
+		w.bt.ClearMarks()
+	}
 	for idx := range rows {
 		rowID, _, _, ok := rows[idx].Columns()
 		if !ok || rowID == "" {
 			continue
 		}
+		rowIDs[idx] = rowID
 		if _, ok := matches[rowID]; ok {
 			if idx < len(w.items) {
 				w.items[idx].Selected = true
@@ -510,6 +553,7 @@ func (w *Widget) SelectRowIDs(ctx context.Context, ids []string) {
 				firstIdx = idx
 				firstID = rowID
 			}
+			w.toggleBigTableSelection(ctx, rowID, true)
 		} else if idx < len(w.items) {
 			w.items[idx].Selected = false
 		}
@@ -524,6 +568,16 @@ func (w *Widget) SelectRowIDs(ctx context.Context, ids []string) {
 		w.bt.Select(ctx, firstID)
 	}
 	w.saveCurrentPosition()
+}
+
+func (w *Widget) toggleBigTableSelection(ctx context.Context, id string, add bool) bool {
+	if w.bt == nil || id == "" {
+		return false
+	}
+	if add {
+		return w.bt.Mark(ctx, id, true)
+	}
+	return w.bt.Mark(ctx, id, false)
 }
 
 func (w *Widget) ResetSelection(ctx context.Context) {

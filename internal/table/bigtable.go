@@ -233,6 +233,38 @@ func (m *BigTable) Select(ctx context.Context, id string) bool {
 	return true
 }
 
+// Mark toggles selection state for a row ID without moving the cursor.
+func (m *BigTable) Mark(ctx context.Context, id string, selected bool) bool {
+	if id == "" {
+		return false
+	}
+	if selected {
+		m.selected[id] = struct{}{}
+		return true
+	}
+	delete(m.selected, id)
+	return true
+}
+
+// ClearMarks removes all multi-select marks.
+func (m *BigTable) ClearMarks() {
+	for id := range m.selected {
+		delete(m.selected, id)
+	}
+}
+
+// SelectedIDs returns the set of marked row IDs (multi-select state).
+func (m *BigTable) SelectedIDs() []string {
+	if len(m.selected) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(m.selected))
+	for id := range m.selected {
+		out = append(out, id)
+	}
+	return out
+}
+
 // UpdateWithContext handles key navigation and selection toggling; it also
 // forwards other messages to the internal bubbles components. It returns a
 // batchable pair of commands for external composition.
