@@ -67,8 +67,8 @@ Current tasks
 ## Current gaps (Hierarchy & Folders)
 - [x] Replace any remaining `NewSliceFolder` usage in tests with explicit constructors (`NewResourcesFolder` / `NewObjectsFolder`).
 - [ ] Implement two modes:
-  - [ ] Fit mode: pre-truncate ASCII to target widths, then style; no horizontal scroll.
-  - [ ] Left/Right mode: no pre-truncate; support horizontal panning with arrow keys.
+  - [x] Fit mode: pre-truncate ASCII to target widths, then style; no horizontal scroll.
+  - [x] Left/Right mode: no pre-truncate; support horizontal panning with arrow keys.
 - [x] Width management: measure plain ASCII widths; compute target widths; avoid slicing ANSI sequences.
 - [x] Selector line behavior: visible only when focused; if the selected row disappears, move selection to the next row (or previous if no next).
 - [x] Selection toggling: handle `Ctrl+T` and `Insert` with toggle semantics; render selected rows with selection style.
