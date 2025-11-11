@@ -51,8 +51,8 @@ Current tasks
   - [x] Add `LogsView` and wire under `PodContainersFolder`.
   - [x] Logs: implement a logs viewer (follow mode, search). Wire container “logs” entries to open it.
 - [x] `F1` Help: render `README.md` in a markdown viewer (Glow widget) inside a modal; available from any panel/context.
-- [ ] Function key bar: dynamic and context-aware (grey out unavailable actions per location/object).
-- [ ] Delete modal: Enter should activate the focused button (Yes/No) in addition to Left/Right selection.
+- [x] Function key bar: dynamic and context-aware (grey out unavailable actions per location/object).
+- [x] Delete modal: Enter should activate the focused button (Yes/No) in addition to Left/Right selection.
 
 ## Table View Enhancements
 - [x] Horizontal scroll: when columns exceed panel width, support column‑wise scrolling with Left/Right keys; gate on “no typed input” (same Enter routing gating).
