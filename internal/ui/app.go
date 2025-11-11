@@ -21,6 +21,7 @@ import (
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
+	"github.com/sttts/kc/internal/ui/termctx"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	viewpkg "github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -96,6 +97,7 @@ type App struct {
 	leftPanel    *Panel
 	rightPanel   *Panel
 	terminal     *Terminal
+	termCtx      *termctx.Manager
 	modalManager *ModalManager
 	width        int
 	height       int
@@ -3325,6 +3327,57 @@ func (a *App) logCommandToTerminal(command string) {
 	fmt.Fprintf(os.Stdout, "\n[kc] %s\n", command)
 }
 
+func (a *App) ensureTermContext() {
+	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
+		return
+	}
+	if a.termCtx != nil {
+		_ = a.termCtx.Close()
+	}
+	mgr, err := termctx.NewManager(a.currentCtx.Kubeconfig.Path)
+	if err != nil {
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Terminal overlay: %v", err))
+		}
+		return
+	}
+	a.termCtx = mgr
+	a.terminal.SetEnv(a.buildTerminalEnv())
+	a.updateTermContextNamespace(strings.TrimSpace(a.currentCtx.Namespace))
+}
+
+func (a *App) updateTermContextNamespace(ns string) {
+	if a.termCtx == nil || a.currentCtx == nil {
+		return
+	}
+	if err := a.termCtx.Update(a.currentCtx.Name, ns); err != nil {
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Terminal context update failed: %v", err))
+		}
+	}
+}
+
+func (a *App) buildTerminalEnv() []string {
+	env := os.Environ()
+	if a.termCtx == nil {
+		return env
+	}
+	value := fmt.Sprintf("KUBECONFIG=%s:%s", a.termCtx.OverlayPath(), a.termCtx.BaseConfig())
+	return append(filterEnv(env, "KUBECONFIG"), value)
+}
+
+func filterEnv(env []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
 func (a *App) refreshPanelAfterEdit(panelIdx int) {
 	var panel *Panel
 	var nav *navui.Navigator
@@ -3500,6 +3553,7 @@ func (a *App) initData(ctx context.Context) error {
 		}
 		log.Error(err, "failed to fetch resource infos")
 	}
+	a.ensureTermContext()
 	// Subscribe to discovery refresh events so resource folders can update dynamically.
 	if a.discoveryCh == nil {
 		a.discoveryCh = make(chan struct{}, 1)
@@ -3600,6 +3654,7 @@ func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 		log.Info("no namespace configured, staying at cluster scope")
 		a.namespaceAutoTarget = ""
 		a.namespaceAutoAttempts = 0
+		a.updateTermContextNamespace("")
 		logged = true
 	} else {
 		log.Info("checking namespace readiness", "namespace", ns, "attempt", a.namespaceAutoAttempts)
@@ -3609,17 +3664,18 @@ func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 		}
 		log.Info("namespace readiness evaluated", "namespace", ns, "ready", nsReady, "terminal", terminal)
 		switch {
-		case nsReady:
-			if !a.forceNamespaceNavigation(ns, depsLeft, depsRight) {
+	case nsReady:
+		if !a.forceNamespaceNavigation(ns, depsLeft, depsRight) {
 				log.Error(fmt.Errorf("navigation failed"), "unable to navigate to namespace", "namespace", ns)
 				if ns == a.namespaceAutoTarget {
 					a.namespaceAutoTarget = ""
 				}
 				logged = true
 				break
-			}
-			log.Info("navigated to namespace", "namespace", ns)
-			logged = true
+		}
+		log.Info("navigated to namespace", "namespace", ns)
+		a.updateTermContextNamespace(ns)
+		logged = true
 			if ns == a.namespaceAutoTarget {
 				a.namespaceAutoTarget = ""
 				a.namespaceAutoAttempts = 0

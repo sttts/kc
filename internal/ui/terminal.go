@@ -34,6 +34,7 @@ type Terminal struct {
 	// Whether the PTY app has enabled mouse tracking (ESC[?1000h/1002h/1003h/1006h/1015h)
 	ptyWantsMouse bool
 	log           logr.Logger
+	env           []string
 }
 
 // NewTerminal creates a new terminal instance
@@ -61,7 +62,11 @@ func (t *Terminal) Init() tea.Cmd {
 
 	// Create shell command
 	cmd := exec.Command(shell)
-	cmd.Env = os.Environ()
+	env := t.env
+	if len(env) == 0 {
+		env = os.Environ()
+	}
+	cmd.Env = env
 
 	// Create bubbleterm terminal
 	terminal, err := bubbleterm.New(t.width, t.height)
@@ -93,6 +98,9 @@ func (t *Terminal) Init() tea.Cmd {
 	// Note: bubbleterm handles cursor automatically through PTY, no need for ShowCursor()
 	return tea.Batch(t.terminal.Init(), t.terminal.StartCommand(cmd))
 }
+
+// SetEnv overrides the environment used when spawning the PTY shell.
+func (t *Terminal) SetEnv(env []string) { t.env = append([]string(nil), env...) }
 
 // Update handles messages and updates the terminal state
 func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
