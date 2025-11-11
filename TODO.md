@@ -70,13 +70,13 @@ Current tasks
   - [ ] Fit mode: pre-truncate ASCII to target widths, then style; no horizontal scroll.
   - [ ] Left/Right mode: no pre-truncate; support horizontal panning with arrow keys.
 - [ ] Width management: measure plain ASCII widths; compute target widths; avoid slicing ANSI sequences.
-- [ ] Selector line behavior: visible only when focused; if the selected row disappears, move selection to the next row (or previous if no next).
-- [ ] Selection toggling: handle `Ctrl+T` and `Insert` with toggle semantics; render selected rows with selection style.
+- [x] Selector line behavior: visible only when focused; if the selected row disappears, move selection to the next row (or previous if no next).
+- [x] Selection toggling: handle `Ctrl+T` and `Insert` with toggle semantics; render selected rows with selection style.
 - [ ] High reusability: expose configuration options (columns, borders, header style, selection style, vertical separators; allow “no border”).
 - [ ] Dynamic content: efficiently update from `List` provider; keep stable IDs for cursor stability; minimal diff/reflow.
 - [ ] Header styling: good defaults with full override capability (lipgloss styles).
-- [ ] Tests: unit tests for width calc, truncation, selector clamping, selection toggles, and mode switching.
-- [ ] Example: add a small runnable example under `examples/table` demonstrating both modes and selection.
+- [x] Tests: unit tests for width calc, truncation, selector clamping, selection toggles, and mode switching.
+- [x] Example: add a small runnable example under `examples/table` demonstrating both modes and selection.
 
 ## Milestone 3 — Terminal Follows Navigation
 - Terminal context manager for the integrated PTY session.

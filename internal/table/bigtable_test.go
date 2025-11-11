@@ -170,6 +170,47 @@ func TestBigTableVirtualScrollLargeList(t *testing.T) {
 	}
 }
 
+func TestBigTableSelectionClampsOnRemoval(t *testing.T) {
+	ctx := context.Background()
+	cols := mkCols(2, 6)
+	list := mkList(4, 2)
+	bt := NewBigTable(cols, list, 40, 8)
+	bt.Refresh(ctx)
+
+	if !bt.Select(ctx, "id-02") {
+		t.Fatalf("expected to select id-02")
+	}
+	if id, ok := bt.CurrentID(ctx); !ok || id != "id-02" {
+		t.Fatalf("cursor id = %q, want id-02", id)
+	}
+
+	list.RemoveIDs("id-02")
+	bt.SetList(ctx, list)
+	if id, ok := bt.CurrentID(ctx); !ok || id != "id-03" {
+		t.Fatalf("cursor id after removal = %q, want id-03", id)
+	}
+}
+
+func TestBigTableMultiSelectMarks(t *testing.T) {
+	ctx := context.Background()
+	cols := mkCols(1, 6)
+	list := mkList(3, 1)
+	bt := NewBigTable(cols, list, 30, 8)
+	bt.Refresh(ctx)
+
+	bt.Mark(ctx, "id-01", true)
+	bt.Mark(ctx, "id-02", true)
+	bt.Mark(ctx, "id-01", false)
+	ids := bt.SelectedIDs()
+	if len(ids) != 1 || ids[0] != "id-02" {
+		t.Fatalf("selected IDs = %v, want [id-02]", ids)
+	}
+	bt.ClearMarks()
+	if ids := bt.SelectedIDs(); len(ids) != 0 {
+		t.Fatalf("expected marks cleared, got %v", ids)
+	}
+}
+
 type windowSpyList struct {
 	rows  []Row
 	index map[string]int
