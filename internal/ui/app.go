@@ -1417,7 +1417,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a *App) shouldRouteToPanel(key string) bool {
 	// Always route these keys to terminal
 	terminalKeys := []string{
-		"space", // Never go to panels
+		" ",     // space bar (Bubble Tea reports as literal space)
+		"space", // fallback just in case
 	}
 
 	for _, termKey := range terminalKeys {

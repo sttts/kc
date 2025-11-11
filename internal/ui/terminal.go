@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
@@ -135,7 +136,8 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Fullscreen terminal: forward Bubble Tea mouse events to bubbleterm;
 			// bubbleterm and the underlying app decide whether to act on them.
 		}
-		model, cmd := t.terminal.Update(msg)
+		forwardMsg := translateKeyForTerminal(msg)
+		model, cmd := t.terminal.Update(forwardMsg)
 		t.terminal = model.(*bubbleterm.Model)
 
 		// Track if user has typed (for key routing logic)
@@ -285,6 +287,102 @@ func renderTwoLineFrom(terminalView string, termCur *tea.Cursor, width int) (str
 		Height(2).
 		Render(strings.Join(lines, "\n"))
 	return view, &cur
+}
+
+type legacyKeyPressMsg struct {
+	key  tea.Key
+	text string
+}
+
+func (m legacyKeyPressMsg) String() string { return m.text }
+
+func (m legacyKeyPressMsg) Key() tea.Key { return m.key }
+
+func (m legacyKeyPressMsg) Keystroke() string {
+	if len(m.text) == 1 {
+		return m.text
+	}
+	return m.key.Keystroke()
+}
+
+type legacyKeyReleaseMsg struct {
+	key  tea.Key
+	text string
+}
+
+func (m legacyKeyReleaseMsg) String() string { return m.text }
+
+func (m legacyKeyReleaseMsg) Key() tea.Key { return m.key }
+
+func (m legacyKeyReleaseMsg) Keystroke() string {
+	if len(m.text) == 1 {
+		return m.text
+	}
+	return m.key.Keystroke()
+}
+
+func translateKeyForTerminal(msg tea.Msg) tea.Msg {
+	switch km := msg.(type) {
+	case tea.KeyPressMsg:
+		key := km.Key()
+		text := legacyKeyString(key, km.String())
+		return legacyKeyPressMsg{key: key, text: text}
+	case tea.KeyReleaseMsg:
+		key := km.Key()
+		text := legacyKeyString(key, km.String())
+		return legacyKeyReleaseMsg{key: key, text: text}
+	default:
+		return msg
+	}
+}
+
+func legacyKeyString(key tea.Key, fallback string) string {
+	if s, ok := ctrlSequence(key); ok {
+		return s
+	}
+	switch key.Code {
+	case tea.KeySpace:
+		return " "
+	case tea.KeyTab:
+		return "\t"
+	case tea.KeyBackspace:
+		return "\x7f"
+	}
+	if key.Text != "" {
+		if _, size := utf8.DecodeRuneInString(key.Text); size > 0 {
+			return key.Text
+		}
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return key.Keystroke()
+}
+
+func ctrlSequence(key tea.Key) (string, bool) {
+	if key.Mod&tea.ModCtrl == 0 {
+		return "", false
+	}
+	// Ignore combinations with additional modifiers (alt, meta, etc.).
+	if key.Mod&(^(tea.ModCtrl|tea.ModShift)) != 0 {
+		return "", false
+	}
+
+	r := rune(key.Code)
+	if r == 0 && key.Text != "" {
+		var size int
+		r, size = utf8.DecodeRuneInString(key.Text)
+		if size == 0 {
+			return "", false
+		}
+	}
+	if r == 0 {
+		return "", false
+	}
+	if r <= 0x7f {
+		return string(r & 0x1f), true
+	}
+	return "", false
 }
 
 // SetShowPanels sets whether panels are visible
