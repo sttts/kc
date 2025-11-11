@@ -22,7 +22,7 @@ func mkTestFolder(path []string, names ...string) models.Folder {
 	if len(path) > 0 {
 		title = strings.Join(path, "/")
 	}
-	return modeltesting.NewSliceFolder(title, []table.Column{{Title: " Name"}}, rows)
+	return modeltesting.NewStaticFolder(title, []table.Column{{Title: " Name"}}, rows)
 }
 
 func folderPathString(f models.Folder) string {
@@ -112,7 +112,7 @@ func TestEnterFromNamespacesIntoGroups(t *testing.T) {
 	// namespaces folder with one namespace row that enters a groups folder
 	groups := mkTestFolder([]string{"groups"}, "pods", "configmaps")
 	nsRow := modeltesting.NewEnterableItem("default", []string{"default"}, []string{"namespaces", "default"}, func() (models.Folder, error) { return groups, nil }, models.WhiteStyle())
-	nsFolder := modeltesting.NewSliceFolder("namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
+	nsFolder := modeltesting.NewStaticFolder("namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
 	ctx := t.Context()
 	setupPanelFolder(ctx, p, nsFolder, true)
 	var gotNext models.Folder
@@ -142,7 +142,7 @@ func TestSelectionRestoredOnBack(t *testing.T) {
 		models.NewSimpleItem("contexts", []string{"contexts"}, []string{"contexts"}, models.WhiteStyle()),
 		modeltesting.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (models.Folder, error) { return groups, nil }, models.WhiteStyle()),
 	}
-	root := modeltesting.NewSliceFolder("/", []table.Column{{Title: " Name"}}, rows)
+	root := modeltesting.NewStaticFolder("/", []table.Column{{Title: " Name"}}, rows)
 
 	// Wire navigator-like handler
 	navg := nav.NewNavigator(root)
@@ -199,10 +199,10 @@ func TestSelectionRestoreWithinContexts(t *testing.T) {
 		modeltesting.NewEnterableItem("ctxA", []string{"ctxA"}, []string{"contexts", "ctxA"}, func() (models.Folder, error) { return ctxANamespaces, nil }, models.WhiteStyle()),
 		models.NewSimpleItem("ctxB", []string{"ctxB"}, []string{"contexts", "ctxB"}, models.WhiteStyle()),
 	}
-	contexts := modeltesting.NewSliceFolder("contexts", []table.Column{{Title: " Name"}}, ctxsRows)
+	contexts := modeltesting.NewStaticFolder("contexts", []table.Column{{Title: " Name"}}, ctxsRows)
 
 	// root folder with enterable contexts
-	root := modeltesting.NewSliceFolder("/", []table.Column{{Title: " Name"}}, []table.Row{
+	root := modeltesting.NewStaticFolder("/", []table.Column{{Title: " Name"}}, []table.Row{
 		modeltesting.NewEnterableItem("contexts", []string{"contexts"}, []string{"contexts"}, func() (models.Folder, error) { return contexts, nil }, models.WhiteStyle()),
 	})
 
@@ -266,8 +266,8 @@ func TestSelectionRestoreNamespacesToGroupsAndBack(t *testing.T) {
 	// Build folders: root(namespaces) -> groups
 	groups := mkTestFolder([]string{"groups"}, "pods", "configmaps")
 	nsRow := modeltesting.NewEnterableItem("default", []string{"default"}, []string{"namespaces", "default"}, func() (models.Folder, error) { return groups, nil }, models.WhiteStyle())
-	nsFolder := modeltesting.NewSliceFolder("namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
-	root := modeltesting.NewSliceFolder("/", []table.Column{{Title: " Name"}}, []table.Row{modeltesting.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (models.Folder, error) { return nsFolder, nil }, models.WhiteStyle())})
+	nsFolder := modeltesting.NewStaticFolder("namespaces", []table.Column{{Title: " Name"}}, []table.Row{nsRow})
+	root := modeltesting.NewStaticFolder("/", []table.Column{{Title: " Name"}}, []table.Row{modeltesting.NewEnterableItem("namespaces", []string{"namespaces"}, []string{"namespaces"}, func() (models.Folder, error) { return nsFolder, nil }, models.WhiteStyle())})
 
 	navg := nav.NewNavigator(root)
 	ctx := t.Context()

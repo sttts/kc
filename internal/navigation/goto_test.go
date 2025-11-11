@@ -30,11 +30,11 @@ func (e *enterItem) Enter() (models.Folder, error) {
 func TestGoTo(t *testing.T) {
 	ctx := context.Background()
 
-	leaf := modeltesting.NewSliceFolder("resources", []table.Column{{Title: " Name"}}, nil)
-	nsFolder := modeltesting.NewSliceFolder("namespaces", []table.Column{{Title: " Name"}}, []table.Row{
+	leaf := modeltesting.NewStaticFolder("resources", []table.Column{{Title: " Name"}}, nil)
+	nsFolder := modeltesting.NewStaticFolder("namespaces", []table.Column{{Title: " Name"}}, []table.Row{
 		newEnterItem("default", leaf),
 	})
-	root := modeltesting.NewSliceFolder("/", []table.Column{{Title: " Name"}}, []table.Row{
+	root := modeltesting.NewStaticFolder("/", []table.Column{{Title: " Name"}}, []table.Row{
 		newEnterItem("namespaces", nsFolder),
 	})
 
@@ -60,7 +60,7 @@ func TestGoTo(t *testing.T) {
 
 func TestGoToMissingItem(t *testing.T) {
 	ctx := context.Background()
-	root := modeltesting.NewSliceFolder("/", nil, nil)
+	root := modeltesting.NewStaticFolder("/", nil, nil)
 	nav := NewNavigator(root)
 	_, err := GoTo(ctx, nav, []GoToStep{
 		{SelectionID: "missing", Enter: true},

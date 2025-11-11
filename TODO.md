@@ -65,7 +65,7 @@ Current tasks
 - [x] Implement virtualization/windowing to support 10s of thousands of rows (render only visible rows).
 
 ## Current gaps (Hierarchy & Folders)
-- [ ] Replace any remaining `NewSliceFolder` usage in tests with explicit constructors (`NewResourcesFolder` / `NewObjectsFolder`).
+- [x] Replace any remaining `NewSliceFolder` usage in tests with explicit constructors (`NewResourcesFolder` / `NewObjectsFolder`).
 - [ ] Implement two modes:
   - [ ] Fit mode: pre-truncate ASCII to target widths, then style; no horizontal scroll.
   - [ ] Left/Right mode: no pre-truncate; support horizontal panning with arrow keys.

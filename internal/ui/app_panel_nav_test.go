@@ -11,7 +11,7 @@ import (
 
 // helper to make a simple folder
 func mkFolder(title string) models.Folder {
-	return modeltesting.NewSliceFolder(title, []table.Column{{Title: " Name"}}, nil)
+	return modeltesting.NewStaticFolder(title, []table.Column{{Title: " Name"}}, nil)
 }
 
 func TestIndependentPanelNavigation(t *testing.T) {

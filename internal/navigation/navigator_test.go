@@ -20,7 +20,7 @@ func mkFolder(path []string, names ...string) models.Folder {
 	if len(path) > 0 {
 		title = strings.Join(path, "/")
 	}
-	return modeltesting.NewSliceFolder(title, []table.Column{{Title: " Name"}}, rows)
+	return modeltesting.NewStaticFolder(title, []table.Column{{Title: " Name"}}, rows)
 }
 
 func TestNavigator_BackFromRootNamespacesGoesToRoot(t *testing.T) {
