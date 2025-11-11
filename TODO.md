@@ -45,18 +45,18 @@ Current tasks
 ## Object Views (Core UX)
 - [x] Unify F-key and `Esc+digit` handling across app and modals (everywhere F-keys work, Esc+digit should too).
 - [x] YAML viewer search: start with `F7`/`Ctrl+F`/`/` (documented as `F7`+`F` in function bar); `F2` to continue to next match; highlight matches.
-- [ ] Pods detail: entering a pod shows container list (containers + initContainers). Under each container, add a `logs` subresource. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + watch). `Esc` closes.
-- [ ] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal. Handle binary secret data gracefully.
-  - [ ] Wire viewers for `ConfigMapKeysFolder` and `SecretKeysFolder` (value rendering).
-  - [ ] Add `LogsView` and wire under `PodContainersFolder`.
-  - [ ] Logs: implement a logs viewer (follow mode, search). Wire container “logs” entries to open it.
+- [x] Pods detail: entering a pod shows container list (containers + initContainers). Under each container, add a `logs` subresource. `F3` on `logs` opens a modal viewer; `Ctrl+F` follows (jump to end + watch). `Esc` closes.
+- [x] ConfigMaps/Secrets: entering shows data keys as file-like entries. `F3` views value in modal. Handle binary secret data gracefully.
+  - [x] Wire viewers for `ConfigMapKeysFolder` and `SecretKeysFolder` (value rendering).
+  - [x] Add `LogsView` and wire under `PodContainersFolder`.
+  - [x] Logs: implement a logs viewer (follow mode, search). Wire container “logs” entries to open it.
 - [x] `F1` Help: render `README.md` in a markdown viewer (Glow widget) inside a modal; available from any panel/context.
 - [ ] Function key bar: dynamic and context-aware (grey out unavailable actions per location/object).
 - [ ] Delete modal: Enter should activate the focused button (Yes/No) in addition to Left/Right selection.
 
 ## Table View Enhancements
-- [ ] Horizontal scroll: when columns exceed panel width, support column‑wise scrolling with Left/Right keys; gate on “no typed input” (same Enter routing gating).
- - [ ] Dim Group column and align counts per spec; refine selection style (bold yellow) in table mode.
+- [x] Horizontal scroll: when columns exceed panel width, support column‑wise scrolling with Left/Right keys; gate on “no typed input” (same Enter routing gating).
+ - [x] Dim Group column and align counts per spec; refine selection style (bold yellow) in table mode.
 
 ## Table Component (internal/table)
 - [ ] Define public model interfaces (no SetCell):
