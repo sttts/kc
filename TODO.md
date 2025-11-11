@@ -59,9 +59,9 @@ Current tasks
  - [x] Dim Group column and align counts per spec; refine selection style (bold yellow) in table mode.
 
 ## Table Component (internal/table)
-- [ ] Define public model interfaces (no SetCell):
-  - [ ] `type Row interface { Columns() (id string, cells []string, styles []*lipgloss.Style, exists bool) }`
-  - [ ] `type List interface { Lines(top, num int) []Row; Above(rowID string, num int) []Row; Below(rowID string, num int) []Row }`
+- [x] Define public model interfaces (no SetCell):
+  - [x] `type Row interface { Columns() (id string, cells []string, styles []*lipgloss.Style, exists bool) }`
+  - [x] `type List interface { Lines(top, num int) []Row; Above(rowID string, num int) []Row; Below(rowID string, num int) []Row }`
 - [ ] Implement virtualization/windowing to support 10s of thousands of rows (render only visible rows).
 
 ## Current gaps (Hierarchy & Folders)

@@ -1,8 +1,8 @@
 # Table Component TODOs
 
-- Define public model interfaces (no SetCell):
-  - `type Row interface { Columns() (id string, cells []string, styles []*lipgloss.Style, exists bool) }`
-  - `type List interface { Lines(top, num int) []Row; Above(rowID string, num int) []Row; Below(rowID string, num int) []Row }`
+- [x] Define public model interfaces (no SetCell):
+  - [x] `type Row interface { Columns() (id string, cells []string, styles []*lipgloss.Style, exists bool) }`
+  - [x] `type List interface { Lines(top, num int) []Row; Above(rowID string, num int) []Row; Below(rowID string, num int) []Row }`
 - Data sources:
   - [x] Slice-backed `SliceList` with reusable `SimpleRow` and methods: `InsertBefore/After`, `Append/Prepend`, `RemoveIDs`, `RemoveAt`.
   - [x] Doubly linked `LinkedList` with pointer-efficient inserts/removes and `Find/Above/Below/Lines` (uses `SimpleRow`).
