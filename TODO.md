@@ -69,7 +69,7 @@ Current tasks
 - [ ] Implement two modes:
   - [ ] Fit mode: pre-truncate ASCII to target widths, then style; no horizontal scroll.
   - [ ] Left/Right mode: no pre-truncate; support horizontal panning with arrow keys.
-- [ ] Width management: measure plain ASCII widths; compute target widths; avoid slicing ANSI sequences.
+- [x] Width management: measure plain ASCII widths; compute target widths; avoid slicing ANSI sequences.
 - [x] Selector line behavior: visible only when focused; if the selected row disappears, move selection to the next row (or previous if no next).
 - [x] Selection toggling: handle `Ctrl+T` and `Insert` with toggle semantics; render selected rows with selection style.
 - [x] High reusability: expose configuration options (columns, borders, header style, selection style, vertical separators; allow “no border”).
