@@ -211,6 +211,25 @@ func TestBigTableMultiSelectMarks(t *testing.T) {
 	}
 }
 
+func TestBigTablePreservesMarksAfterSetList(t *testing.T) {
+	ctx := context.Background()
+	cols := mkCols(1, 6)
+	list := mkList(3, 1)
+	bt := NewBigTable(cols, list, 30, 8)
+	bt.Refresh(ctx)
+
+	bt.Mark(ctx, "id-00", true)
+	bt.Mark(ctx, "id-01", true)
+
+	list.RemoveIDs("id-01")
+	bt.SetList(ctx, list)
+
+	ids := bt.SelectedIDs()
+	if len(ids) != 1 || ids[0] != "id-00" {
+		t.Fatalf("expected only id-00 mark, got %v", ids)
+	}
+}
+
 type windowSpyList struct {
 	rows  []Row
 	index map[string]int
