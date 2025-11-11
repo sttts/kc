@@ -21,8 +21,8 @@ import (
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
-	"github.com/sttts/kc/internal/ui/termctx"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
+	"github.com/sttts/kc/internal/ui/termctx"
 	viewpkg "github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/kubeconfig"
@@ -3328,13 +3328,19 @@ func (a *App) logCommandToTerminal(command string) {
 }
 
 func (a *App) ensureTermContext() {
-	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
+	if !a.cfg.Terminal.Follow || a.currentCtx == nil || a.currentCtx.Kubeconfig == nil {
+		if a.termCtx != nil {
+			_ = a.termCtx.Close()
+			a.termCtx = nil
+		}
+		a.terminal.SetEnv(nil)
 		return
 	}
 	if a.termCtx != nil {
 		_ = a.termCtx.Close()
 	}
-	mgr, err := termctx.NewManager(a.currentCtx.Kubeconfig.Path)
+	mode := convertTerminalMode(a.cfg.Terminal.Mode)
+	mgr, err := termctx.NewManager(a.currentCtx.Kubeconfig.Path, a.currentCtx.Kubeconfig.Config, mode)
 	if err != nil {
 		if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("Terminal overlay: %v", err))
@@ -3347,7 +3353,7 @@ func (a *App) ensureTermContext() {
 }
 
 func (a *App) updateTermContextNamespace(ns string) {
-	if a.termCtx == nil || a.currentCtx == nil {
+	if !a.cfg.Terminal.Follow || a.termCtx == nil || a.currentCtx == nil {
 		return
 	}
 	if err := a.termCtx.Update(a.currentCtx.Name, ns); err != nil {
@@ -3362,7 +3368,7 @@ func (a *App) buildTerminalEnv() []string {
 	if a.termCtx == nil {
 		return env
 	}
-	value := fmt.Sprintf("KUBECONFIG=%s:%s", a.termCtx.OverlayPath(), a.termCtx.BaseConfig())
+	value := fmt.Sprintf("KUBECONFIG=%s", a.termCtx.EnvValue())
 	return append(filterEnv(env, "KUBECONFIG"), value)
 }
 
@@ -3376,6 +3382,15 @@ func filterEnv(env []string, key string) []string {
 		out = append(out, entry)
 	}
 	return out
+}
+
+func convertTerminalMode(mode appconfig.TerminalMode) termctx.Mode {
+	switch mode {
+	case appconfig.TerminalModeCopy:
+		return termctx.ModeCopy
+	default:
+		return termctx.ModeOverlay
+	}
 }
 
 func (a *App) refreshPanelAfterEdit(panelIdx int) {
@@ -3664,18 +3679,18 @@ func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 		}
 		log.Info("namespace readiness evaluated", "namespace", ns, "ready", nsReady, "terminal", terminal)
 		switch {
-	case nsReady:
-		if !a.forceNamespaceNavigation(ns, depsLeft, depsRight) {
+		case nsReady:
+			if !a.forceNamespaceNavigation(ns, depsLeft, depsRight) {
 				log.Error(fmt.Errorf("navigation failed"), "unable to navigate to namespace", "namespace", ns)
 				if ns == a.namespaceAutoTarget {
 					a.namespaceAutoTarget = ""
 				}
 				logged = true
 				break
-		}
-		log.Info("navigated to namespace", "namespace", ns)
-		a.updateTermContextNamespace(ns)
-		logged = true
+			}
+			log.Info("navigated to namespace", "namespace", ns)
+			a.updateTermContextNamespace(ns)
+			logged = true
 			if ns == a.namespaceAutoTarget {
 				a.namespaceAutoTarget = ""
 				a.namespaceAutoAttempts = 0

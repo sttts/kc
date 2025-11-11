@@ -107,6 +107,7 @@ type Config struct {
 	Kubernetes KubernetesConfig    `json:"kubernetes"`
 	Resources  ResourcesViewConfig `json:"resources"`
 	Objects    ObjectsConfig       `json:"objects"`
+	Terminal   TerminalConfig      `json:"terminal"`
 }
 
 // ObjectsConfig controls object-list specific options.
@@ -115,6 +116,18 @@ type ObjectsConfig struct {
 	Order string `json:"order"`
 	// Columns controls which columns are shown. Valid values are ColumnsModeNormal and ColumnsModeWide.
 	Columns string `json:"columns"`
+}
+
+type TerminalMode string
+
+const (
+	TerminalModeOverlay TerminalMode = "overlay"
+	TerminalModeCopy    TerminalMode = "copy"
+)
+
+type TerminalConfig struct {
+	Follow bool         `json:"follow"`
+	Mode   TerminalMode `json:"mode"`
 }
 
 // TableMode selects how tables render horizontally.
@@ -156,7 +169,8 @@ func Default() *Config {
 				"ingresses", "networkpolicies", "persistentvolumeclaims",
 			},
 		},
-		Objects: ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
+		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
+		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
 	}
 }
 
@@ -198,6 +212,12 @@ func Load() (*Config, error) {
 			cfg.Panel.Table.Mode = TableModeScroll
 		}
 		normalizePanelWidth(&cfg.Panel.Width)
+		if !cfg.Terminal.Follow {
+			// leave as-is; default false means follow disabled
+		}
+		if cfg.Terminal.Mode != TerminalModeCopy && cfg.Terminal.Mode != TerminalModeOverlay {
+			cfg.Terminal.Mode = TerminalModeOverlay
+		}
 		if cfg.Kubernetes.Clusters.TTL.Duration == 0 {
 			cfg.Kubernetes.Clusters.TTL = metav1.Duration{Duration: 2 * time.Minute}
 		}

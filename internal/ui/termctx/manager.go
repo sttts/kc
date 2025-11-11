@@ -10,20 +10,34 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	clientcmd "k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 const hashPrefix = "# kc overlay hash:"
 
-// Manager owns the overlay kubeconfig for a PTY session.
+type Mode string
+
+const (
+	ModeOverlay Mode = "overlay"
+	ModeCopy    Mode = "copy"
+)
+
+// Manager owns the kubeconfig material for a PTY session.
 type Manager struct {
-	dir        string
-	overlay    string
-	baseConfig string
-	lastHash   string
+	dir      string
+	envValue string
+	mode     Mode
+	basePath string
+	overlay  string
+	copyPath string
+	lastHash string
+	template *clientcmdapi.Config
 }
 
 // NewManager creates a manager under a per-user temp root and cleans stale dirs.
-func NewManager(baseConfig string) (*Manager, error) {
+func NewManager(basePath string, template *clientcmdapi.Config, mode Mode) (*Manager, error) {
 	root := filepath.Join(os.TempDir(), fmt.Sprintf("kc-%d", os.Getuid()))
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
@@ -33,18 +47,57 @@ func NewManager(baseConfig string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	overlay := filepath.Join(dir, "overlay.yaml")
-	return &Manager{dir: dir, overlay: overlay, baseConfig: baseConfig}, nil
+	m := &Manager{
+		dir:      dir,
+		mode:     mode,
+		basePath: basePath,
+	}
+	switch mode {
+	case ModeCopy:
+		cp := filepath.Join(dir, "config.yaml")
+		if template != nil {
+			if err := clientcmd.WriteToFile(*template.DeepCopy(), cp); err != nil {
+				return nil, err
+			}
+		} else {
+			data, err := os.ReadFile(basePath)
+			if err != nil {
+				return nil, err
+			}
+			if err := os.WriteFile(cp, data, 0o600); err != nil {
+				return nil, err
+			}
+		}
+		m.copyPath = cp
+		m.envValue = cp
+	default:
+		overlay := filepath.Join(dir, "overlay.yaml")
+		m.overlay = overlay
+		m.envValue = fmt.Sprintf("%s:%s", overlay, basePath)
+	}
+	if template != nil {
+		m.template = template.DeepCopy()
+	}
+	return m, nil
 }
 
-// OverlayPath returns the overlay kubeconfig path.
+// EnvValue returns the string to use for KUBECONFIG.
+func (m *Manager) EnvValue() string { return m.envValue }
+
+// OverlayPath returns the overlay file path (overlay mode only).
 func (m *Manager) OverlayPath() string { return m.overlay }
 
-// BaseConfig returns the underlying kubeconfig.
-func (m *Manager) BaseConfig() string { return m.baseConfig }
-
-// Update rewrites the overlay with the given context+namespace.
+// Update rewrites the config with the given context+namespace.
 func (m *Manager) Update(ctxName, namespace string) error {
+	switch m.mode {
+	case ModeCopy:
+		return m.updateCopy(ctxName, namespace)
+	default:
+		return m.updateOverlay(ctxName, namespace)
+	}
+}
+
+func (m *Manager) updateOverlay(ctxName, namespace string) error {
 	body := renderOverlay(ctxName, namespace)
 	h := sha256.Sum256([]byte(body))
 	hashLine := fmt.Sprintf("%s %s\n", hashPrefix, hex.EncodeToString(h[:]))
@@ -56,8 +109,33 @@ func (m *Manager) Update(ctxName, namespace string) error {
 	return nil
 }
 
+func (m *Manager) updateCopy(ctxName, namespace string) error {
+	cfg, err := clientcmd.LoadFromFile(m.copyPath)
+	if err != nil {
+		if m.template == nil {
+			return err
+		}
+		cfg = m.template.DeepCopy()
+	}
+	cfg.CurrentContext = ctxName
+	ctx := cfg.Contexts[ctxName]
+	if ctx == nil {
+		if m.template != nil && m.template.Contexts[ctxName] != nil {
+			ctx = m.template.Contexts[ctxName].DeepCopy()
+		} else {
+			return fmt.Errorf("context %s not found in kubeconfig", ctxName)
+		}
+		cfg.Contexts[ctxName] = ctx
+	}
+	ctx.Namespace = namespace
+	return clientcmd.WriteToFile(*cfg, m.copyPath)
+}
+
 // DetectExternalChange reports when the overlay hash changes outside kc.
 func (m *Manager) DetectExternalChange() (changed bool, ctxName, namespace string, err error) {
+	if m.mode != ModeOverlay {
+		return false, "", "", nil
+	}
 	data, err := os.ReadFile(m.overlay)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -86,7 +164,7 @@ func (m *Manager) DetectExternalChange() (changed bool, ctxName, namespace strin
 	return true, ctxName, ns, nil
 }
 
-// Close removes the overlay temp dir.
+// Close removes the temp dir.
 func (m *Manager) Close() error {
 	return os.RemoveAll(m.dir)
 }

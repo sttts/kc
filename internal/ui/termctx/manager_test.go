@@ -5,11 +5,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	clientcmd "k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 func TestManagerUpdate(t *testing.T) {
 	base := "/home/user/.kube/config"
-	mgr, err := NewManager(base)
+	mgr, err := NewManager(base, nil, ModeOverlay)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -31,7 +34,7 @@ func TestManagerUpdate(t *testing.T) {
 }
 
 func TestManagerNamespaceOverlay(t *testing.T) {
-	mgr, err := NewManager("/home/user/.kube/config")
+	mgr, err := NewManager("/home/user/.kube/config", nil, ModeOverlay)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -50,7 +53,7 @@ func TestManagerNamespaceOverlay(t *testing.T) {
 }
 
 func TestDetectExternalChange(t *testing.T) {
-	mgr, err := NewManager("/home/user/.kube/config")
+	mgr, err := NewManager("/home/user/.kube/config", nil, ModeOverlay)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -67,7 +70,7 @@ func TestDetectExternalChange(t *testing.T) {
 	}
 	// simulate external change
 	body := "apiVersion: v1\nkind: Config\ncurrent-context: ctx-b\n"
-	if err := os.WriteFile(mgr.OverlayPath(), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(mgr.overlay, []byte(body), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	changed, ctxName, _, err := mgr.DetectExternalChange()
@@ -90,5 +93,30 @@ func TestReapRemovesStale(t *testing.T) {
 	reap(root)
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("expected stale dir removed")
+	}
+}
+
+func TestManagerCopyMode(t *testing.T) {
+	cfg := clientcmdapi.NewConfig()
+	cfg.Contexts["ctx-a"] = &clientcmdapi.Context{Cluster: "cluster-a", AuthInfo: "user-a"}
+	cfg.CurrentContext = "ctx-a"
+	base := filepath.Join(t.TempDir(), "base.yaml")
+	if err := clientcmd.WriteToFile(*cfg, base); err != nil {
+		t.Fatalf("write base: %v", err)
+	}
+	mgr, err := NewManager(base, cfg, ModeCopy)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	t.Cleanup(func() { _ = mgr.Close() })
+	if err := mgr.Update("ctx-a", "team-a"); err != nil {
+		t.Fatalf("update copy: %v", err)
+	}
+	copyCfg, err := clientcmd.LoadFromFile(mgr.EnvValue())
+	if err != nil {
+		t.Fatalf("load copy: %v", err)
+	}
+	if copyCfg.Contexts["ctx-a"].Namespace != "team-a" {
+		t.Fatalf("expected namespace team-a, got %s", copyCfg.Contexts["ctx-a"].Namespace)
 	}
 }
