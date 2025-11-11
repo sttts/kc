@@ -42,6 +42,7 @@ type BigTable struct {
 	top       int                 // absolute index of top row in provider
 	cursor    int                 // absolute cursor index in provider
 	focusedID string              // ID of the currently focused row (for stability across updates)
+	windowTop int                 // absolute index backing the current window slice
 
 	// cached rendered table (header + rows)
 	bodyRow string
@@ -107,6 +108,7 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 		top:       0,
 		cursor:    0,
 		focusedID: "",
+		windowTop: 0,
 		styles:    DefaultStyles(),
 		bColumn:   false,
 		xOff:      0,
@@ -170,6 +172,8 @@ func (m *BigTable) ToggleMode(ctx context.Context) {
 // next row, or previous when no next exists.
 func (m *BigTable) SetList(ctx context.Context, list List) {
 	m.list = list
+	m.window = nil
+	m.windowTop = m.top
 	m.repositionOnDataChange(ctx)
 	m.rebuildWindow(ctx)
 }
@@ -372,7 +376,7 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 	}
 
 	// Render exactly the number of visible rows.
-	m.window = m.list.Lines(ctx, m.top, rowsVisible)
+	m.ensureWindow(ctx, rowsVisible)
 
 	// Single lipgloss table: headers + data rows; no outside borders or underline.
 	t := lgtable.New().Wrap(false).Height(m.h).Width(m.w).WithOverflowRow(false)
@@ -466,6 +470,116 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 			m.focusedID = id
 		}
 	}
+}
+
+func (m *BigTable) ensureWindow(ctx context.Context, rowsVisible int) {
+	total := m.list.Len(ctx)
+	targetSize := clampWindowSize(total, m.top, rowsVisible)
+	if targetSize == 0 {
+		m.window = nil
+		m.windowTop = m.top
+		return
+	}
+	prevTarget := clampWindowSize(total, m.windowTop, rowsVisible)
+	if len(m.window) == targetSize && m.windowTop == m.top {
+		return
+	}
+	if len(m.window) == prevTarget && prevTarget > 0 {
+		if m.top == m.windowTop+1 && m.tryShiftDown(ctx, targetSize) {
+			return
+		}
+		if m.windowTop == m.top+1 && m.tryShiftUp(ctx, targetSize) {
+			return
+		}
+	}
+	m.window = m.list.Lines(ctx, m.top, rowsVisible)
+	m.windowTop = m.top
+}
+
+func (m *BigTable) tryShiftDown(ctx context.Context, targetSize int) bool {
+	if len(m.window) == 0 {
+		return false
+	}
+	trimmed := m.window[1:]
+	if len(trimmed) == 0 {
+		return false
+	}
+	if len(trimmed) >= targetSize {
+		m.window = trimmed[len(trimmed)-targetSize:]
+		m.windowTop = m.top
+		return true
+	}
+	last := trimmed[len(trimmed)-1]
+	id, _, _, ok := last.Columns()
+	if !ok {
+		return false
+	}
+	need := targetSize - len(trimmed)
+	if need < 0 {
+		need = 0
+	}
+	if need == 0 {
+		m.window = trimmed
+		m.windowTop = m.top
+		return true
+	}
+	extra := m.list.Below(ctx, id, need)
+	if len(extra) < need {
+		return false
+	}
+	m.window = append(trimmed, extra...)
+	m.windowTop = m.top
+	return true
+}
+
+func (m *BigTable) tryShiftUp(ctx context.Context, targetSize int) bool {
+	if len(m.window) == 0 {
+		return false
+	}
+	prev := m.window
+	anchor := prev[0]
+	id, _, _, ok := anchor.Columns()
+	if !ok {
+		return false
+	}
+	keep := targetSize - 1
+	if keep < 0 {
+		keep = 0
+	}
+	if keep > len(prev) {
+		keep = len(prev)
+	}
+	remain := prev[:keep]
+	if len(remain) >= targetSize {
+		m.window = remain[len(remain)-targetSize:]
+		m.windowTop = m.top
+		return true
+	}
+	need := targetSize - len(remain)
+	extra := m.list.Above(ctx, id, need)
+	if len(extra) < need {
+		return false
+	}
+	m.window = append(extra, remain...)
+	if len(m.window) > targetSize {
+		m.window = m.window[len(m.window)-targetSize:]
+	}
+	m.windowTop = m.top
+	return true
+}
+
+func clampWindowSize(total, top, rowsVisible int) int {
+	if rowsVisible <= 0 || total <= 0 || top >= total {
+		return 0
+	}
+	size := rowsVisible
+	if remaining := total - top; remaining < size {
+		size = remaining
+	}
+	if size < 0 {
+		return 0
+	}
+	return size
 }
 
 func (m *BigTable) applyMode(ctx context.Context) { m.rebuildWindow(ctx) }

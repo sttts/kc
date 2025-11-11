@@ -6,7 +6,7 @@
 - Data sources:
   - [x] Slice-backed `SliceList` with reusable `SimpleRow` and methods: `InsertBefore/After`, `Append/Prepend`, `RemoveIDs`, `RemoveAt`.
   - [x] Doubly linked `LinkedList` with pointer-efficient inserts/removes and `Find/Above/Below/Lines` (uses `SimpleRow`).
-- Implement virtualization/windowing to support 10s of thousands of rows (render only visible rows).
+- [x] Implement virtualization/windowing to support 10s of thousands of rows (render only visible rows).
 - Add two modes:
   - Fit mode: pre-truncate ASCII to target widths, then style; no horizontal scroll.
   - Left/Right mode: no pre-truncate; support horizontal panning with arrow keys.
