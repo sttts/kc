@@ -2898,11 +2898,6 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 	}
 
 	namespace := strings.TrimSpace(obj.Namespace())
-	if namespace == "" && panelPath != "" {
-		if ns, _, _, ok := parseNamespacedObjectPath(panelPath, obj.Name()); ok && ns != "" {
-			namespace = ns
-		}
-	}
 	if namespace == "" {
 		namespace = strings.TrimSpace(a.currentCtx.Namespace)
 	}
@@ -3416,20 +3411,6 @@ func (a *App) refreshPanelAfterEdit(panelIdx int) {
 		panel.RefreshFolder(ctx)
 		cancel()
 	}
-}
-
-func parseNamespacedObjectPath(path, currentName string) (ns, res, name string, ok bool) {
-	// /namespaces/<ns>/<res>[/<name>]
-	if strings.HasPrefix(path, "/namespaces/") {
-		parts := strings.Split(path, "/")
-		if len(parts) == 4 { // object list level
-			return parts[2], parts[3], currentName, true
-		}
-		if len(parts) >= 5 { // object level
-			return parts[2], parts[3], parts[4], true
-		}
-	}
-	return "", "", "", false
 }
 
 func (a *App) copyItem() tea.Cmd {
