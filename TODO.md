@@ -29,14 +29,15 @@ Detailed next steps (post‑compaction anchors)
   - [x] Ensure all watchers share the app’s `ctx` and terminate after idle TTL.
 
 ## Milestone 2 — UI Navigation on the Model
-- Panel adapter reads model nodes; implements `Enter`, `Back(..)`, breadcrumbs, and `..` entries.
-- Live updates: diff -> list model -> minimal reflow; preserve scroll and cursor when possible.
-- Function bar: dynamic enable/disable based on node capabilities (view/edit/delete/create).
-- F-keys (initial scope): implement F3 (View YAML) and F8 (Delete). Leave scaffolds/hooks for F4/F7 and menu-driven options to prioritize extensibility over completeness.
-- Sorting: per-panel sort (name, created, last change; nodes/pods capacity/consumption/status) with Asc/Desc toggle.
-- Tests: panel navigation logic, sorting and enablement state, selection behavior.
+- [x] Panel adapter reads model nodes; implements `Enter`, `Back(..)`, breadcrumbs, and `..` entries.
+- [x] Live updates: diff -> list model -> minimal reflow; preserve scroll and cursor when possible.
+- Function bar state (open): dynamically gray out unavailable actions per selection; currently the footer is static except for global env flags.
+- [x] F-keys initial scope: implemented F3 (View YAML), F7 (Create Namespace), and F8 (Delete), with hooks for additional keys.
+- [x] Sorting: per-panel sort order exposed via the options menu and applied to list models.
+- Tests: ensure panel navigation logic, future function-bar enablement, and selection behavior remain covered once the function bar is dynamic.
 
 Current tasks
+- [ ] Function bar: compute capability-aware enablement for view/edit/delete/create actions and update footer styling accordingly.
 - [x] Implement per-panel sorting toggle UI and apply to list model.
  - [x] Use Watch events to drive live updates; keep cursor stable as much as possible.
   - [x] Ensure initial `Synced` event triggers first render to avoid empty flashes.
