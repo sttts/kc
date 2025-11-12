@@ -42,6 +42,10 @@ Current tasks
   - [x] Ensure initial `Synced` event triggers first render to avoid empty flashes.
   - [x] Extend live listings to namespace resources (e.g., `/namespaces/<ns>/pods`).
 
+## Terminal Follow Mode & Context Sync
+- [x] Overlay/copy kubeconfig material references real cluster/user from the active context instead of placeholders; copy mode and tests updated.
+- [x] Every namespace transition updates the terminal overlay and emits a `termctx` log (covering startup, manual navigation, and runtime namespace switches).
+
 ## Object Views (Core UX)
 - [x] Unify F-key and `Esc+digit` handling across app and modals (everywhere F-keys work, Esc+digit should too).
 - [x] YAML viewer search: start with `F7`/`Ctrl+F`/`/` (documented as `F7`+`F` in function bar); `F2` to continue to next match; highlight matches.
