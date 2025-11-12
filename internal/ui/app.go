@@ -643,6 +643,32 @@ func (a *App) navigatorPath(nav *navui.Navigator) string {
 	return nav.Path(ctx)
 }
 
+func (a *App) navigatorNamespace(nav *navui.Navigator) string {
+	if nav == nil {
+		return ""
+	}
+	ns := ""
+	type namespaceProvider interface {
+		Namespace() string
+	}
+	nav.ForEach(func(folder models.Folder) {
+		if provider, ok := folder.(namespaceProvider); ok {
+			if name := strings.TrimSpace(provider.Namespace()); name != "" {
+				ns = name
+			}
+		}
+	})
+	return ns
+}
+
+func (a *App) syncTerminalNamespaceForNavigator(nav *navui.Navigator) {
+	if a.cfg == nil || !a.cfg.Terminal.Follow {
+		return
+	}
+	ns := strings.TrimSpace(a.navigatorNamespace(nav))
+	a.updateTermContextNamespace(ns)
+}
+
 func (a *App) makeEnterContextFunc(cfg *appconfig.Config) func(string, []string) (models.Folder, error) {
 	return func(name string, basePath []string) (models.Folder, error) {
 		if a.kubeMgr == nil {
@@ -3356,7 +3382,14 @@ func (a *App) updateTermContextNamespace(ns string) {
 		if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("Terminal context update failed: %v", err))
 		}
+		return
 	}
+	log := ctrllog.FromContext(a.ctx).WithName("termctx")
+	if overlay := a.termCtx.OverlayPath(); overlay != "" {
+		log.Info("updated terminal overlay kubeconfig", "path", overlay, "context", a.currentCtx.Name, "namespace", ns)
+		return
+	}
+	log.Info("updated terminal kubeconfig copy", "path", a.termCtx.EnvValue(), "context", a.currentCtx.Name, "namespace", ns)
 }
 
 func (a *App) buildTerminalEnv() []string {
@@ -3941,6 +3974,7 @@ func (a *App) handleFolderNav(back bool, selID string, next models.Folder) {
 		cancelReset()
 	}
 	a.applyResourceOptions(panelRef)
+	a.syncTerminalNamespaceForNavigator(nav)
 }
 
 // namespaceExists returns true if the namespace exists in the current cluster.

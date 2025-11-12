@@ -11,7 +11,7 @@ import (
 // NamespacedResourcesFolder models resource groups scoped to a namespace.
 type NamespacedResourcesFolder struct {
 	*ResourcesFolder
-	Namespace string
+	namespace string
 }
 
 // NewNamespacedResourcesFolder creates a namespace-scoped resources folder.
@@ -20,10 +20,15 @@ func NewNamespacedResourcesFolder(deps Deps, namespace string, path []string) *N
 	base := NewBaseFolder(deps, nil, path)
 	folder := &NamespacedResourcesFolder{
 		ResourcesFolder: NewResourcesFolder(base),
-		Namespace:       namespace,
+		namespace:       namespace,
 	}
 	base.SetPopulate(folder.populate)
 	return folder
+}
+
+// Namespace returns the namespace associated with this folder.
+func (f *NamespacedResourcesFolder) Namespace() string {
+	return f.namespace
 }
 
 func (f *NamespacedResourcesFolder) populate(ctx context.Context) ([]table.Row, error) {
@@ -56,14 +61,14 @@ func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, e
 	specs := make([]resourceGroupSpec, 0, len(entries))
 	nameStyle := WhiteStyle()
 	for _, entry := range entries {
-		id := fmt.Sprintf("%s/%s/%s/%s", f.Namespace, entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
+		id := fmt.Sprintf("%s/%s/%s/%s", f.namespace, entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
 		gvLabel := groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version)
 		cells := []string{"/" + entry.info.Resource, gvLabel, ""}
 		basePath := append(append([]string{}, f.Path()...), entry.info.Resource)
 		cellsCopy := append([]string(nil), cells...)
 		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
-		ns := f.Namespace
+		ns := f.namespace
 		detail := fmt.Sprintf("%s (%s)", entry.info.Resource, gvLabel)
 		specs = append(specs, resourceGroupSpec{
 			id:        id,
