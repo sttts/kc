@@ -98,7 +98,16 @@ func (m *Manager) Update(ctxName, namespace string) error {
 }
 
 func (m *Manager) updateOverlay(ctxName, namespace string) error {
-	body := renderOverlay(ctxName, namespace)
+	var cluster, user string
+	if namespace != "" {
+		ctx, err := m.lookupContext(ctxName)
+		if err != nil {
+			return err
+		}
+		cluster = ctx.Cluster
+		user = ctx.AuthInfo
+	}
+	body := renderOverlay(ctxName, namespace, cluster, user)
 	h := sha256.Sum256([]byte(body))
 	hashLine := fmt.Sprintf("%s %s\n", hashPrefix, hex.EncodeToString(h[:]))
 	contents := hashLine + body
@@ -129,6 +138,26 @@ func (m *Manager) updateCopy(ctxName, namespace string) error {
 	}
 	ctx.Namespace = namespace
 	return clientcmd.WriteToFile(*cfg, m.copyPath)
+}
+
+func (m *Manager) lookupContext(ctxName string) (*clientcmdapi.Context, error) {
+	if m.template != nil {
+		if ctx := m.template.Contexts[ctxName]; ctx != nil {
+			return ctx, nil
+		}
+	}
+	if m.basePath == "" {
+		return nil, fmt.Errorf("context %s not found in kubeconfig", ctxName)
+	}
+	cfg, err := clientcmd.LoadFromFile(m.basePath)
+	if err != nil {
+		return nil, err
+	}
+	ctx := cfg.Contexts[ctxName]
+	if ctx == nil {
+		return nil, fmt.Errorf("context %s not found in kubeconfig", ctxName)
+	}
+	return ctx, nil
 }
 
 // DetectExternalChange reports when the overlay hash changes outside kc.
@@ -169,7 +198,7 @@ func (m *Manager) Close() error {
 	return os.RemoveAll(m.dir)
 }
 
-func renderOverlay(ctxName, namespace string) string {
+func renderOverlay(ctxName, namespace, cluster, user string) string {
 	if namespace == "" {
 		return fmt.Sprintf("apiVersion: v1\nkind: Config\ncurrent-context: %s\n", ctxName)
 	}
@@ -178,11 +207,11 @@ kind: Config
 contexts:
 - name: %[1]s
   context:
-    cluster: PLACEHOLDER_CLUSTER
-    user: PLACEHOLDER_USER
+    cluster: %[3]s
+    user: %[4]s
     namespace: %[2]s
 current-context: %[1]s
-`, ctxName, namespace)
+`, ctxName, namespace, cluster, user)
 }
 
 func parseOverlay(body string) (ctxName, namespace string) {

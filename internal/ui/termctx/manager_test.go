@@ -10,9 +10,26 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
+func writeTestConfig(t *testing.T) (string, *clientcmdapi.Config) {
+	t.Helper()
+	cfg := clientcmdapi.NewConfig()
+	cfg.Clusters["cluster-a"] = &clientcmdapi.Cluster{Server: "https://cluster-a"}
+	cfg.AuthInfos["user-a"] = &clientcmdapi.AuthInfo{Token: "fake"}
+	cfg.Contexts["ctx-a"] = &clientcmdapi.Context{
+		Cluster:  "cluster-a",
+		AuthInfo: "user-a",
+	}
+	cfg.CurrentContext = "ctx-a"
+	base := filepath.Join(t.TempDir(), "base.yaml")
+	if err := clientcmd.WriteToFile(*cfg, base); err != nil {
+		t.Fatalf("write base config: %v", err)
+	}
+	return base, cfg
+}
+
 func TestManagerUpdate(t *testing.T) {
-	base := "/home/user/.kube/config"
-	mgr, err := NewManager(base, nil, ModeOverlay)
+	base, cfg := writeTestConfig(t)
+	mgr, err := NewManager(base, cfg, ModeOverlay)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -34,7 +51,8 @@ func TestManagerUpdate(t *testing.T) {
 }
 
 func TestManagerNamespaceOverlay(t *testing.T) {
-	mgr, err := NewManager("/home/user/.kube/config", nil, ModeOverlay)
+	base, cfg := writeTestConfig(t)
+	mgr, err := NewManager(base, cfg, ModeOverlay)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -50,10 +68,17 @@ func TestManagerNamespaceOverlay(t *testing.T) {
 	if !strings.Contains(content, "namespace: team-a") {
 		t.Fatalf("overlay missing namespace: %s", content)
 	}
+	if !strings.Contains(content, "cluster: cluster-a") {
+		t.Fatalf("overlay missing cluster: %s", content)
+	}
+	if !strings.Contains(content, "user: user-a") {
+		t.Fatalf("overlay missing user: %s", content)
+	}
 }
 
 func TestDetectExternalChange(t *testing.T) {
-	mgr, err := NewManager("/home/user/.kube/config", nil, ModeOverlay)
+	base, cfg := writeTestConfig(t)
+	mgr, err := NewManager(base, cfg, ModeOverlay)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -97,13 +122,7 @@ func TestReapRemovesStale(t *testing.T) {
 }
 
 func TestManagerCopyMode(t *testing.T) {
-	cfg := clientcmdapi.NewConfig()
-	cfg.Contexts["ctx-a"] = &clientcmdapi.Context{Cluster: "cluster-a", AuthInfo: "user-a"}
-	cfg.CurrentContext = "ctx-a"
-	base := filepath.Join(t.TempDir(), "base.yaml")
-	if err := clientcmd.WriteToFile(*cfg, base); err != nil {
-		t.Fatalf("write base: %v", err)
-	}
+	base, cfg := writeTestConfig(t)
 	mgr, err := NewManager(base, cfg, ModeCopy)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
