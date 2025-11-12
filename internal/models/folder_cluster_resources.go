@@ -51,6 +51,7 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 	specs := make([]resourceGroupSpec, 0, len(entries))
 	nameStyle := WhiteStyle()
 	for _, entry := range entries {
+		verbsCopy := append([]string(nil), entry.info.Verbs...)
 		id := fmt.Sprintf("%s/%s/%s", entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
 		gvLabel := groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version)
 		cells := []string{"/" + entry.info.Resource, gvLabel, ""}
@@ -68,8 +69,9 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 			gvr:       gvr,
 			namespace: "",
 			watchable: true,
+			verbs:     verbsCopy,
 			enter: func() (Folder, error) {
-				return NewClusterObjectsFolder(f.Deps, gvr, pathCopy), nil
+				return NewClusterObjectsFolder(f.Deps, gvr, pathCopy, verbsCopy), nil
 			},
 		})
 	}

@@ -61,6 +61,7 @@ func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, e
 	specs := make([]resourceGroupSpec, 0, len(entries))
 	nameStyle := WhiteStyle()
 	for _, entry := range entries {
+		verbsCopy := append([]string(nil), entry.info.Verbs...)
 		id := fmt.Sprintf("%s/%s/%s/%s", f.namespace, entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
 		gvLabel := groupVersionString(entry.info.GVK.Group, entry.info.GVK.Version)
 		cells := []string{"/" + entry.info.Resource, gvLabel, ""}
@@ -80,7 +81,7 @@ func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, e
 			namespace: ns,
 			watchable: true,
 			enter: func() (Folder, error) {
-				return NewNamespacedObjectsFolder(f.Deps, gvr, ns, pathCopy), nil
+				return NewNamespacedObjectsFolder(f.Deps, gvr, ns, pathCopy, verbsCopy), nil
 			},
 		})
 	}

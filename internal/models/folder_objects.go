@@ -30,10 +30,11 @@ type ObjectsFolder struct {
 	rows        *liveObjectRowSource
 	objectOrder string
 	hasObjOrder bool
+	verbs       []string
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
-func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string) *ObjectsFolder {
+func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string, verbs []string) *ObjectsFolder {
 	deps = deps.ForNamespace(namespace)
 	base := NewBaseFolder(deps, nil, path)
 	base.SetColumns([]table.Column{{Title: " Name"}})
@@ -41,6 +42,7 @@ func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace stri
 		BaseFolder: base,
 		gvr:        gvr,
 		namespace:  namespace,
+		verbs:      append([]string(nil), verbs...),
 	}
 	rows := newLiveObjectRowSource(folder)
 	folder.rows = rows
@@ -98,6 +100,7 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		cells := buildCells(rr.Cells, vis, hasChild)
 		basePath := append(append([]string{}, o.Path()...), name)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, o.namespace, name, nameStyle)
+		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
 		obj.RowItem.details = objectDetails(o.namespace, name, kind, gvStr)
 		if hasChild && ctor != nil {
@@ -131,6 +134,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 			title = "/" + name
 		}
 		obj := NewObjectRow(name, []string{title}, basePath, o.gvr, o.namespace, name, nameStyle)
+		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
 		obj.RowItem.details = objectDetails(o.namespace, name, kind, gvStr)
 		if hasChild && ctor != nil {

@@ -3795,8 +3795,8 @@ func (a *App) forceNamespaceNavigation(ns string, depsLeft, depsRight models.Dep
 	nsPath := []string{"namespaces", ns}
 	log := ctrllog.FromContext(a.ctx).WithName("gotoNamespace").WithValues("namespace", ns)
 
-	leftList := models.NewClusterObjectsFolder(depsLeft, gvrNamespaces, nsListPath)
-	rightList := models.NewClusterObjectsFolder(depsRight, gvrNamespaces, nsListPath)
+	leftList := models.NewClusterObjectsFolder(depsLeft, gvrNamespaces, nsListPath, models.NamespaceResourceVerbs())
+	rightList := models.NewClusterObjectsFolder(depsRight, gvrNamespaces, nsListPath, models.NamespaceResourceVerbs())
 	leftResources := models.NewNamespacedResourcesFolder(depsLeft, ns, nsPath)
 	rightResources := models.NewNamespacedResourcesFolder(depsRight, ns, nsPath)
 

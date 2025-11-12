@@ -10,9 +10,9 @@ type NamespacedObjectsFolder struct {
 }
 
 // NewNamespacedObjectsFolder constructs a namespaced objects folder.
-func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string) *NamespacedObjectsFolder {
+func NewNamespacedObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string, verbs []string) *NamespacedObjectsFolder {
 	folder := &NamespacedObjectsFolder{
-		ObjectsFolder: NewObjectsFolder(deps, gvr, namespace, path),
+		ObjectsFolder: NewObjectsFolder(deps, gvr, namespace, path, verbs),
 	}
 	return folder
 }

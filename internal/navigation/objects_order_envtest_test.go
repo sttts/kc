@@ -69,7 +69,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	gvrNS := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}
 
 	// Order by name ascending
-	f1 := models.NewClusterObjectsFolder(makeDeps("name"), gvrNS, []string{"namespaces"})
+	f1 := models.NewClusterObjectsFolder(makeDeps("name"), gvrNS, []string{"namespaces"}, models.NamespaceResourceVerbs())
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len(ctx) >= 3 })
 	count := f1.Len(ctx)
 	rows := f1.Lines(ctx, 0, count)
@@ -103,7 +103,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Order by -name
-	f2 := models.NewClusterObjectsFolder(makeDeps("-name"), gvrNS, []string{"namespaces"})
+	f2 := models.NewClusterObjectsFolder(makeDeps("-name"), gvrNS, []string{"namespaces"}, models.NamespaceResourceVerbs())
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len(ctx) >= 3 })
 	count = f2.Len(ctx)
 	rows = f2.Lines(ctx, 0, count)
@@ -114,7 +114,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Order by creation
-	f3 := models.NewClusterObjectsFolder(makeDeps("creation"), gvrNS, []string{"namespaces"})
+	f3 := models.NewClusterObjectsFolder(makeDeps("creation"), gvrNS, []string{"namespaces"}, models.NamespaceResourceVerbs())
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len(ctx) >= 3 })
 	count = f3.Len(ctx)
 	rows = f3.Lines(ctx, 0, count)
@@ -125,7 +125,7 @@ func TestClusterObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Order by -creation
-	f4 := models.NewClusterObjectsFolder(makeDeps("-creation"), gvrNS, []string{"namespaces"})
+	f4 := models.NewClusterObjectsFolder(makeDeps("-creation"), gvrNS, []string{"namespaces"}, models.NamespaceResourceVerbs())
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len(ctx) >= 3 })
 	count = f4.Len(ctx)
 	rows = f4.Lines(ctx, 0, count)

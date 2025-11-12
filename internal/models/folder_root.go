@@ -53,7 +53,7 @@ func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 		gvr:       gvrNamespaces,
 		watchable: true,
 		enter: func() (Folder, error) {
-			return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPathCopy), nil
+			return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPathCopy, NamespaceResourceVerbs()), nil
 		},
 	}
 

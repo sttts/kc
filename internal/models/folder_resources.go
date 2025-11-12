@@ -275,6 +275,7 @@ type resourceGroupSpec struct {
 	namespace string
 	watchable bool
 	enter     func() (Folder, error)
+	verbs     []string
 }
 
 type resourceGroupSignature struct {

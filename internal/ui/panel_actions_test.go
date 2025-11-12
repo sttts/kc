@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -15,6 +16,7 @@ type stubObject struct {
 	id        string
 	namespace string
 	name      string
+	verbs     []string
 }
 
 var (
@@ -36,6 +38,14 @@ func (s stubObject) GVR() schema.GroupVersionResource {
 
 func (s stubObject) Namespace() string { return s.namespace }
 func (s stubObject) Name() string      { return s.name }
+func (s stubObject) SupportsVerb(verb string) bool {
+	for _, v := range s.verbs {
+		if strings.EqualFold(v, verb) {
+			return true
+		}
+	}
+	return false
+}
 
 func (s stubObject) ViewContent() (string, string, string, string, string, error) {
 	return "title", "body", "yaml", "application/yaml", "title.yaml", nil
@@ -54,6 +64,7 @@ func TestPanelCapabilitiesWithActions(t *testing.T) {
 		id:        "group/v1/tests/foo",
 		namespace: "ns",
 		name:      "foo",
+		verbs:     []string{"get", "watch", "update", "delete"},
 	}
 	ctx := t.Context()
 	folder := newStubFolder([]models.Item{obj})
@@ -93,6 +104,34 @@ func TestPanelCapabilitiesWithActions(t *testing.T) {
 
 	if len(invoked) != 4 {
 		t.Fatalf("expected 4 invocations, got %d", len(invoked))
+	}
+}
+
+func TestPanelCapabilitiesRespectVerbs(t *testing.T) {
+	panel := NewPanel("verbs")
+	panel.SetEnvironmentSupplier(func() PanelEnvironment {
+		return PanelEnvironment{
+			AllowEditObjects:      true,
+			AllowDeleteObjects:    true,
+			AllowCreateNamespaces: true,
+		}
+	})
+	obj := stubObject{
+		id:        "group/v1/tests/bar",
+		namespace: "ns",
+		name:      "bar",
+		verbs:     []string{"get"},
+	}
+	ctx := t.Context()
+	folder := newStubFolder([]models.Item{obj})
+	panel.UseFolder(ctx, true)
+	panel.SetFolder(ctx, folder, false)
+	panel.SelectByRowID(ctx, obj.id)
+	panel.SetCurrentPath("/")
+
+	caps := panel.Capabilities(ctx)
+	if caps.CanEdit || caps.CanDelete {
+		t.Fatalf("expected edit/delete disabled when verbs missing: %+v", caps)
 	}
 }
 

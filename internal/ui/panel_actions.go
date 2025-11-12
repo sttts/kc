@@ -39,14 +39,13 @@ type PanelEnvironmentSupplier func() PanelEnvironment
 
 // PanelCapabilities describes which actions are currently enabled.
 type PanelCapabilities struct {
-	CanView          bool
-	CanEdit          bool
-	CanDelete        bool
-	CanCreateNS      bool
-	HasOptions       bool
-	HasContextMenu   bool
-	HasHelp          bool
-	SupportsDescribe bool
+	CanView        bool
+	CanEdit        bool
+	CanDelete      bool
+	CanCreateNS    bool
+	HasOptions     bool
+	HasContextMenu bool
+	HasHelp        bool
 }
 
 // SetActionHandlers installs the action handler map for the panel.
@@ -93,17 +92,13 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 			if isViewableItem(item) {
 				caps.CanView = true
 			}
-			if _, ok := item.(models.ObjectItem); ok {
-				if env.AllowEditObjects {
+			if obj, ok := item.(models.ObjectItem); ok {
+				if env.AllowEditObjects && obj.SupportsVerb("update") {
 					caps.CanEdit = true
 				}
-				if env.AllowDeleteObjects {
+				if env.AllowDeleteObjects && obj.SupportsVerb("delete") {
 					caps.CanDelete = true
 				}
-			}
-			// Describe/manifest widgets will use this flag when introduced.
-			if _, ok := item.(models.ObjectItem); ok {
-				caps.SupportsDescribe = true
 			}
 		}
 	}

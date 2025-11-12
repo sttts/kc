@@ -72,7 +72,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 
 	// Asc by name
-	f1 := models.NewNamespacedObjectsFolder(makeDeps("name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
+	f1 := models.NewNamespacedObjectsFolder(makeDeps("name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f1.Len(ctx) >= 3 })
 	count := f1.Len(ctx)
 	rows := f1.Lines(ctx, 0, count)
@@ -103,7 +103,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Desc by name
-	f2 := models.NewNamespacedObjectsFolder(makeDeps("-name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
+	f2 := models.NewNamespacedObjectsFolder(makeDeps("-name"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f2.Len(ctx) >= 3 })
 	count = f2.Len(ctx)
 	rows = f2.Lines(ctx, 0, count)
@@ -114,7 +114,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Asc by creation
-	f3 := models.NewNamespacedObjectsFolder(makeDeps("creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
+	f3 := models.NewNamespacedObjectsFolder(makeDeps("creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f3.Len(ctx) >= 3 })
 	count = f3.Len(ctx)
 	rows = f3.Lines(ctx, 0, count)
@@ -125,7 +125,7 @@ func TestNamespacedObjectsOrderAndAgeEnvtest(t *testing.T) {
 	}
 
 	// Desc by creation
-	f4 := models.NewNamespacedObjectsFolder(makeDeps("-creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"})
+	f4 := models.NewNamespacedObjectsFolder(makeDeps("-creation"), gvrCM, "ns-objtest", []string{"namespaces", "ns-objtest", "configmaps"}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return f4.Len(ctx) >= 3 })
 	count = f4.Len(ctx)
 	rows = f4.Lines(ctx, 0, count)

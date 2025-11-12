@@ -10,9 +10,9 @@ type ClusterObjectsFolder struct {
 }
 
 // NewClusterObjectsFolder constructs a cluster-scoped objects folder.
-func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource, path []string) *ClusterObjectsFolder {
+func NewClusterObjectsFolder(deps Deps, gvr schema.GroupVersionResource, path []string, verbs []string) *ClusterObjectsFolder {
 	folder := &ClusterObjectsFolder{
-		ObjectsFolder: NewObjectsFolder(deps, gvr, "", path),
+		ObjectsFolder: NewObjectsFolder(deps, gvr, "", path, verbs),
 	}
 	return folder
 }

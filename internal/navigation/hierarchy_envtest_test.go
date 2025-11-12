@@ -116,7 +116,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	}
 
 	// 2) Enter /namespaces
-	nsFolder := models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"})
+	nsFolder := models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}, models.NamespaceResourceVerbs())
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nsFolder.Len(ctx) > 0 })
 	count = nsFolder.Len(ctx)
 	rows = nsFolder.Lines(ctx, 0, count)
@@ -183,7 +183,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 
 	// 4) Enter objects: configmaps
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
-	objs := models.NewNamespacedObjectsFolder(deps, gvrCM, "testns", []string{"namespaces", "testns", gvrCM.Resource})
+	objs := models.NewNamespacedObjectsFolder(deps, gvrCM, "testns", []string{"namespaces", "testns", gvrCM.Resource}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return objs.Len(ctx) > 0 })
 	count = objs.Len(ctx)
 	rows = objs.Lines(ctx, 0, count)
@@ -222,7 +222,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 
 	// 6) Cluster-scoped objects: nodes
 	gvrNodes := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}
-	nodes := models.NewClusterObjectsFolder(deps, gvrNodes, []string{"nodes"})
+	nodes := models.NewClusterObjectsFolder(deps, gvrNodes, []string{"nodes"}, nil)
 	kctesting.Eventually(t, 5*time.Second, 50*time.Millisecond, func() bool { return nodes.Len(ctx) > 0 })
 	count = nodes.Len(ctx)
 	rows = nodes.Lines(ctx, 0, count)
@@ -406,7 +406,7 @@ func TestStartupSelectionRestore(t *testing.T) {
 	nav := NewNavigator(root)
 	// Simulate app startup sequence
 	nav.SetSelectionID("namespaces")
-	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}))
+	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}, models.NamespaceResourceVerbs()))
 	nav.SetSelectionID("testns")
 	nav.Push(models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"}))
 
@@ -458,7 +458,7 @@ func TestClusterStartupSelectionRestore(t *testing.T) {
 	nav := NewNavigator(root)
 	// Simulate app startup sequence
 	nav.SetSelectionID("namespaces")
-	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}))
+	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}, models.NamespaceResourceVerbs()))
 	nav.SetSelectionID("testns")
 	nav.Push(models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"}))
 
@@ -514,7 +514,7 @@ func TestGroupObjectBackSelectionRestore(t *testing.T) {
 	nav := NewNavigator(root)
 	// Into namespaces -> testns -> groups
 	nav.SetSelectionID("namespaces")
-	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}))
+	nav.Push(models.NewClusterObjectsFolder(deps, schema.GroupVersionResource{Group: "", Version: "v1", Resource: "namespaces"}, []string{"namespaces"}, models.NamespaceResourceVerbs()))
 	nav.SetSelectionID("testns")
 	nav.Push(models.NewNamespacedResourcesFolder(deps, "testns", []string{"namespaces", "testns"}))
 	// Find configmaps group and enter objects

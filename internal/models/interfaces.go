@@ -22,6 +22,7 @@ type ObjectItem interface {
 	GVR() schema.GroupVersionResource
 	Namespace() string
 	Name() string
+	SupportsVerb(string) bool
 }
 
 // Folder describes a navigable collection of rows.

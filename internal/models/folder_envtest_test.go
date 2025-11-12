@@ -82,7 +82,7 @@ func TestFoldersProduceExpectedRows(t *testing.T) {
 
 	gvrCM := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
 	objsPath := []string{"namespaces", "testns", gvrCM.Resource}
-	objs := NewNamespacedObjectsFolder(deps, gvrCM, "testns", objsPath)
+	objs := NewNamespacedObjectsFolder(deps, gvrCM, "testns", objsPath, nil)
 	waitFolder(t, objs)
 	assertRows(t, "configmap-objects", objs, map[string][]string{
 		"cm1": {"/cm1"},
