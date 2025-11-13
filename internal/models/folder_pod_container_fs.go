@@ -66,7 +66,11 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 	rootItem := NewContainerSectionItem("root", []string{"/root"}, rootPath, WhiteStyle(), func() (Folder, error) {
 		return NewPodContainerFSFolder(f.Deps, rootPath, "/", f.session), nil
 	})
-	rootItem.RowItem.details = "Browse container filesystem"
+	if f.session != nil && f.session.HelperUsed() {
+		rootItem.RowItem.details = "Browse container filesystem (debug helper)"
+	} else {
+		rootItem.RowItem.details = "Browse container filesystem"
+	}
 	rows = append(rows, rootItem)
 	return rows, nil
 }
@@ -227,6 +231,7 @@ type containerSessionHandle struct {
 
 	mu      sync.Mutex
 	session podfs.ExecSession
+	helper  bool
 }
 
 func newContainerSessionHandle(factory podfs.Factory, namespace, pod, container string) *containerSessionHandle {
@@ -260,6 +265,11 @@ func (h *containerSessionHandle) Session(ctx context.Context) (podfs.ExecSession
 	if err != nil {
 		return nil, err
 	}
+	if usage, ok := session.(podfs.HelperUsage); ok {
+		h.helper = usage.HelperUsed()
+	} else {
+		h.helper = false
+	}
 	h.session = session
 	return session, nil
 }
@@ -275,7 +285,17 @@ func (h *containerSessionHandle) Close() error {
 	}
 	err := h.session.Close()
 	h.session = nil
+	h.helper = false
 	return err
+}
+
+func (h *containerSessionHandle) HelperUsed() bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.helper
 }
 
 func formatBytes(size int64) string {

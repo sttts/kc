@@ -64,3 +64,8 @@ type ExecSession interface {
 type Factory interface {
 	NewSession(ctx context.Context, spec SessionSpec) (ExecSession, error)
 }
+
+// HelperUsage indicates whether an ExecSession relies on a debug helper container.
+type HelperUsage interface {
+	HelperUsed() bool
+}
