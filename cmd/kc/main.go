@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,6 +176,8 @@ func setupControllerRuntimeLogger() {
 						crzap.WriteTo(f),
 					)
 					ctrllog.SetLogger(l)
+					log.SetOutput(f)
+					log.SetFlags(0)
 					// Redirect klog to the controller-runtime logger (zap)
 					klog.SetLogger(ctrllog.Log)
 					return
@@ -185,6 +189,7 @@ func setupControllerRuntimeLogger() {
 	ctrllog.SetLogger(logr.Discard())
 	// Redirect klog to discard as well
 	klog.SetLogger(logr.Discard())
+	log.SetOutput(io.Discard)
 }
 
 func showHelp() {
