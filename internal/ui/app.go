@@ -2417,65 +2417,100 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 }
 
 func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, panelIdx int, background string) {
-	leftPanelWidth, rightPanelWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	leftPanelWidth, rightPanelWidth, _, _ := a.panelAreaMetrics()
 	panelWidth := leftPanelWidth
-	panelOffset := 0
-	centered := panelIdx < 0
+	if panelIdx == 1 {
+		panelWidth = rightPanelWidth
+	}
+	if panelWidth <= 0 {
+		panelWidth = max(24, max(a.width/2, a.width))
+	}
+	fallbackWidth := panelWidth / 2
+	if fallbackWidth < 36 {
+		fallbackWidth = 36
+	}
+	fallbackHeight := content.ContentHeight() + 2
+	if fallbackHeight < 6 {
+		fallbackHeight = 6
+	}
+	a.configureModalWindow(modal, content, panelIdx, background, fallbackWidth, fallbackHeight)
+}
+
+func (a *App) modalPanelMetrics(panelIdx int) (panelWidth, panelHeight, headerOffset, panelOffset int, centered bool) {
+	leftWidth, rightWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	panelOffset = 0
+	panelWidth = leftWidth
+	centered = panelIdx < 0
 	if centered {
 		panelWidth = a.width
 		panelOffset = 0
 	} else if panelIdx == 1 {
-		panelWidth = rightPanelWidth
-		panelOffset = leftPanelWidth
+		panelWidth = rightWidth
+		panelOffset = leftWidth
 	}
 	if panelWidth <= 0 {
 		panelWidth = max(24, max(a.width/2, a.width))
 		panelOffset = 0
 	}
-	winW := panelWidth / 2
-	if winW < 36 {
-		winW = 36
-	}
-	if winW > panelWidth-2 {
-		winW = panelWidth - 2
-	}
-	if winW < 24 {
-		winW = 24
-	}
-	if winW > a.width-4 {
-		winW = a.width - 4
-	}
+	return panelWidth, panelHeight, headerOffset, panelOffset, centered
+}
 
-	contentHeight := content.ContentHeight()
-	if contentHeight < 1 {
-		contentHeight = 1
+func (a *App) configureModalWindow(modal *Modal, content interface{}, panelIdx int, background string, fallbackWinW, fallbackWinH int) {
+	panelWidth, panelHeight, headerOffset, panelOffset, centered := a.modalPanelMetrics(panelIdx)
+	maxFrameWidth := min(panelWidth-2, a.width-4)
+	if maxFrameWidth < 6 {
+		maxFrameWidth = 6
 	}
-	innerH := contentHeight
-	minInner := 5
-	if innerH < minInner {
-		innerH = minInner
+	maxFrameHeight := min(panelHeight-2, a.height-4)
+	if maxFrameHeight < 6 {
+		maxFrameHeight = 6
 	}
-	maxInner := panelHeight - 4
-	if maxInner < minInner {
-		maxInner = minInner
+	maxContentWidth := max(1, maxFrameWidth-2)
+	maxContentHeight := max(1, maxFrameHeight-2)
+
+	innerW := max(1, fallbackWinW-2)
+	innerH := max(1, fallbackWinH-2)
+	if fallbackWinW <= 0 || innerW <= 0 {
+		innerW = maxContentWidth
 	}
-	if innerH > maxInner {
-		innerH = maxInner
+	if fallbackWinH <= 0 || innerH <= 0 {
+		innerH = maxContentHeight
 	}
+	if sizer, ok := content.(ModalSizer); ok {
+		if prefW, prefH := sizer.PreferredSize(maxContentWidth, maxContentHeight); prefW > 0 || prefH > 0 {
+			if prefW > 0 {
+				innerW = min(prefW, maxContentWidth)
+			}
+			if prefH > 0 {
+				innerH = min(prefH, maxContentHeight)
+			}
+		}
+	}
+	if innerW > maxContentWidth {
+		innerW = maxContentWidth
+	}
+	if innerH > maxContentHeight {
+		innerH = maxContentHeight
+	}
+	winW := innerW + 2
 	winH := innerH + 2
-	if winH > panelHeight {
-		winH = panelHeight
+	if winW > maxFrameWidth {
+		winW = maxFrameWidth
+		innerW = max(1, winW-2)
+	}
+	if winH > maxFrameHeight {
+		winH = maxFrameHeight
 		innerH = max(1, winH-2)
 	}
-
+	if setter, ok := content.(interface{ SetDimensions(int, int) }); ok {
+		setter.SetDimensions(innerW, innerH)
+	}
 	bg := background
 	if bg == "" {
 		bg, _ = a.renderMainView()
 	}
+	modal.SetDimensions(a.width, a.height)
 	modal.SetWindowed(winW, winH, bg)
-	if setter, ok := interface{}(content).(interface{ SetDimensions(int, int) }); ok {
-		setter.SetDimensions(max(1, winW-2), max(1, winH-2))
-	}
 
 	offsetX := panelOffset + max(0, (panelWidth-winW)/2)
 	panelUsable := max(0, panelHeight-headerOffset-1)
@@ -2498,7 +2533,6 @@ func (a *App) layoutViewOptionsModal(modal *Modal, content *ViewOptionsModel, pa
 		}
 	}
 	modal.SetWindowOffset(offsetX, offsetY)
-	modal.SetDimensions(a.width, a.height)
 }
 
 func (a *App) viewResource() tea.Cmd {
@@ -2549,51 +2583,7 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 	}
 	a.namespaceInput.Reset()
 	modal.SetContent(a.namespaceInput)
-	bg, _ := a.renderMainView()
-	leftWidth, rightWidth, panelHeight, headerOffset := a.panelAreaMetrics()
-	panelWidth := leftWidth
-	panelOffset := 0
-	if a.namespaceCreatePanel == 1 {
-		panelWidth = rightWidth
-		panelOffset = leftWidth
-	}
-	if panelWidth <= 0 {
-		panelWidth = a.width
-		panelOffset = 0
-	}
-	maxFrameWidth := min(panelWidth-2, a.width-4)
-	if maxFrameWidth < 20 {
-		maxFrameWidth = 20
-	}
-	maxFrameHeight := min(panelHeight-2, a.height-4)
-	if maxFrameHeight < 6 {
-		maxFrameHeight = 6
-	}
-	maxContentWidth := max(1, maxFrameWidth-2)
-	maxContentHeight := max(1, maxFrameHeight-2)
-	innerW, innerH := a.namespaceInput.PreferredSize(maxContentWidth, maxContentHeight)
-	if innerW <= 0 {
-		innerW = maxContentWidth
-	}
-	if innerH <= 0 {
-		innerH = maxContentHeight
-	}
-	winW := innerW + 2
-	winH := innerH + 2
-	if winW > maxFrameWidth {
-		winW = maxFrameWidth
-		innerW = max(1, winW-2)
-	}
-	if winH > maxFrameHeight {
-		winH = maxFrameHeight
-		innerH = max(1, winH-2)
-	}
-	a.namespaceInput.SetDimensions(innerW, innerH)
-	modal.SetDimensions(a.width, a.height)
-	modal.SetWindowed(winW, winH, bg)
-	offsetX := panelOffset + max(0, (panelWidth-winW)/2)
-	offsetY := headerOffset + max(0, (panelHeight-winH)/2)
-	modal.SetWindowOffset(offsetX, offsetY)
+	a.configureModalWindow(modal, a.namespaceInput, a.namespaceCreatePanel, "", 30, 6)
 	modal.SetOnClose(func() tea.Cmd {
 		a.namespaceInput.Reset()
 		return nil
@@ -3637,47 +3627,7 @@ func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
 	dir := a.defaultCopyDir()
 	target := filepath.Join(dir, req.filename)
 	a.copyInput.Configure(req.subject, target)
-	bg, _ := a.renderMainView()
-	leftWidth, rightWidth, panelHeight, headerOffset := a.panelAreaMetrics()
-	panelWidth := leftWidth + rightWidth
-	if panelWidth <= 0 {
-		panelWidth = a.width
-	}
-	maxFrameWidth := min(a.width-4, panelWidth-2)
-	if maxFrameWidth < 10 {
-		maxFrameWidth = 10
-	}
-	maxFrameHeight := min(a.height-4, panelHeight-2)
-	if maxFrameHeight < 6 {
-		maxFrameHeight = 6
-	}
-	maxContentWidth := max(1, maxFrameWidth-2)
-	maxContentHeight := max(1, maxFrameHeight-2)
-	innerW, innerH := a.copyInput.PreferredSize(maxContentWidth, maxContentHeight)
-	if innerW <= 0 {
-		innerW = maxContentWidth
-	}
-	if innerH <= 0 {
-		innerH = maxContentHeight
-	}
-	winW := innerW + 2
-	winH := innerH + 2
-	if winW > maxFrameWidth {
-		winW = maxFrameWidth
-		innerW = max(1, winW-2)
-	}
-	if winH > maxFrameHeight {
-		winH = maxFrameHeight
-		innerH = max(1, winH-2)
-	}
-	if setter, ok := interface{}(a.copyInput).(interface{ SetDimensions(int, int) }); ok {
-		setter.SetDimensions(innerW, innerH)
-	}
-	modal.SetDimensions(a.width, a.height)
-	modal.SetWindowed(winW, winH, bg)
-	offsetX := max(0, (panelWidth-winW)/2)
-	offsetY := headerOffset + max(0, (panelHeight-winH)/2)
-	modal.SetWindowOffset(offsetX, offsetY)
+	a.configureModalWindow(modal, a.copyInput, -1, "", 0, 0)
 	modal.SetOnClose(func() tea.Cmd {
 		a.pendingCopy = nil
 		if a.copyInput != nil {
