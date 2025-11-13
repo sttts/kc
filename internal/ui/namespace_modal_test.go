@@ -12,15 +12,11 @@ func press(code rune, text string, mod tea.KeyMod) tea.KeyPressMsg {
 
 func TestNamespaceCreateModelEnterConfirm(t *testing.T) {
 	model := NewNamespaceCreateModel()
-	m, _ := model.Update(press('t', "t", 0))
-	model = m.(*NamespaceCreateModel)
-	m, _ = model.Update(press('e', "e", 0))
-	model = m.(*NamespaceCreateModel)
-	m, _ = model.Update(press('s', "s", 0))
-	model = m.(*NamespaceCreateModel)
-	m, _ = model.Update(press('t', "t", 0))
-	model = m.(*NamespaceCreateModel)
-	m, cmd := model.Update(press(tea.KeyEnter, "", 0))
+	_, _ = model.Update(press('t', "t", 0))
+	_, _ = model.Update(press('e', "e", 0))
+	_, _ = model.Update(press('s', "s", 0))
+	_, _ = model.Update(press('t', "t", 0))
+	_, cmd := model.Update(press(tea.KeyEnter, "", 0))
 	if cmd == nil {
 		t.Fatalf("expected command on enter")
 	}
@@ -36,12 +32,11 @@ func TestNamespaceCreateModelEnterConfirm(t *testing.T) {
 
 func TestNamespaceCreateModelValidation(t *testing.T) {
 	model := NewNamespaceCreateModel()
-	m, cmd := model.Update(press(tea.KeyEnter, "", 0))
+	_, cmd := model.Update(press(tea.KeyEnter, "", 0))
 	if cmd != nil {
 		t.Fatalf("expected nil command when name empty")
 	}
-	model = m.(*NamespaceCreateModel)
-	if model.err == "" {
+	if model.modal.Error() == "" {
 		t.Fatalf("expected validation error")
 	}
 }

@@ -11,12 +11,14 @@ const (
 	ColorGrey             = "7"  // prefer lipgloss.White (base white)
 	ColorDarkGrey         = "8"  // bright black (grey)
 	ColorWhite            = "15" // bright white
+	ColorOrange           = "208"
 	ColorModalBg          = ColorWhite
 	ColorModalFg          = ColorBlack
 	ColorModalSelBg       = ColorCyan
 	ColorModalButtonBg    = ColorDarkGrey
 	ColorModalButtonFg    = ColorModalFg
 	ColorModalButtonSelBg = ColorCyan
+	ColorModalCursor      = ColorOrange
 )
 
 // Common styles

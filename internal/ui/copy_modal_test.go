@@ -41,7 +41,7 @@ func TestCopyToLocalModelValidationFailure(t *testing.T) {
 	if cmd != nil {
 		t.Fatalf("expected nil command on invalid path")
 	}
-	if model.err == "" {
+	if model.modal.Error() == "" {
 		t.Fatalf("expected validation error")
 	}
 }
