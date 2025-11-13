@@ -59,6 +59,11 @@ Current tasks
 - [x] Function key bar: dynamic and context-aware (grey out unavailable actions per location/object).
 - [x] Delete modal: Enter should activate the focused button (Yes/No) in addition to Left/Right selection.
 
+## Pod Filesystem Browser follow-ups
+- [ ] Implement per-image/per-container shell probes, cache the results, and short-circuit to the fallback path when built-in shells/tools are missing.
+- [ ] Add the debug/ephemeral helper container flow (prompt for approval, inject helper image, clean up) when native exec cannot start.
+- [ ] Route client-go/klog output (e.g., SPDY exec chatter) into the controller-runtime logger so filesystem browsing doesn’t leak klog lines into the UI.
+
 ## Table View Enhancements
 - [x] Horizontal scroll: when columns exceed panel width, support column‑wise scrolling with Left/Right keys; gate on “no typed input” (same Enter routing gating).
  - [x] Dim Group column and align counts per spec; refine selection style (bold yellow) in table mode.

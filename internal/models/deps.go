@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	kccluster "github.com/sttts/kc/internal/cluster"
+	"github.com/sttts/kc/internal/podfs"
 	"github.com/sttts/kc/pkg/appconfig"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -28,6 +29,7 @@ type Deps struct {
 	AppConfig        *appconfig.Config
 	ClusterKey       kccluster.Key
 	NamespaceFactory NamespaceClusterFactory
+	PodFSFactory     podfs.Factory
 }
 
 // ForNamespace derives a copy of Deps using a namespace-scoped cluster when available.

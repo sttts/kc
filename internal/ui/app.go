@@ -20,6 +20,7 @@ import (
 	models "github.com/sttts/kc/internal/models"
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
+	"github.com/sttts/kc/internal/podfs"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/internal/ui/termctx"
@@ -164,6 +165,7 @@ type App struct {
 	startupIntentScheduled bool
 	startupIntentApplied   bool
 	helpViewer             *MarkdownHelpViewer
+	podfsFactory           podfs.Factory
 }
 
 const (
@@ -612,6 +614,7 @@ func (a *App) makeDeps(cl *kccluster.Cluster, cfg *appconfig.Config, key kcclust
 		AppConfig:        cfg,
 		ClusterKey:       key,
 		NamespaceFactory: a.namespaceClusterFactory(),
+		PodFSFactory:     a.podfsFactory,
 	}
 }
 
@@ -3093,6 +3096,7 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 		{SelectionID: intent.Pod, Enter: true},
 		{SelectionID: target.SectionID, Enter: true},
 		{SelectionID: target.Container, Enter: true},
+		{SelectionID: "logs", Enter: true},
 		{SelectionID: "latest", Enter: false},
 	}
 	if _, err := navui.GoTo(ctx, a.leftNav, steps); err != nil {
@@ -3571,6 +3575,14 @@ func (a *App) initData(ctx context.Context) error {
 		return fmt.Errorf("cluster pool get: %w", err)
 	}
 	a.cl = cl
+	if factory, err := podfs.NewFactory(a.cl.GetConfig()); err != nil {
+		log.Error(err, "failed to initialize pod filesystem factory")
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Pod filesystem unavailable: %v", err))
+		}
+	} else {
+		a.podfsFactory = factory
+	}
 	log.Info("cluster ready, fetching resource info")
 	// Discovery-backed catalog (for panel displays)
 	if infos, err := a.cl.GetResourceInfos(); err == nil {
