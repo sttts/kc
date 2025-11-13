@@ -473,6 +473,8 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			action, mapped = PanelActionView, true
 		case "f4":
 			action, mapped = PanelActionEdit, true
+		case "f5":
+			action, mapped = PanelActionCopy, true
 		case "f7":
 			action, mapped = PanelActionCreateNamespace, true
 		case "f8":

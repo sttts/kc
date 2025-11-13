@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -147,7 +149,10 @@ type App struct {
 	rightConfig            *appconfig.Config
 	namespaceInput         *NamespaceCreateModel
 	deleteConfirm          *DeleteConfirmModel
+	copyInput              *CopyToLocalModel
+	pendingCopy            *copyRequest
 	pendingDelete          *deleteTarget
+	lastCopyDir            string
 	namespaceCreatePanel   int
 	leftPanelWidthPercent  int
 	rightPanelWidthPercent int
@@ -172,6 +177,7 @@ const (
 	requestTimeout            = 10 * time.Second
 	namespaceRetryInterval    = 200 * time.Millisecond
 	namespaceRetryMaxAttempts = 50
+	copyRequestTimeout        = 30 * time.Second
 )
 
 var panelWidthPercentOptions = []int{25, 33, 50, 66, 75, 100}
@@ -747,7 +753,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle modals first
 	if a.modalManager.IsModalVisible() {
 		switch msg.(type) {
-		case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg:
+		case PanelModeSelectedMsg, DeleteConfirmMsg, NamespaceCreateResultMsg, CopyToLocalResultMsg:
 			// Let modal result messages fall through to the main switch so they can close dialogs.
 		default:
 			// Intercept modal-scoped commits while the dialog is open.
@@ -1062,6 +1068,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.createNamespaceWithName(msg.Name)
 		}
 		return a, nil
+	case CopyToLocalResultMsg:
+		if msg.Close {
+			a.modalManager.Hide()
+			if a.copyInput != nil {
+				a.copyInput.BlurInputs()
+			}
+		}
+		if msg.Confirm {
+			if path := strings.TrimSpace(msg.Path); path != "" {
+				a.lastCopyDir = filepath.Dir(path)
+				return a, a.executeCopyRequest(path)
+			}
+			a.pendingCopy = nil
+			return a, nil
+		}
+		a.pendingCopy = nil
+		return a, nil
 	case namespaceCreatedMsg:
 		if msg.err != nil {
 			if a.toastLogger != nil {
@@ -1092,6 +1115,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.refreshPanelAfterEdit(1)
 		}
 		a.namespaceCreatePanel = -1
+		return a, nil
+	case copyFinishedMsg:
+		if msg.err != nil {
+			if a.toastLogger != nil {
+				a.enqueueCmd(a.toastLogger.Errorf("Copy %s failed: %v", msg.subject, msg.err))
+			} else {
+				a.enqueueCmd(a.ShowToast(fmt.Sprintf("Copy failed: %v", msg.err), 5*time.Second))
+			}
+			return a, nil
+		}
+		if msg.path != "" {
+			a.lastCopyDir = filepath.Dir(msg.path)
+		}
+		log := ctrllog.FromContext(a.ctx).WithName("copy")
+		log.Info("copy completed", "subject", msg.subject, "path", msg.path)
 		return a, nil
 	case DeleteConfirmMsg:
 		target := a.pendingDelete
@@ -1292,7 +1330,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			case "5":
 				a.escPressed = false
-				return a, a.copyItem() // Esc 5 = F5
+				if panel != nil && caps.CanCopy {
+					ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+					cmd := panel.invokeActionIfAllowed(ctx, PanelActionCopy)
+					cancel()
+					return a, cmd
+				}
+				return a, nil
 			case "6":
 				a.escPressed = false
 				return a, a.renameMoveItem() // Esc 6 = F6
@@ -1761,7 +1805,7 @@ func (a *App) renderFunctionKeys() string {
 			renderKey("F2", "Options", caps.HasOptions),
 			renderKey("F3", "View", caps.CanView),
 			renderKey("F4", "Edit", caps.CanEdit),
-			renderKey("F5", "", false),
+			renderKey("F5", "Copy", caps.CanCopy),
 			renderKey("F6", "", false),
 			renderKey("F7", "Namespace", caps.CanCreateNS),
 			renderKey("F8", "Delete", caps.CanDelete),
@@ -1836,7 +1880,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			{makeLbl("F2", "Options", caps.HasOptions), caps.HasOptions, invoke(PanelActionOptions)},
 			{makeLbl("F3", "View", caps.CanView), caps.CanView, invoke(PanelActionView)},
 			{makeLbl("F4", "Edit", caps.CanEdit), caps.CanEdit, invoke(PanelActionEdit)},
-			{makeLbl("F5", "Copy", false), false, a.copyItem},
+			{makeLbl("F5", "Copy", caps.CanCopy), caps.CanCopy, invoke(PanelActionCopy)},
 			{makeLbl("F6", "Rename/Move", false), false, a.renameMoveItem},
 			{makeLbl("F7", "Namespace", caps.CanCreateNS), caps.CanCreateNS, invoke(PanelActionCreateNamespace)},
 			{makeLbl("F8", "Delete", caps.CanDelete), caps.CanDelete, invoke(PanelActionDelete)},
@@ -1919,6 +1963,13 @@ func (a *App) setupModals() {
 	a.modalManager.Register("delete_confirm", delModal)
 	a.deleteConfirm = delModel
 
+	// Copy-to-local modal
+	copyModel := NewCopyToLocalModel()
+	copyModal := NewModal("Copy to Local File", copyModel)
+	copyModal.SetCloseOnSingleEsc(true)
+	a.modalManager.Register("copy_local", copyModal)
+	a.copyInput = copyModel
+
 	for idx := 0; idx < 2; idx++ {
 		modeModel := NewPanelModeModel(idx, []PanelViewMode{PanelModeList}, PanelModeList)
 		modeModal := NewModal("Panel Mode", modeModel)
@@ -1994,6 +2045,9 @@ func (a *App) panelActionHandlers() PanelActionHandlers {
 		},
 		PanelActionEdit: func(p *Panel) tea.Cmd {
 			return a.editSelectionForPanel(p)
+		},
+		PanelActionCopy: func(p *Panel) tea.Cmd {
+			return a.copyItemForPanel(p)
 		},
 		PanelActionCreateNamespace: func(p *Panel) tea.Cmd {
 			return a.createNamespaceForPanel(p)
@@ -3450,13 +3504,260 @@ func (a *App) refreshPanelAfterEdit(panelIdx int) {
 }
 
 func (a *App) copyItem() tea.Cmd {
-	// TODO: Implement copy functionality (F5)
-	return nil
+	return a.copyItemForPanel(a.activePanelRef())
 }
 
 func (a *App) renameMoveItem() tea.Cmd {
 	// TODO: Implement rename/move functionality (F6)
 	return nil
+}
+
+func (a *App) copyItemForPanel(panel *Panel) tea.Cmd {
+	if panel == nil {
+		panel = a.activePanelRef()
+	}
+	if panel == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	item, ok := panel.SelectedNavItem(ctx)
+	cancel()
+	if !ok || item == nil {
+		return nil
+	}
+	if _, isBack := item.(models.Back); isBack {
+		return nil
+	}
+
+	if logs, ok := item.(models.LogsProvider); ok {
+		if a.cl == nil {
+			if a.toastLogger != nil {
+				a.enqueueCmd(a.toastLogger.Errorf("Copy unavailable: cluster not ready"))
+			}
+			return nil
+		}
+		spec := logs.LogsSpec()
+		if spec.TailLines <= 0 {
+			spec.TailLines = models.DefaultLogsTailLines
+		}
+		subject := fmt.Sprintf("logs %s/%s/%s", spec.Namespace, spec.Pod, spec.Container)
+		filename := sanitizeFilename(fmt.Sprintf("%s-%s.log", spec.Pod, spec.Container))
+		if filename == "" {
+			filename = "logs.txt"
+		}
+		req := &copyRequest{
+			subject:  subject,
+			filename: filename,
+			fetch: func(ctx context.Context) (io.ReadCloser, error) {
+				specCopy := spec
+				specCopy.Follow = false
+				return a.fetchLogsSnapshot(ctx, specCopy)
+			},
+		}
+		return a.showCopyDialog(req)
+	}
+
+	viewable, ok := item.(models.Viewable)
+	if !ok {
+		type viewContentProvider interface {
+			ViewContent() (string, string, string, string, string, error)
+		}
+		if alt, ok := item.(viewContentProvider); ok {
+			viewable = alt
+		} else {
+			return nil
+		}
+	}
+	title, body, _, _, filename, err := viewable.ViewContent()
+	if err != nil {
+		if errors.Is(err, models.ErrNoViewContent) {
+			return nil
+		}
+		if a.toastLogger != nil {
+			a.enqueueCmd(a.toastLogger.Errorf("Copy failed: %v", err))
+		}
+		return nil
+	}
+	if filename == "" {
+		filename = filepath.Base(a.modalTitleFromItem(item, title))
+	}
+	filename = sanitizeFilename(filename)
+	if filename == "" {
+		filename = "resource.txt"
+	}
+	data := []byte(body)
+	subject := a.modalTitleFromItem(item, title)
+	req := &copyRequest{
+		subject:  subject,
+		filename: filename,
+		fetch: func(context.Context) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(data)), nil
+		},
+	}
+	return a.showCopyDialog(req)
+}
+
+func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
+	if req == nil || req.fetch == nil || a.copyInput == nil || a.modalManager == nil {
+		return nil
+	}
+	modal := a.modalManager.modals["copy_local"]
+	if modal == nil {
+		return nil
+	}
+	dir := a.defaultCopyDir()
+	target := filepath.Join(dir, req.filename)
+	a.copyInput.Configure(req.subject, target)
+	modal.SetDimensions(a.width, a.height)
+	bg, _ := a.renderMainView()
+	winW := min(max(60, a.width/2), a.width-4)
+	if winW < 40 {
+		winW = 40
+	}
+	winH := min(14, a.height-4)
+	if winH < 10 {
+		winH = 10
+	}
+	modal.SetWindowed(winW, winH, bg)
+	leftWidth, rightWidth, panelHeight, headerOffset := a.panelAreaMetrics()
+	offsetX := max(0, (leftWidth+rightWidth-winW)/2)
+	offsetY := headerOffset + max(0, (panelHeight-winH)/2)
+	modal.SetWindowOffset(offsetX, offsetY)
+	modal.SetOnClose(func() tea.Cmd {
+		a.pendingCopy = nil
+		if a.copyInput != nil {
+			a.copyInput.BlurInputs()
+		}
+		return nil
+	})
+	a.pendingCopy = req
+	a.modalManager.Show("copy_local")
+	return a.copyInput.FocusPath()
+}
+
+func (a *App) defaultCopyDir() string {
+	if strings.TrimSpace(a.lastCopyDir) != "" {
+		return a.lastCopyDir
+	}
+	if wd, err := os.Getwd(); err == nil {
+		if abs, err := filepath.Abs(wd); err == nil {
+			return abs
+		}
+		return wd
+	}
+	if abs, err := filepath.Abs("."); err == nil {
+		return abs
+	}
+	return "."
+}
+
+func (a *App) executeCopyRequest(path string) tea.Cmd {
+	req := a.pendingCopy
+	a.pendingCopy = nil
+	if req == nil {
+		return nil
+	}
+	target := strings.TrimSpace(path)
+	if target == "" {
+		return nil
+	}
+	return a.withBusy("Copy", 300*time.Millisecond, func() tea.Msg {
+		err := a.copyToPath(req, target)
+		return copyFinishedMsg{path: target, subject: req.subject, err: err}
+	})
+}
+
+func (a *App) copyToPath(req *copyRequest, dest string) error {
+	dir := filepath.Dir(dest)
+	info, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("destination %q is not a directory", dir)
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, copyRequestTimeout)
+	defer cancel()
+	reader, err := req.fetch(ctx)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	file, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			_ = file.Close()
+		}
+	}()
+	if _, err := io.Copy(file, reader); err != nil {
+		_ = os.Remove(dest)
+		return err
+	}
+	closed = true
+	return file.Close()
+}
+
+type copyRequest struct {
+	subject  string
+	filename string
+	fetch    func(ctx context.Context) (io.ReadCloser, error)
+}
+
+type copyFinishedMsg struct {
+	path    string
+	subject string
+	err     error
+}
+
+func sanitizeFilename(name string) string {
+	base := filepath.Base(strings.TrimSpace(name))
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range base {
+		switch {
+		case r == '.' || r == '-' || r == '_' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z'):
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	out := strings.Trim(b.String(), "._")
+	if out == "" {
+		return ""
+	}
+	if len(out) > 80 {
+		out = out[:80]
+	}
+	return out
+}
+
+func (a *App) fetchLogsSnapshot(ctx context.Context, spec models.LogsSpec) (io.ReadCloser, error) {
+	if a.cl == nil {
+		return nil, fmt.Errorf("cluster not ready")
+	}
+	cfg := rest.CopyConfig(a.cl.GetConfig())
+	clientset, err := kubernetes.NewForConfig(rest.AddUserAgent(cfg, "kc-copy-logs"))
+	if err != nil {
+		return nil, err
+	}
+	opts := &corev1.PodLogOptions{
+		Container: spec.Container,
+		Follow:    false,
+	}
+	if spec.TailLines > 0 {
+		opts.TailLines = &spec.TailLines
+	}
+	if spec.Namespace == "" || spec.Pod == "" {
+		return nil, fmt.Errorf("logs spec incomplete")
+	}
+	req := clientset.CoreV1().Pods(spec.Namespace).GetLogs(spec.Pod, opts)
+	return req.Stream(ctx)
 }
 
 // RunConfig allows callers to customize the UI startup.

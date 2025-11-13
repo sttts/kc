@@ -14,6 +14,7 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
 - **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, search (`F7`), and next-match (`F3`). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
 - **Container internals:** each pod container exposes `/logs` plus a `/root` browser so you can inspect container filesystems from kc. When images lack shell tooling, kc can spin up a debug helper automatically.
+- **Local exports:** any resource that supports `F3` viewing (YAML, logs, ConfigMap/Secret data, pod filesystem files, etc.) can be saved locally via `F5` with an inline directory+path picker.
 - **Config + persistence:** `~/.kc/config.yaml` controls viewer theme, panel widths, table modes, discovery TTL, mouse preferences, and more. Runtime changes (theme, table mode, etc.) persist back to disk.
 
 ## Getting Started
@@ -50,13 +51,14 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F2`       | Options – context-aware panel options or viewer theme dialog.                   |
 | `F3`       | View – YAML viewer, ConfigMap/Secret key viewer, pod logs viewer, etc.          |
 | `F4`       | Edit – launches `kubectl edit` for the selected Kubernetes object.              |
+| `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search (viewers/logs).                              |
 | `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
 | `Tab`      | Switch panels.                                                                  |
 | `Ctrl+O`   | Toggle the integrated terminal.                                                 |
 | `Ctrl+C`   | Quit.                                                                           |
 
-Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). Unimplemented slots (`F5/F6/F9`) are hidden/disabled until their workflows land.
+Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). Unimplemented slots (`F6/F9`) are hidden/disabled until their workflows land.
 
 ## Configuration
 

@@ -16,6 +16,7 @@ const (
 	PanelActionOptions
 	PanelActionView
 	PanelActionEdit
+	PanelActionCopy
 	PanelActionCreateNamespace
 	PanelActionDelete
 	PanelActionMenu
@@ -40,6 +41,7 @@ type PanelEnvironmentSupplier func() PanelEnvironment
 // PanelCapabilities describes which actions are currently enabled.
 type PanelCapabilities struct {
 	CanView        bool
+	CanCopy        bool
 	CanEdit        bool
 	CanDelete      bool
 	CanCreateNS    bool
@@ -91,6 +93,7 @@ func (p *Panel) Capabilities(ctx context.Context) PanelCapabilities {
 		if _, isBack := item.(models.Back); !isBack {
 			if isViewableItem(item) {
 				caps.CanView = true
+				caps.CanCopy = true
 			}
 			if obj, ok := item.(models.ObjectItem); ok {
 				if env.AllowEditObjects && obj.SupportsVerb("update") {
@@ -145,6 +148,8 @@ func (p *Panel) actionAllowed(ctx context.Context, action PanelAction) bool {
 		return caps.HasOptions
 	case PanelActionView:
 		return caps.CanView
+	case PanelActionCopy:
+		return caps.CanCopy
 	case PanelActionEdit:
 		return caps.CanEdit
 	case PanelActionCreateNamespace:
