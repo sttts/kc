@@ -18,6 +18,7 @@ import (
 )
 
 const (
+	fsSessionTimeout     = 30 * time.Second
 	fsDefaultTimeout     = 10 * time.Second
 	fsFileViewMaxBytes   = 512 * 1024
 	fsUnavailableMessage = "Pod filesystem browsing unavailable"
@@ -57,7 +58,7 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 		TailLines: DefaultLogsTailLines,
 	}
 	logPath := append(append([]string{}, f.Path()...), "logs", "latest")
-	logItem := NewContainerLogItem("logs_latest", []string{"/logs"}, logPath, logSpec)
+	logItem := NewContainerLogItem("logs_latest", []string{"logs"}, logPath, logSpec)
 	logItem.RowItem.details = "Stream container logs"
 	rows = append(rows, logItem)
 
@@ -113,11 +114,11 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 		item.WithViewContent(errorViewContent("Pod filesystem unavailable", fsUnavailableMessage))
 		return []table.Row{item}, nil
 	}
-	listCtx, cancel := deriveContext(ctx, f.Deps.Ctx, fsDefaultTimeout)
-	defer cancel()
-	sess, err := f.session.Session(listCtx)
+	sessionCtx, cancelSession := deriveContext(ctx, f.Deps.Ctx, fsSessionTimeout)
+	defer cancelSession()
+	sess, err := f.session.Session(sessionCtx)
 	if err != nil {
-		log := ctrllog.FromContext(listCtx).WithName("podfs_folder").
+		log := ctrllog.FromContext(sessionCtx).WithName("podfs_folder").
 			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", f.session.spec.Container)
 		log.Error(err, "Session establishment failed")
 		item := NewSimpleItem("root_error", []string{"error"}, f.Path(), DimStyle())
@@ -126,7 +127,15 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 		item.WithViewContent(errorViewContent("Pod filesystem", detail))
 		return []table.Row{item}, nil
 	}
+	listCtx, cancelList := deriveContext(ctx, f.Deps.Ctx, fsDefaultTimeout)
+	defer cancelList()
 	entries, err := sess.List(listCtx, f.dir)
+	if err != nil && isTransientSessionError(err) {
+		f.session.Invalidate()
+		if sess, err = f.session.Session(sessionCtx); err == nil {
+			entries, err = sess.List(listCtx, f.dir)
+		}
+	}
 	if err != nil {
 		log := ctrllog.FromContext(listCtx).WithName("podfs_folder").
 			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", f.session.spec.Container, "dir", f.dir)
@@ -210,22 +219,11 @@ func podFSFileViewContent(folder *PodContainerFSFolder, fsPath string, size int6
 		if folder == nil || folder.session == nil {
 			return "", "", "", "", "", fmt.Errorf("pod filesystem unavailable")
 		}
-		readCtx, cancel := deriveContext(nil, folder.Deps.Ctx, fsDefaultTimeout)
-		defer cancel()
-		sess, err := folder.session.Session(readCtx)
-		if err != nil {
-			return "", "", "", "", "", err
-		}
 		limit := size
 		if limit <= 0 || limit > fsFileViewMaxBytes {
 			limit = fsFileViewMaxBytes
 		}
-		reader, err := sess.ReadFile(readCtx, fsPath, limit)
-		if err != nil {
-			return "", "", "", "", "", err
-		}
-		defer reader.Close()
-		data, err := io.ReadAll(reader)
+		data, err := folder.readFileContent(nil, fsPath, limit)
 		if err != nil {
 			return "", "", "", "", "", err
 		}
@@ -299,6 +297,19 @@ func (h *containerSessionHandle) Close() error {
 	return err
 }
 
+func (h *containerSessionHandle) Invalidate() {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	if h.session != nil {
+		_ = h.session.Close()
+		h.session = nil
+		h.helper = false
+	}
+	h.mu.Unlock()
+}
+
 func (h *containerSessionHandle) HelperUsed() bool {
 	if h == nil {
 		return false
@@ -363,6 +374,62 @@ func errorViewContent(title, detail string) ViewContentFunc {
 	return func() (string, string, string, string, string, error) {
 		return title, detail + "\n", "", "text/plain", "error.txt", nil
 	}
+}
+
+func (f *PodContainerFSFolder) readFileContent(ctx context.Context, fsPath string, limit int64) ([]byte, error) {
+	if f.session == nil {
+		return nil, fmt.Errorf("pod filesystem unavailable")
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		sessionCtx, cancelSession := deriveContext(ctx, f.Deps.Ctx, fsSessionTimeout)
+		sess, err := f.session.Session(sessionCtx)
+		if err != nil {
+			cancelSession()
+			return nil, err
+		}
+		readCtx, cancelRead := deriveContext(ctx, f.Deps.Ctx, fsDefaultTimeout)
+		reader, err := sess.ReadFile(readCtx, fsPath, limit)
+		if err != nil {
+			cancelRead()
+			cancelSession()
+			if isTransientSessionError(err) || isContextError(err) {
+				f.session.Invalidate()
+				continue
+			}
+			return nil, err
+		}
+		data, readErr := io.ReadAll(reader)
+		reader.Close()
+		cancelRead()
+		cancelSession()
+		if readErr != nil {
+			if isTransientSessionError(readErr) || isContextError(readErr) {
+				f.session.Invalidate()
+				continue
+			}
+			return nil, readErr
+		}
+		return data, nil
+	}
+	return nil, fmt.Errorf("failed to read %s: transient errors", fsPath)
+}
+
+func isTransientSessionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.ErrClosedPipe) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "read/write on closed pipe") || strings.Contains(msg, "connection reset by peer")
+}
+
+func isContextError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func deriveContext(ctx context.Context, fallback context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {

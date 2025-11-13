@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 type helperManager struct {
@@ -49,37 +50,34 @@ func (m *helperManager) ensureHelper(ctx context.Context, spec SessionSpec) (Ses
 	if !m.available() {
 		return spec, fmt.Errorf("pod filesystem helper disabled")
 	}
-	helperName := sanitizeHelperName(fmt.Sprintf("%s-%s", m.cfg.namePrefix, spec.Container))
 	pods := m.client.CoreV1().Pods(spec.Namespace)
-	pod, err := pods.Get(ctx, spec.Pod, metav1.GetOptions{})
-	if err != nil {
-		return spec, err
-	}
-	if !helperExists(pod, helperName) {
-		ec := corev1.EphemeralContainer{
-			EphemeralContainerCommon: corev1.EphemeralContainerCommon{
-				Name:            helperName,
-				Image:           m.cfg.image,
-				Command:         append([]string(nil), m.cfg.command...),
-				ImagePullPolicy: corev1.PullIfNotPresent,
-				Stdin:           true,
-				TTY:             true,
-			},
-			TargetContainerName: spec.Container,
-		}
-		pod.Spec.EphemeralContainers = append(pod.Spec.EphemeralContainers, ec)
-		if _, err := pods.UpdateEphemeralContainers(ctx, spec.Pod, pod, metav1.UpdateOptions{}); err != nil {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		helperName := sanitizeHelperName(fmt.Sprintf("%s-%s-%d", m.cfg.namePrefix, spec.Container, attempt))
+		pod, err := pods.Get(ctx, spec.Pod, metav1.GetOptions{})
+		if err != nil {
 			return spec, err
 		}
+		if !helperExists(pod, helperName) {
+			if err := m.createHelper(ctx, pods, pod, spec.Container, helperName); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+		if err := m.waitForHelper(ctx, spec.Namespace, spec.Pod, helperName); err != nil {
+			lastErr = err
+			if ctx.Err() != nil {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		return SessionSpec{Namespace: spec.Namespace, Pod: spec.Pod, Container: helperName}, nil
 	}
-	if err := m.waitForHelper(ctx, spec.Namespace, spec.Pod, helperName); err != nil {
-		return spec, err
+	if lastErr == nil {
+		lastErr = fmt.Errorf("failed to start debug helper after retries")
 	}
-	return SessionSpec{
-		Namespace: spec.Namespace,
-		Pod:       spec.Pod,
-		Container: helperName,
-	}, nil
+	return spec, lastErr
 }
 
 func (m *helperManager) waitForHelper(ctx context.Context, namespace, podName, helperName string) error {
@@ -100,7 +98,16 @@ func (m *helperManager) waitForHelper(ctx context.Context, namespace, podName, h
 				return true, nil
 			}
 			if status.State.Terminated != nil {
-				return false, fmt.Errorf("debug helper terminated: %s", status.State.Terminated.Message)
+				reason := strings.TrimSpace(status.State.Terminated.Reason)
+				message := strings.TrimSpace(status.State.Terminated.Message)
+				detail := reason
+				if detail == "" {
+					detail = "unknown"
+				}
+				if message != "" {
+					detail = fmt.Sprintf("%s: %s", detail, message)
+				}
+				return false, fmt.Errorf("debug helper terminated: %s", detail)
 			}
 		}
 		return false, nil
@@ -136,4 +143,21 @@ func getenvDefault(key, def string) string {
 		return val
 	}
 	return def
+}
+
+func (m *helperManager) createHelper(ctx context.Context, pods typedcorev1.PodInterface, pod *corev1.Pod, targetContainer, helperName string) error {
+	ec := corev1.EphemeralContainer{
+		EphemeralContainerCommon: corev1.EphemeralContainerCommon{
+			Name:            helperName,
+			Image:           m.cfg.image,
+			Command:         append([]string(nil), m.cfg.command...),
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Stdin:           true,
+			TTY:             true,
+		},
+		TargetContainerName: targetContainer,
+	}
+	pod.Spec.EphemeralContainers = append(pod.Spec.EphemeralContainers, ec)
+	_, err := pods.UpdateEphemeralContainers(ctx, pod.Name, pod, metav1.UpdateOptions{})
+	return err
 }

@@ -16,6 +16,12 @@ func NewFactory(cfg *rest.Config) (Factory, error) {
 	}
 	base := rest.CopyConfig(cfg)
 	base = rest.AddUserAgent(base, "kc-podfs")
+	if base.QPS == 0 {
+		base.QPS = 50
+	}
+	if base.Burst == 0 {
+		base.Burst = 100
+	}
 	clientset, err := kubernetes.NewForConfig(base)
 	if err != nil {
 		return nil, fmt.Errorf("podfs: kubernetes client: %w", err)
