@@ -2,6 +2,7 @@ package podfs
 
 import (
 	"encoding/base64"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -38,6 +39,17 @@ func TestDecodeEntry(t *testing.T) {
 	}
 	if entry.UpdatedAt.Unix() != 1700000000 {
 		t.Fatalf("mtime mismatch: %v", entry.UpdatedAt)
+	}
+}
+
+func TestParseScriptErrorMissingCommand(t *testing.T) {
+	err := parseScriptError("bootstrap|missing:stat")
+	var missing MissingCommandError
+	if !errors.As(err, &missing) {
+		t.Fatalf("expected MissingCommandError, got %T", err)
+	}
+	if missing.Command != "stat" {
+		t.Fatalf("command = %q, want stat", missing.Command)
 	}
 }
 

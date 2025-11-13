@@ -178,6 +178,7 @@ func setupControllerRuntimeLogger() {
 					ctrllog.SetLogger(l)
 					log.SetOutput(f)
 					log.SetFlags(0)
+					klog.SetOutput(f)
 					// Redirect klog to the controller-runtime logger (zap)
 					klog.SetLogger(ctrllog.Log)
 					return
@@ -189,6 +190,7 @@ func setupControllerRuntimeLogger() {
 	ctrllog.SetLogger(logr.Discard())
 	// Redirect klog to discard as well
 	klog.SetLogger(logr.Discard())
+	klog.SetOutput(io.Discard)
 	log.SetOutput(io.Discard)
 }
 

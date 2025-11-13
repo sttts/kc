@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/sttts/kc/internal/podfs"
 	table "github.com/sttts/kc/internal/table"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -105,14 +107,20 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 	defer cancel()
 	sess, err := f.session.Session(listCtx)
 	if err != nil {
+		log := ctrllog.FromContext(listCtx).WithName("podfs_folder").
+			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", f.session.spec.Container)
+		log.Error(err, "Session establishment failed")
 		item := NewSimpleItem("root_error", []string{"error"}, f.Path(), DimStyle())
-		item.RowItem.details = fmt.Sprintf("Failed to open filesystem: %v", err)
+		item.RowItem.details = describeFSError("Open filesystem", err)
 		return []table.Row{item}, nil
 	}
 	entries, err := sess.List(listCtx, f.dir)
 	if err != nil {
+		log := ctrllog.FromContext(listCtx).WithName("podfs_folder").
+			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", f.session.spec.Container, "dir", f.dir)
+		log.Error(err, "List failed")
 		item := NewSimpleItem("root_error", []string{"error"}, f.Path(), DimStyle())
-		item.RowItem.details = fmt.Sprintf("List failed: %v", err)
+		item.RowItem.details = describeFSError("List directory", err)
 		return []table.Row{item}, nil
 	}
 	rows := make([]table.Row, 0, len(entries))
@@ -304,6 +312,21 @@ func sanitizeContainerPath(p string) string {
 func joinContainerPath(base, name string) string {
 	base = sanitizeContainerPath(base)
 	return sanitizeContainerPath(path.Join(base, name))
+}
+
+func describeFSError(action string, err error) string {
+	if err == nil {
+		return ""
+	}
+	var missing podfs.MissingCommandError
+	switch {
+	case errors.Is(err, podfs.ErrShellMissing):
+		return "Filesystem browsing unavailable: container image lacks /bin/sh."
+	case errors.As(err, &missing):
+		return fmt.Sprintf("Filesystem browsing unavailable: missing required command %s", missing.Command)
+	default:
+		return fmt.Sprintf("%s failed: %v", action, err)
+	}
 }
 
 func deriveContext(ctx context.Context, fallback context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {

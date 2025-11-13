@@ -2,9 +2,25 @@ package podfs
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"time"
 )
+
+var (
+	// ErrShellMissing indicates the container image lacks a usable /bin/sh.
+	ErrShellMissing = errors.New("pod filesystem: shell missing")
+)
+
+// MissingCommandError reports that a required binary is absent in the container image.
+type MissingCommandError struct {
+	Command string
+}
+
+func (e MissingCommandError) Error() string {
+	return fmt.Sprintf("pod filesystem: missing required command %s", e.Command)
+}
 
 // EntryType classifies filesystem entries returned by ExecSession.List.
 type EntryType string

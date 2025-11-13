@@ -86,7 +86,7 @@ func newNativeSession(ctx context.Context, cfg *rest.Config, client kubernetes.I
 
 	if err := session.bootstrap(ctx); err != nil {
 		session.Close()
-		return nil, err
+		return nil, classifyError(err)
 	}
 	return session, nil
 }
@@ -139,7 +139,7 @@ func (s *nativeSession) Close() error {
 
 func (s *nativeSession) bootstrap(ctx context.Context) error {
 	if err := s.writeScript(bootstrapScript); err != nil {
-		return err
+		return classifyError(err)
 	}
 	for {
 		select {
@@ -153,7 +153,7 @@ func (s *nativeSession) bootstrap(ctx context.Context) error {
 			case strings.HasPrefix(line, cmdPrefixReady):
 				return nil
 			case strings.HasPrefix(line, cmdPrefixError):
-				return fmt.Errorf("podfs bootstrap error: %s", strings.TrimPrefix(line, cmdPrefixError+"|"))
+				return classifyError(parseScriptError(strings.TrimPrefix(line, cmdPrefixError+"|")))
 			default:
 				continue
 			}
@@ -174,7 +174,7 @@ func (s *nativeSession) List(ctx context.Context, path string) ([]FileEntry, err
 			return nil, err
 		}
 		if strings.HasPrefix(line, cmdPrefixError) {
-			return nil, fmt.Errorf("podfs ls error: %s", strings.TrimPrefix(line, cmdPrefixError+"|"))
+			return nil, classifyError(parseScriptError(strings.TrimPrefix(line, cmdPrefixError+"|")))
 		}
 		if strings.HasPrefix(line, cmdPrefixLSDone) {
 			return entries, nil
@@ -206,8 +206,9 @@ func (s *nativeSession) ReadFile(ctx context.Context, path string, limit int64) 
 		}
 		switch {
 		case strings.HasPrefix(line, cmdPrefixError):
+			err := classifyError(parseScriptError(strings.TrimPrefix(line, cmdPrefixError+"|")))
 			s.mu.Unlock()
-			return nil, fmt.Errorf("podfs cat error: %s", strings.TrimPrefix(line, cmdPrefixError+"|"))
+			return nil, err
 		case strings.HasPrefix(line, cmdPrefixCatMeta):
 			val := strings.TrimPrefix(line, cmdPrefixCatMeta+"|")
 			expected, err = strconv.ParseInt(val, 10, 64)
@@ -244,7 +245,7 @@ func (s *nativeSession) consumeCatDone(ctx context.Context) error {
 			return nil
 		}
 		if strings.HasPrefix(line, cmdPrefixError) {
-			return fmt.Errorf("podfs cat error: %s", strings.TrimPrefix(line, cmdPrefixError+"|"))
+			return classifyError(parseScriptError(strings.TrimPrefix(line, cmdPrefixError+"|")))
 		}
 	}
 }
@@ -381,7 +382,7 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 			}
 		case strings.HasPrefix(line, cmdPrefixError):
 			r.finish()
-			return 0, fmt.Errorf("podfs cat error: %s", strings.TrimPrefix(line, cmdPrefixError+"|"))
+			return 0, classifyError(parseScriptError(strings.TrimPrefix(line, cmdPrefixError+"|")))
 		case strings.HasPrefix(line, cmdPrefixCatMeta):
 			// already received meta; ignore duplicates
 			continue
@@ -513,3 +514,33 @@ __kc_cat() {
 
 printf '__kc_ready__\n'
 `
+
+func parseScriptError(payload string) error {
+	parts := strings.SplitN(payload, "|", 3)
+	scope := parts[0]
+	detail := ""
+	if len(parts) > 1 {
+		detail = parts[1]
+		if len(parts) == 3 {
+			detail = detail + "|" + parts[2]
+		}
+	}
+	if scope == "bootstrap" && strings.HasPrefix(detail, "missing:") {
+		cmd := strings.TrimPrefix(detail, "missing:")
+		return MissingCommandError{Command: cmd}
+	}
+	if detail == "" {
+		return fmt.Errorf("%s", scope)
+	}
+	return fmt.Errorf("%s: %s", scope, detail)
+}
+
+func classifyError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), `exec: "sh": executable file not found`) {
+		return fmt.Errorf("%w: %s", ErrShellMissing, err.Error())
+	}
+	return err
+}
