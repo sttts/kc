@@ -101,4 +101,11 @@ func TestPodContainerFSFolderMissingShellMessage(t *testing.T) {
 	if !strings.Contains(errRow.Details(), "lacks /bin/sh") {
 		t.Fatalf("details = %q, want mention of missing shell", errRow.Details())
 	}
+	title, body, _, _, _, err := errRow.ViewContent()
+	if err != nil {
+		t.Fatalf("ViewContent error: %v", err)
+	}
+	if !strings.Contains(body, "lacks /bin/sh") || !strings.Contains(title, "filesystem") {
+		t.Fatalf("unexpected view content: title=%q body=%q", title, body)
+	}
 }

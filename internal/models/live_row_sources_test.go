@@ -104,11 +104,4 @@ func TestPodRowSourcesRefresh(t *testing.T) {
 		t.Fatalf("list rows did not refresh")
 	}
 
-	// Pod logs row source simply wraps populate
-	lg := newPodContainerLogRowSource(Deps{}, "default", "pod", "containers", func(context.Context) ([]table.Row, error) {
-		return rowsSet[1], nil
-	}, func() {})
-	if len(lg.Lines(ctx, 0, 10)) != len(rowsSet[1]) {
-		t.Fatalf("unexpected log rows")
-	}
 }

@@ -161,36 +161,6 @@ type containerRecord struct {
 	Detail string
 }
 
-// PodContainerLogsFolder provides log entries for a specific container.
-type PodContainerLogsFolder struct {
-	*BaseFolder
-	Namespace string
-	Pod       string
-	Container string
-}
-
-func NewPodContainerLogsFolder(deps Deps, path []string, namespace, pod, container string) *PodContainerLogsFolder {
-	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path)
-	folder := &PodContainerLogsFolder{BaseFolder: base, Namespace: namespace, Pod: pod, Container: container}
-	rows := newPodContainerLogRowSource(deps, namespace, pod, container, folder.buildRows, folder.BaseFolder.markDirtyFromSource)
-	base.SetRowSource(rows)
-	return folder
-}
-
-func (f *PodContainerLogsFolder) buildRows(context.Context) ([]table.Row, error) {
-	rows := make([]table.Row, 0, 1)
-	spec := LogsSpec{
-		Namespace: f.Namespace,
-		Pod:       f.Pod,
-		Container: f.Container,
-		Follow:    true,
-		TailLines: DefaultLogsTailLines,
-	}
-	item := NewContainerLogItem("latest", []string{"logs"}, append(append([]string{}, f.Path()...), "latest"), spec)
-	rows = append(rows, item)
-	return rows, nil
-}
-
 func newPodSectionRowSource(deps Deps, namespace, pod string, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
@@ -201,15 +171,6 @@ func newPodSectionRowSource(deps Deps, namespace, pod string, populate func(cont
 }
 
 func newPodContainerRowSource(deps Deps, namespace, pod string, kind containerKind, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
-	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
-	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
-		return startInformerForResource(deps, gvr, namespace, pod, onEvent, onStop)
-	})
-	lor.watchTTL = watchDuration(deps)
-	return lor
-}
-
-func newPodContainerLogRowSource(deps Deps, namespace, pod, container string, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
 		return startInformerForResource(deps, gvr, namespace, pod, onEvent, onStop)

@@ -49,12 +49,17 @@ func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, conta
 
 func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, error) {
 	rows := make([]table.Row, 0, 2)
-	logsPath := append(append([]string{}, f.Path()...), "logs")
-	logsItem := NewContainerSectionItem("logs", []string{"/logs"}, logsPath, WhiteStyle(), func() (Folder, error) {
-		return NewPodContainerLogsFolder(f.Deps, logsPath, f.Namespace, f.Pod, f.Container), nil
-	})
-	logsItem.RowItem.details = "Stream container logs"
-	rows = append(rows, logsItem)
+	logSpec := LogsSpec{
+		Namespace: f.Namespace,
+		Pod:       f.Pod,
+		Container: f.Container,
+		Follow:    true,
+		TailLines: DefaultLogsTailLines,
+	}
+	logPath := append(append([]string{}, f.Path()...), "logs", "latest")
+	logItem := NewContainerLogItem("logs_latest", []string{"/logs"}, logPath, logSpec)
+	logItem.RowItem.details = "Stream container logs"
+	rows = append(rows, logItem)
 
 	rootPath := append(append([]string{}, f.Path()...), "root")
 	if f.session == nil {
@@ -105,6 +110,7 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 	if f.session == nil {
 		item := NewSimpleItem("root_unavailable", []string{"unavailable"}, f.Path(), DimStyle())
 		item.RowItem.details = fsUnavailableMessage
+		item.WithViewContent(errorViewContent("Pod filesystem unavailable", fsUnavailableMessage))
 		return []table.Row{item}, nil
 	}
 	listCtx, cancel := deriveContext(ctx, f.Deps.Ctx, fsDefaultTimeout)
@@ -115,7 +121,9 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", f.session.spec.Container)
 		log.Error(err, "Session establishment failed")
 		item := NewSimpleItem("root_error", []string{"error"}, f.Path(), DimStyle())
-		item.RowItem.details = describeFSError("Open filesystem", err)
+		detail := describeFSError("Open filesystem", err)
+		item.RowItem.details = detail
+		item.WithViewContent(errorViewContent("Pod filesystem", detail))
 		return []table.Row{item}, nil
 	}
 	entries, err := sess.List(listCtx, f.dir)
@@ -124,7 +132,9 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", f.session.spec.Container, "dir", f.dir)
 		log.Error(err, "List failed")
 		item := NewSimpleItem("root_error", []string{"error"}, f.Path(), DimStyle())
-		item.RowItem.details = describeFSError("List directory", err)
+		detail := describeFSError("List directory", err)
+		item.RowItem.details = detail
+		item.WithViewContent(errorViewContent("Pod filesystem", detail))
 		return []table.Row{item}, nil
 	}
 	rows := make([]table.Row, 0, len(entries))
@@ -346,6 +356,12 @@ func describeFSError(action string, err error) string {
 		return fmt.Sprintf("Filesystem browsing unavailable: missing required command %s", missing.Command)
 	default:
 		return fmt.Sprintf("%s failed: %v", action, err)
+	}
+}
+
+func errorViewContent(title, detail string) ViewContentFunc {
+	return func() (string, string, string, string, string, error) {
+		return title, detail + "\n", "", "text/plain", "error.txt", nil
 	}
 }
 

@@ -203,7 +203,7 @@ func TestStartupIntentLogsEnvtest(t *testing.T) {
 		cmd()
 	}
 
-	wantPath := fmt.Sprintf("/namespaces/%s/pods/%s/containers/%s/logs", ns, podName, container)
+	wantPath := fmt.Sprintf("/namespaces/%s/pods/%s/containers/%s", ns, podName, container)
 	if got := app.leftPanel.GetCurrentPath(); got != wantPath {
 		t.Fatalf("left panel path = %q, want %q", got, wantPath)
 	}

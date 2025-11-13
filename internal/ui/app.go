@@ -3096,8 +3096,7 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 		{SelectionID: intent.Pod, Enter: true},
 		{SelectionID: target.SectionID, Enter: true},
 		{SelectionID: target.Container, Enter: true},
-		{SelectionID: "logs", Enter: true},
-		{SelectionID: "latest", Enter: false},
+		{SelectionID: "logs_latest", Enter: false},
 	}
 	if _, err := navui.GoTo(ctx, a.leftNav, steps); err != nil {
 		a.notifyIntentError("kubectl logs %s: %v", intent.Pod, err)
@@ -3105,7 +3104,7 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 	}
 	a.syncPanelWithNavigator(0)
 	ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
-	a.leftPanel.SelectByRowID(ctxSel, "latest")
+	a.leftPanel.SelectByRowID(ctxSel, "logs_latest")
 	cancelSel()
 	a.activePanel = 0
 	return a.openLogsViewerForIntent(intent)
