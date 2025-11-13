@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/sttts/kc/internal/overlay"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
+	bl "github.com/sttts/kc/third_party/bubblelayout"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -23,11 +26,20 @@ type NamespaceCreateModel struct {
 	cursor        int
 	err           string
 	buttons       []buttonRect
+	focus         namespaceFocus
 }
+
+type namespaceFocus int
+
+const (
+	namespaceFocusInput namespaceFocus = iota
+	namespaceFocusCreate
+	namespaceFocusCancel
+)
 
 // NewNamespaceCreateModel constructs an empty namespace creation dialog model.
 func NewNamespaceCreateModel() *NamespaceCreateModel {
-	return &NamespaceCreateModel{}
+	return &NamespaceCreateModel{focus: namespaceFocusInput}
 }
 
 func (m *NamespaceCreateModel) Init() tea.Cmd          { return nil }
@@ -39,6 +51,7 @@ func (m *NamespaceCreateModel) Reset() {
 	m.cursor = 0
 	m.err = ""
 	m.buttons = nil
+	m.focus = namespaceFocusInput
 }
 
 func (m *NamespaceCreateModel) value() string { return string(m.runes) }
@@ -83,14 +96,51 @@ func (m *NamespaceCreateModel) clampCursor() {
 	}
 }
 
+func (m *NamespaceCreateModel) moveFocus(delta int) tea.Cmd {
+	total := 3
+	next := (int(m.focus) + delta) % total
+	if next < 0 {
+		next += total
+	}
+	m.focus = namespaceFocus(next)
+	return nil
+}
+
 func (m *NamespaceCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch key := msg.(type) {
 	case tea.KeyMsg:
 		switch key.String() {
+		case "tab":
+			return m, m.moveFocus(1)
+		case "shift+tab":
+			return m, m.moveFocus(-1)
 		case "ctrl+c", "ctrl+g", "esc":
 			return m, func() tea.Msg { return NamespaceCreateResultMsg{Close: true} }
 		case "ctrl+h":
-			m.deleteBackward()
+			if m.focus == namespaceFocusInput {
+				m.deleteBackward()
+				return m, nil
+			}
+		}
+		if m.focus != namespaceFocusInput {
+			switch key.String() {
+			case "left":
+				if m.focus == namespaceFocusCancel {
+					m.focus = namespaceFocusCreate
+				}
+				return m, nil
+			case "right":
+				if m.focus == namespaceFocusCreate {
+					m.focus = namespaceFocusCancel
+				}
+				return m, nil
+			case "enter", " ":
+				idx := 0
+				if m.focus == namespaceFocusCancel {
+					idx = 1
+				}
+				return m, m.executeButton(idx)
+			}
 			return m, nil
 		}
 		k := key.Key()
@@ -148,11 +198,12 @@ func (m *NamespaceCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !r.contains(mouse.X, mouse.Y) {
 				continue
 			}
-			if _, ok := msg.(tea.MouseClickMsg); ok {
-				// Focus change not tracked yet; ignore.
-				return m, nil
-			}
 			if _, ok := msg.(tea.MouseReleaseMsg); ok {
+				if idx == 0 {
+					m.focus = namespaceFocusCreate
+				} else {
+					m.focus = namespaceFocusCancel
+				}
 				return m, m.executeButton(idx)
 			}
 		}
@@ -183,55 +234,147 @@ func (m *NamespaceCreateModel) executeButton(idx int) tea.Cmd {
 }
 
 func (m *NamespaceCreateModel) View() (string, *tea.Cursor) {
-	innerWidth := max(30, m.width-4)
-	bg := lipgloss.NewStyle().
+	innerWidth := max(20, min(70, m.width-4))
+	if innerWidth <= 0 {
+		innerWidth = 20
+	}
+
+	header := m.renderHeader(innerWidth)
+	inputView, inputCursor := m.renderInputBlock(innerWidth)
+	status := m.renderStatus(innerWidth)
+	buttonRow, buttonRects := m.renderButtonsRow(innerWidth)
+
+	headerHeight := lipgloss.Height(header)
+	inputHeight := lipgloss.Height(inputView)
+	statusHeight := lipgloss.Height(status)
+	buttonHeight := lipgloss.Height(buttonRow)
+
+	layout := bl.New()
+	addRow := func(h int) bl.ID {
+		height := max(1, h)
+		id := layout.Add(fmt.Sprintf("height %d!", height))
+		layout.Wrap()
+		return id
+	}
+	headerID := addRow(headerHeight)
+	inputID := addRow(inputHeight)
+	statusID := addRow(statusHeight)
+	buttonID := addRow(buttonHeight)
+
+	totalHeight := max(1, headerHeight+inputHeight+statusHeight+buttonHeight)
+	msg := layout.Resize(innerWidth, totalHeight)
+
+	canvas := lipgloss.NewStyle().
+		Width(innerWidth).
+		Height(totalHeight).
 		Background(lipgloss.Color(uistyles.ColorModalBg)).
 		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Width(innerWidth)
+		Render("")
 
-	header := bg.Copy().
+	place := func(content string, id bl.ID) {
+		if size, err := msg.Size(id); err == nil {
+			canvas = overlay.Composite(content, canvas, overlay.Left, overlay.Top, size.X, size.Y)
+		}
+	}
+	place(header, headerID)
+	place(inputView, inputID)
+	place(status, statusID)
+	place(buttonRow, buttonID)
+
+	if size, err := msg.Size(buttonID); err == nil {
+		m.buttons = make([]buttonRect, len(buttonRects))
+		for i, r := range buttonRects {
+			m.buttons[i] = buttonRect{
+				x: size.X + r.x,
+				y: size.Y + r.y,
+				w: r.w,
+				h: r.h,
+			}
+		}
+	} else {
+		m.buttons = nil
+	}
+
+	var cursor *tea.Cursor
+	if inputCursor != nil {
+		if c, err := msg.OffsetCursor(inputID, inputCursor); err == nil {
+			cursor = c
+		}
+	}
+	return canvas, cursor
+}
+
+func (m *NamespaceCreateModel) renderHeader(width int) string {
+	return lipgloss.NewStyle().
+		Width(width).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
 		Bold(true).
 		Align(lipgloss.Center).
 		Render("Enter new namespace name")
-
-	fieldWidth := max(24, innerWidth-6)
-	renderedInput, cursorPos := m.renderInput(fieldWidth)
-	leftPad := max(0, (innerWidth-lipgloss.Width(renderedInput))/2)
-	cursorX := leftPad + cursorPos
-	if cursorX < 0 {
-		cursorX = 0
-	}
-	if cursorX >= innerWidth {
-		cursorX = innerWidth - 1
-	}
-	cursorY := 2 // header (0), blank (1), input (2)
-	inputField := bg.Copy().
-		Align(lipgloss.Center).
-		Render(renderedInput)
-
-	lines := []string{
-		header,
-		bg.Copy().Render(""),
-		inputField,
-	}
-	if m.err != "" {
-		errLine := bg.Copy().
-			Foreground(lipgloss.Color(uistyles.ColorModalSelBg)).
-			Render(m.err)
-		lines = append(lines, bg.Copy().Render(""), errLine)
-	}
-	view := lipgloss.JoinVertical(lipgloss.Left, lines...)
-	cursor := tea.NewCursor(cursorX, cursorY)
-	return view, cursor
 }
 
-func (m *NamespaceCreateModel) renderButton(label string) string {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
+func (m *NamespaceCreateModel) renderInputBlock(width int) (string, *tea.Cursor) {
+	fieldWidth := max(24, width-6)
+	renderedInput, cursorPos := m.renderInput(fieldWidth)
+	inputLine := lipgloss.NewStyle().
+		Width(width).
 		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Padding(0, 3).
 		Align(lipgloss.Center).
-		Render(label)
+		Render(renderedInput)
+	cursorX := max(0, (width-lipgloss.Width(renderedInput))/2+cursorPos)
+	return inputLine, tea.NewCursor(cursorX, 0)
+}
+
+func (m *NamespaceCreateModel) renderStatus(width int) string {
+	if strings.TrimSpace(m.err) == "" {
+		return lipgloss.NewStyle().
+			Width(width).
+			Background(lipgloss.Color(uistyles.ColorModalBg)).
+			Render("")
+	}
+	return lipgloss.NewStyle().
+		Width(width).
+		Align(lipgloss.Center).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalSelBg)).
+		Render(m.err)
+}
+
+func (m *NamespaceCreateModel) renderButtonsRow(width int) (string, []buttonRect) {
+	wrap := func(content string) string {
+		return lipgloss.NewStyle().
+			Background(lipgloss.Color(uistyles.ColorModalBg)).
+			Padding(0, 1).
+			Render(content)
+	}
+	options := []string{
+		wrap(m.renderButton("Create", m.focus == namespaceFocusCreate)),
+		wrap(m.renderButton("Cancel", m.focus == namespaceFocusCancel)),
+	}
+	row := lipgloss.JoinHorizontal(lipgloss.Left, options[0], options[1])
+	rowWidth := lipgloss.Width(options[0])
+	line := uistyles.AlignCenter(width, row, lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalBg)))
+	contentWidth := lipgloss.Width(row)
+	leftPad := max(0, (width-contentWidth)/2)
+	rects := []buttonRect{
+		{x: leftPad, y: 0, w: rowWidth, h: 1},
+		{x: leftPad + rowWidth, y: 0, w: lipgloss.Width(options[1]), h: 1},
+	}
+	return line, rects
+}
+
+func (m *NamespaceCreateModel) renderButton(label string, focused bool) string {
+	style := lipgloss.NewStyle().
+		Padding(0, 3).
+		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalButtonFg))
+	if focused {
+		style = style.
+			Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
+			Foreground(lipgloss.Color(uistyles.ColorModalButtonFg)).
+			Bold(true)
+	}
+	return style.Render(label)
 }
 
 func (m *NamespaceCreateModel) renderInput(fieldWidth int) (string, int) {

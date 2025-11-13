@@ -5,15 +5,18 @@ import "github.com/charmbracelet/lipgloss/v2"
 // Color constants (ANSI base codes)
 // Note: Prefer lipgloss built-in ANSI constants where possible in code.
 const (
-	ColorBlack      = "0"  // prefer lipgloss.Black
-	ColorDarkerBlue = "4"  // prefer lipgloss.Blue
-	ColorCyan       = "6"  // prefer lipgloss.Cyan
-	ColorGrey       = "7"  // prefer lipgloss.White (base white)
-	ColorDarkGrey   = "8"  // bright black (grey)
-	ColorWhite      = "15" // bright white
-	ColorModalBg    = ColorWhite
-	ColorModalFg    = ColorBlack
-	ColorModalSelBg = ColorCyan
+	ColorBlack            = "0"  // prefer lipgloss.Black
+	ColorDarkerBlue       = "4"  // prefer lipgloss.Blue
+	ColorCyan             = "6"  // prefer lipgloss.Cyan
+	ColorGrey             = "7"  // prefer lipgloss.White (base white)
+	ColorDarkGrey         = "8"  // bright black (grey)
+	ColorWhite            = "15" // bright white
+	ColorModalBg          = ColorWhite
+	ColorModalFg          = ColorBlack
+	ColorModalSelBg       = ColorCyan
+	ColorModalButtonBg    = ColorDarkGrey
+	ColorModalButtonFg    = ColorModalFg
+	ColorModalButtonSelBg = ColorCyan
 )
 
 // Common styles

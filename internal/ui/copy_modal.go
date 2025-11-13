@@ -9,7 +9,9 @@ import (
 	textinput "github.com/charmbracelet/bubbles/v2/textinput"
 	tea "github.com/charmbracelet/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss/v2"
+	"github.com/sttts/kc/internal/overlay"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
+	bl "github.com/sttts/kc/third_party/bubblelayout"
 )
 
 // CopyToLocalResultMsg captures the outcome of the copy dialog.
@@ -34,7 +36,16 @@ type CopyToLocalModel struct {
 	pathInput     textinput.Model
 	focus         copyFieldFocus
 	err           string
-	buttons       [2]buttonRect
+}
+
+type copyLayout struct {
+	width        int
+	height       int
+	title        string
+	field        string
+	fieldCursor  *tea.Cursor
+	hint         string
+	buttons      string
 }
 
 func newCopyTextInput() textinput.Model {
@@ -71,7 +82,6 @@ func (m *CopyToLocalModel) SetDimensions(w, h int) { m.width, m.height = w, h }
 func (m *CopyToLocalModel) Configure(subject, path string) {
 	m.subject = subject
 	m.err = ""
-	m.buttons = [2]buttonRect{}
 	m.setPath(path)
 	m.setFocus(copyFocusPath)
 }
@@ -150,30 +160,6 @@ func (m *CopyToLocalModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, cmd
 		}
-	case tea.MouseMsg:
-		mouse := key.Mouse()
-		if mouse.Button != tea.MouseLeft {
-			return m, nil
-		}
-		for idx, rect := range m.buttons {
-			if !rect.contains(mouse.X, mouse.Y) {
-				continue
-			}
-			switch msg.(type) {
-			case tea.MouseClickMsg:
-				if idx == 0 {
-					m.setFocus(copyFocusConfirm)
-				} else {
-					m.setFocus(copyFocusCancel)
-				}
-				return m, nil
-			case tea.MouseReleaseMsg:
-				if idx == 0 {
-					return m, m.trySubmit()
-				}
-				return m, func() tea.Msg { return CopyToLocalResultMsg{Close: true} }
-			}
-		}
 	}
 	return m, nil
 }
@@ -227,99 +213,140 @@ func (m *CopyToLocalModel) FooterHints() []FooterHint {
 }
 
 func (m *CopyToLocalModel) View() (string, *tea.Cursor) {
-	innerWidth := max(40, m.width-4)
-	bg := lipgloss.NewStyle().
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Width(innerWidth)
-
-	lines := make([]string, 0, 8)
-	var cursor *tea.Cursor
-	fieldWidth := max(30, innerWidth-6)
-
-	title := fmt.Sprintf("Copy %s to local file", strings.TrimSpace(m.subject))
-	lines = append(lines, bg.Copy().Bold(true).Render(title))
-	lines = append(lines, bg.Copy().Render(""))
-
-	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Padding(0, 0, 0, 2)
-	inputStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Width(innerWidth)
-
-	lines = append(lines, labelStyle.Render("File path"))
-	cursor = m.appendInputLine(&lines, inputStyle, &m.pathInput, cursor, fieldWidth)
-
-	if m.err != "" {
-		errStyle := bg.Copy().
-			Foreground(lipgloss.Color("196")).
-			PaddingLeft(2)
-		lines = append(lines, errStyle.Render(m.err))
-	} else {
-		lines = append(lines, bg.Copy().Render(""))
+	innerWidth := max(20, min(80, m.width-4))
+	if innerWidth <= 0 {
+		innerWidth = 20
 	}
 
-	lines = append(lines, bg.Copy().Faint(true).Render("Enter an absolute file path. Existing files will be overwritten."))
-	lines = append(lines, bg.Copy().Render(""))
+	title := m.renderTitle(innerWidth)
+	fieldView, fieldCursor := m.renderPathField(innerWidth)
+	hint := m.renderHint(innerWidth)
+	buttons := m.renderButtonsRow(innerWidth)
 
-	buttonLineIdx := len(lines)
-	row, rects := m.renderButtons(innerWidth, buttonLineIdx)
-	m.buttons = rects
-	lines = append(lines, bg.Copy().Render(row))
+	titleHeight := lipgloss.Height(title)
+	fieldHeight := lipgloss.Height(fieldView)
+	hintHeight := lipgloss.Height(hint)
+	buttonHeight := lipgloss.Height(buttons)
 
-	return lipgloss.JoinVertical(lipgloss.Left, lines...), cursor
-}
+	layout := bl.New()
+	addRow := func(h int) bl.ID {
+		height := max(1, h)
+		id := layout.Add(fmt.Sprintf("height %d!", height))
+		layout.Wrap()
+		return id
+	}
+	titleID := addRow(titleHeight)
+	fieldID := addRow(fieldHeight)
+	hintID := addRow(hintHeight)
+	buttonID := addRow(buttonHeight)
 
-func (m *CopyToLocalModel) appendInputLine(lines *[]string, style lipgloss.Style, input *textinput.Model, cur *tea.Cursor, fieldWidth int) *tea.Cursor {
-	input.SetWidth(fieldWidth)
-	view := input.View()
-	rendered := style.Render("  " + view)
-	*lines = append(*lines, rendered)
-	lineIdx := len(*lines) - 1
-	if m.focus == copyFocusPath {
-		if c := input.Cursor(); c != nil {
-			cursor := tea.NewCursor(c.X+2, lineIdx)
-			cursor.Blink = c.Blink
-			cursor.Shape = c.Shape
-			cursor.Color = c.Color
-			return cursor
+	totalHeight := max(1, titleHeight+fieldHeight+hintHeight+buttonHeight)
+	msg := layout.Resize(innerWidth, totalHeight)
+
+	canvas := lipgloss.NewStyle().
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
+		Width(innerWidth).
+		Height(totalHeight).
+		Render("")
+
+	place := func(content string, id bl.ID) {
+		if size, err := msg.Size(id); err == nil {
+			canvas = overlay.Composite(content, canvas, overlay.Left, overlay.Top, size.X, size.Y)
 		}
 	}
-	return cur
+	place(title, titleID)
+	place(fieldView, fieldID)
+	place(hint, hintID)
+	place(buttons, buttonID)
+
+	var cursor *tea.Cursor
+	if fieldCursor != nil {
+		fieldCursor.Position.Y += 1
+		fieldCursor.Position.X += 2
+		if c, err := msg.OffsetCursor(fieldID, fieldCursor); err == nil {
+			cursor = c
+		}
+	}
+	return canvas, cursor
 }
 
-func (m *CopyToLocalModel) renderButtons(width, lineIdx int) (string, [2]buttonRect) {
-	buttonLabels := []string{
-		m.renderButtonLabel("Copy", m.focus == copyFocusConfirm),
-		m.renderButtonLabel("Cancel", m.focus == copyFocusCancel),
-	}
-	gap := "   "
-	row := lipgloss.JoinHorizontal(lipgloss.Center, buttonLabels[0], gap, buttonLabels[1])
-	rowWidth := lipgloss.Width(row)
-	leftPad := max(0, (width-rowWidth)/2)
-	line := strings.Repeat(" ", leftPad) + row
-	if pad := width - lipgloss.Width(line); pad > 0 {
-		line += strings.Repeat(" ", pad)
-	}
-	rects := [2]buttonRect{
-		{x: leftPad, y: lineIdx, w: lipgloss.Width(buttonLabels[0]), h: 1},
-		{x: leftPad + lipgloss.Width(buttonLabels[0]) + lipgloss.Width(gap), y: lineIdx, w: lipgloss.Width(buttonLabels[1]), h: 1},
-	}
-	return line, rects
+func (m *CopyToLocalModel) renderTitle(width int) string {
+	text := fmt.Sprintf("Copy %s to local file", strings.TrimSpace(m.subject))
+	return lipgloss.NewStyle().
+		Width(width).
+		Align(lipgloss.Center).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Bold(true).
+		Render(text)
 }
 
-func (m *CopyToLocalModel) renderButtonLabel(label string, focused bool) string {
-	style := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
+func (m *CopyToLocalModel) renderPathField(width int) (string, *tea.Cursor) {
+	label := lipgloss.NewStyle().
+		Width(width).
+		Padding(0, 2).
+		Bold(true).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Render("File path")
+
+	fieldWidth := max(10, width-4)
+	m.pathInput.SetWidth(fieldWidth)
+	inputBox := lipgloss.NewStyle().
+		Width(width).
+		Padding(0, 2).
 		Background(lipgloss.Color(uistyles.ColorDarkGrey)).
-		Padding(0, 2)
+		Foreground(lipgloss.Color(uistyles.ColorWhite)).
+		Render(m.pathInput.View())
+
+	rows := []string{
+		label,
+		lipgloss.NewStyle().
+			Width(width).
+			Background(lipgloss.Color(uistyles.ColorModalBg)).
+			Render(inputBox),
+	}
+	view := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return view, m.pathInput.Cursor()
+}
+
+func (m *CopyToLocalModel) renderHint(width int) string {
+	text := "Enter an absolute file path. Existing files will be overwritten."
+	style := lipgloss.NewStyle().
+		Width(width).
+		Padding(0, 2).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Faint(true)
+	if strings.TrimSpace(m.err) != "" {
+		style = style.
+			Faint(false).
+			Foreground(lipgloss.Color("196"))
+		text = m.err
+	}
+	return style.Render(text)
+}
+
+func (m *CopyToLocalModel) renderButtonsRow(width int) string {
+	wrap := func(content string) string {
+		return lipgloss.NewStyle().
+			Background(lipgloss.Color(uistyles.ColorModalBg)).
+			Padding(0, 1).
+			Render(content)
+	}
+	copyBtn := wrap(m.buttonView("Copy", m.focus == copyFocusConfirm))
+	cancelBtn := wrap(m.buttonView("Cancel", m.focus == copyFocusCancel))
+	row := lipgloss.JoinHorizontal(lipgloss.Left, copyBtn, cancelBtn)
+	return uistyles.AlignCenter(width, row, lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalBg)))
+}
+
+func (m *CopyToLocalModel) buttonView(label string, focused bool) string {
+	style := lipgloss.NewStyle().
+		Padding(0, 3).
+		Background(lipgloss.Color(uistyles.ColorModalButtonBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalButtonFg))
 	if focused {
 		style = style.
-			Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-			Background(lipgloss.Color(uistyles.ColorModalSelBg)).
+			Background(lipgloss.Color(uistyles.ColorModalButtonSelBg)).
+			Foreground(lipgloss.Color(uistyles.ColorModalButtonFg)).
 			Bold(true)
 	}
 	return style.Render(label)
