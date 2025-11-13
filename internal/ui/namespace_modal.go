@@ -37,6 +37,12 @@ const (
 	namespaceFocusCancel
 )
 
+const (
+	namespaceMinWidth  = 24
+	namespaceMaxWidth  = 60
+	namespaceMinHeight = 5
+)
+
 // NewNamespaceCreateModel constructs an empty namespace creation dialog model.
 func NewNamespaceCreateModel() *NamespaceCreateModel {
 	return &NamespaceCreateModel{focus: namespaceFocusInput}
@@ -234,74 +240,8 @@ func (m *NamespaceCreateModel) executeButton(idx int) tea.Cmd {
 }
 
 func (m *NamespaceCreateModel) View() (string, *tea.Cursor) {
-	innerWidth := max(20, min(70, m.width-4))
-	if innerWidth <= 0 {
-		innerWidth = 20
-	}
-
-	header := m.renderHeader(innerWidth)
-	inputView, inputCursor := m.renderInputBlock(innerWidth)
-	status := m.renderStatus(innerWidth)
-	buttonRow, buttonRects := m.renderButtonsRow(innerWidth)
-
-	headerHeight := lipgloss.Height(header)
-	inputHeight := lipgloss.Height(inputView)
-	statusHeight := lipgloss.Height(status)
-	buttonHeight := lipgloss.Height(buttonRow)
-
-	layout := bl.New()
-	addRow := func(h int) bl.ID {
-		height := max(1, h)
-		id := layout.Add(fmt.Sprintf("height %d!", height))
-		layout.Wrap()
-		return id
-	}
-	headerID := addRow(headerHeight)
-	inputID := addRow(inputHeight)
-	statusID := addRow(statusHeight)
-	buttonID := addRow(buttonHeight)
-
-	totalHeight := max(1, headerHeight+inputHeight+statusHeight+buttonHeight)
-	msg := layout.Resize(innerWidth, totalHeight)
-
-	canvas := lipgloss.NewStyle().
-		Width(innerWidth).
-		Height(totalHeight).
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Render("")
-
-	place := func(content string, id bl.ID) {
-		if size, err := msg.Size(id); err == nil {
-			canvas = overlay.Composite(content, canvas, overlay.Left, overlay.Top, size.X, size.Y)
-		}
-	}
-	place(header, headerID)
-	place(inputView, inputID)
-	place(status, statusID)
-	place(buttonRow, buttonID)
-
-	if size, err := msg.Size(buttonID); err == nil {
-		m.buttons = make([]buttonRect, len(buttonRects))
-		for i, r := range buttonRects {
-			m.buttons[i] = buttonRect{
-				x: size.X + r.x,
-				y: size.Y + r.y,
-				w: r.w,
-				h: r.h,
-			}
-		}
-	} else {
-		m.buttons = nil
-	}
-
-	var cursor *tea.Cursor
-	if inputCursor != nil {
-		if c, err := msg.OffsetCursor(inputID, inputCursor); err == nil {
-			cursor = c
-		}
-	}
-	return canvas, cursor
+	width := m.clampWidth(m.width)
+	return m.buildLayout(width)
 }
 
 func (m *NamespaceCreateModel) renderHeader(width int) string {
@@ -430,4 +370,123 @@ func (m *NamespaceCreateModel) FooterHints() []FooterHint {
 		{Key: "Enter", Label: "Create", Enabled: true},
 		{Key: "Esc", Label: "Cancel", Enabled: true},
 	}
+}
+
+func (m *NamespaceCreateModel) clampWidth(w int) int {
+	if w <= 0 {
+		return namespaceMinWidth
+	}
+	if w < namespaceMinWidth {
+		return namespaceMinWidth
+	}
+	if w > namespaceMaxWidth {
+		return namespaceMaxWidth
+	}
+	return w
+}
+
+func (m *NamespaceCreateModel) desiredWidth() int {
+	base := lipgloss.Width("Enter new namespace name")
+	input := lipgloss.Width(m.value()) + 4
+	if input < namespaceMinWidth {
+		input = namespaceMinWidth
+	}
+	buttons := lipgloss.JoinHorizontal(lipgloss.Left,
+		lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalBg)).Padding(0, 1).Render(m.renderButton("Create", false)),
+		lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalBg)).Padding(0, 1).Render(m.renderButton("Cancel", false)),
+	)
+	buttonWidth := lipgloss.Width(buttons)
+	maxWidth := base
+	maxWidth = max(maxWidth, input)
+	maxWidth = max(maxWidth, buttonWidth)
+	return maxWidth
+}
+
+func (m *NamespaceCreateModel) buildLayout(width int) (string, *tea.Cursor) {
+	if width <= 0 {
+		width = namespaceMinWidth
+	}
+	header := m.renderHeader(width)
+	inputView, inputCursor := m.renderInputBlock(width)
+	status := m.renderStatus(width)
+	buttonRow, buttonRects := m.renderButtonsRow(width)
+
+	layout := bl.New()
+	addRow := func(view string) bl.ID {
+		h := max(1, lipgloss.Height(view))
+		id := layout.Add(fmt.Sprintf("height %d!", h))
+		layout.Wrap()
+		return id
+	}
+	headerID := addRow(header)
+	inputID := addRow(inputView)
+	statusID := addRow(status)
+	buttonID := addRow(buttonRow)
+
+	totalHeight := lipgloss.Height(header) + lipgloss.Height(inputView) + lipgloss.Height(status) + lipgloss.Height(buttonRow)
+	if totalHeight < namespaceMinHeight {
+		totalHeight = namespaceMinHeight
+	}
+	msg := layout.Resize(width, totalHeight)
+	canvas := lipgloss.NewStyle().
+		Width(width).
+		Height(totalHeight).
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
+		Render("")
+
+	place := func(content string, id bl.ID) {
+		if size, err := msg.Size(id); err == nil {
+			canvas = overlay.Composite(content, canvas, overlay.Left, overlay.Top, size.X, size.Y)
+		}
+	}
+	place(header, headerID)
+	place(inputView, inputID)
+	place(status, statusID)
+	place(buttonRow, buttonID)
+
+	if size, err := msg.Size(buttonID); err == nil {
+		m.buttons = make([]buttonRect, len(buttonRects))
+		for i, r := range buttonRects {
+			m.buttons[i] = buttonRect{
+				x: size.X + r.x,
+				y: size.Y + r.y,
+				w: r.w,
+				h: r.h,
+			}
+		}
+	} else {
+		m.buttons = nil
+	}
+
+	var cursor *tea.Cursor
+	if inputCursor != nil {
+		if c, err := msg.OffsetCursor(inputID, inputCursor); err == nil {
+			cursor = c
+		}
+	}
+	return canvas, cursor
+}
+
+// PreferredSize implements ModalSizer.
+func (m *NamespaceCreateModel) PreferredSize(maxContentWidth, maxContentHeight int) (int, int) {
+	width := m.desiredWidth()
+	if width < namespaceMinWidth {
+		width = namespaceMinWidth
+	}
+	if width > namespaceMaxWidth {
+		width = namespaceMaxWidth
+	}
+	if maxContentWidth > 0 && width > maxContentWidth {
+		width = maxContentWidth
+	}
+	canvas, _ := m.buildLayout(width)
+	height := lipgloss.Height(canvas)
+	if height < namespaceMinHeight {
+		height = namespaceMinHeight
+	}
+	if maxContentHeight > 0 && height > maxContentHeight {
+		height = maxContentHeight
+	}
+	return width, height
 }

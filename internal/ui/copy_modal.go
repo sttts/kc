@@ -29,6 +29,12 @@ const (
 	copyFocusCancel
 )
 
+const (
+	copyMinWidth  = 24
+	copyMaxWidth  = 80
+	copyMinHeight = 6
+)
+
 // CopyToLocalModel renders the "Copy to local" dialog with a single path input.
 type CopyToLocalModel struct {
 	width, height int
@@ -36,16 +42,6 @@ type CopyToLocalModel struct {
 	pathInput     textinput.Model
 	focus         copyFieldFocus
 	err           string
-}
-
-type copyLayout struct {
-	width        int
-	height       int
-	title        string
-	field        string
-	fieldCursor  *tea.Cursor
-	hint         string
-	buttons      string
 }
 
 func newCopyTextInput() textinput.Model {
@@ -213,62 +209,8 @@ func (m *CopyToLocalModel) FooterHints() []FooterHint {
 }
 
 func (m *CopyToLocalModel) View() (string, *tea.Cursor) {
-	innerWidth := max(20, min(80, m.width-4))
-	if innerWidth <= 0 {
-		innerWidth = 20
-	}
-
-	title := m.renderTitle(innerWidth)
-	fieldView, fieldCursor := m.renderPathField(innerWidth)
-	hint := m.renderHint(innerWidth)
-	buttons := m.renderButtonsRow(innerWidth)
-
-	titleHeight := lipgloss.Height(title)
-	fieldHeight := lipgloss.Height(fieldView)
-	hintHeight := lipgloss.Height(hint)
-	buttonHeight := lipgloss.Height(buttons)
-
-	layout := bl.New()
-	addRow := func(h int) bl.ID {
-		height := max(1, h)
-		id := layout.Add(fmt.Sprintf("height %d!", height))
-		layout.Wrap()
-		return id
-	}
-	titleID := addRow(titleHeight)
-	fieldID := addRow(fieldHeight)
-	hintID := addRow(hintHeight)
-	buttonID := addRow(buttonHeight)
-
-	totalHeight := max(1, titleHeight+fieldHeight+hintHeight+buttonHeight)
-	msg := layout.Resize(innerWidth, totalHeight)
-
-	canvas := lipgloss.NewStyle().
-		Background(lipgloss.Color(uistyles.ColorModalBg)).
-		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
-		Width(innerWidth).
-		Height(totalHeight).
-		Render("")
-
-	place := func(content string, id bl.ID) {
-		if size, err := msg.Size(id); err == nil {
-			canvas = overlay.Composite(content, canvas, overlay.Left, overlay.Top, size.X, size.Y)
-		}
-	}
-	place(title, titleID)
-	place(fieldView, fieldID)
-	place(hint, hintID)
-	place(buttons, buttonID)
-
-	var cursor *tea.Cursor
-	if fieldCursor != nil {
-		fieldCursor.Position.Y += 1
-		fieldCursor.Position.X += 2
-		if c, err := msg.OffsetCursor(fieldID, fieldCursor); err == nil {
-			cursor = c
-		}
-	}
-	return canvas, cursor
+	width := m.clampWidth(m.width)
+	return m.buildLayout(width)
 }
 
 func (m *CopyToLocalModel) renderTitle(width int) string {
@@ -310,7 +252,7 @@ func (m *CopyToLocalModel) renderPathField(width int) (string, *tea.Cursor) {
 }
 
 func (m *CopyToLocalModel) renderHint(width int) string {
-	text := "Enter an absolute file path. Existing files will be overwritten."
+	text := m.hintText()
 	style := lipgloss.NewStyle().
 		Width(width).
 		Padding(0, 2).
@@ -350,6 +292,121 @@ func (m *CopyToLocalModel) buttonView(label string, focused bool) string {
 			Bold(true)
 	}
 	return style.Render(label)
+}
+
+func (m *CopyToLocalModel) hintText() string {
+	if strings.TrimSpace(m.err) != "" {
+		return m.err
+	}
+	return "Enter an absolute file path. Existing files will be overwritten."
+}
+
+func (m *CopyToLocalModel) clampWidth(w int) int {
+	if w <= 0 {
+		return copyMinWidth
+	}
+	if w < copyMinWidth {
+		return copyMinWidth
+	}
+	if w > copyMaxWidth {
+		return copyMaxWidth
+	}
+	return w
+}
+
+func (m *CopyToLocalModel) desiredWidth() int {
+	title := fmt.Sprintf("Copy %s to local file", strings.TrimSpace(m.subject))
+	hint := m.hintText()
+	copyBtn := m.buttonView("Copy", false)
+	cancelBtn := m.buttonView("Cancel", false)
+	buttons := lipgloss.JoinHorizontal(lipgloss.Left,
+		lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalBg)).Padding(0, 1).Render(copyBtn),
+		lipgloss.NewStyle().Background(lipgloss.Color(uistyles.ColorModalBg)).Padding(0, 1).Render(cancelBtn),
+	)
+	maxWidth := lipgloss.Width(title)
+	maxWidth = max(maxWidth, lipgloss.Width(hint))
+	maxWidth = max(maxWidth, lipgloss.Width(buttons))
+	labelWidth := lipgloss.Width("File path") + 4
+	fieldWidth := lipgloss.Width(m.pathInput.Value()) + 4
+	maxWidth = max(maxWidth, labelWidth)
+	maxWidth = max(maxWidth, fieldWidth)
+	return maxWidth
+}
+
+func (m *CopyToLocalModel) buildLayout(width int) (string, *tea.Cursor) {
+	if width <= 0 {
+		width = copyMinWidth
+	}
+	title := m.renderTitle(width)
+	fieldView, fieldCursor := m.renderPathField(width)
+	hint := m.renderHint(width)
+	buttons := m.renderButtonsRow(width)
+
+	layout := bl.New()
+	addRow := func(view string) bl.ID {
+		h := max(1, lipgloss.Height(view))
+		id := layout.Add(fmt.Sprintf("height %d!", h))
+		layout.Wrap()
+		return id
+	}
+	titleID := addRow(title)
+	fieldID := addRow(fieldView)
+	hintID := addRow(hint)
+	buttonID := addRow(buttons)
+
+	totalHeight := lipgloss.Height(title) + lipgloss.Height(fieldView) + lipgloss.Height(hint) + lipgloss.Height(buttons)
+	if totalHeight < copyMinHeight {
+		totalHeight = copyMinHeight
+	}
+	msg := layout.Resize(width, totalHeight)
+	canvas := lipgloss.NewStyle().
+		Background(lipgloss.Color(uistyles.ColorModalBg)).
+		Foreground(lipgloss.Color(uistyles.ColorModalFg)).
+		Width(width).
+		Height(totalHeight).
+		Render("")
+	place := func(content string, id bl.ID) {
+		if size, err := msg.Size(id); err == nil {
+			canvas = overlay.Composite(content, canvas, overlay.Left, overlay.Top, size.X, size.Y)
+		}
+	}
+	place(title, titleID)
+	place(fieldView, fieldID)
+	place(hint, hintID)
+	place(buttons, buttonID)
+
+	var cursor *tea.Cursor
+	if fieldCursor != nil {
+		fieldCursor.Position.Y += 1
+		fieldCursor.Position.X += 2
+		if c, err := msg.OffsetCursor(fieldID, fieldCursor); err == nil {
+			cursor = c
+		}
+	}
+	return canvas, cursor
+}
+
+// PreferredSize implements ModalSizer.
+func (m *CopyToLocalModel) PreferredSize(maxContentWidth, maxContentHeight int) (int, int) {
+	width := m.desiredWidth()
+	if width < copyMinWidth {
+		width = copyMinWidth
+	}
+	if width > copyMaxWidth {
+		width = copyMaxWidth
+	}
+	if maxContentWidth > 0 && width > maxContentWidth {
+		width = maxContentWidth
+	}
+	canvas, _ := m.buildLayout(width)
+	height := lipgloss.Height(canvas)
+	if height < copyMinHeight {
+		height = copyMinHeight
+	}
+	if maxContentHeight > 0 && height > maxContentHeight {
+		height = maxContentHeight
+	}
+	return width, height
 }
 
 func expandedPath(value string) string {

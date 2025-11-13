@@ -2548,21 +2548,50 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 		}
 	}
 	a.namespaceInput.Reset()
-	a.namespaceInput.SetDimensions(max(20, a.width-4), max(5, a.height-6))
 	modal.SetContent(a.namespaceInput)
-	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
-	winW := min(max(40, a.width/2), a.width-4)
-	if winW < 30 {
-		winW = 30
-	}
-	winH := min(6, a.height-4)
-	if winH < 4 {
-		winH = 4
-	}
-	modal.SetWindowed(winW, winH, bg)
 	leftWidth, rightWidth, panelHeight, headerOffset := a.panelAreaMetrics()
-	offsetX := max(0, (leftWidth+rightWidth-winW)/2)
+	panelWidth := leftWidth
+	panelOffset := 0
+	if a.namespaceCreatePanel == 1 {
+		panelWidth = rightWidth
+		panelOffset = leftWidth
+	}
+	if panelWidth <= 0 {
+		panelWidth = a.width
+		panelOffset = 0
+	}
+	maxFrameWidth := min(panelWidth-2, a.width-4)
+	if maxFrameWidth < 20 {
+		maxFrameWidth = 20
+	}
+	maxFrameHeight := min(panelHeight-2, a.height-4)
+	if maxFrameHeight < 6 {
+		maxFrameHeight = 6
+	}
+	maxContentWidth := max(1, maxFrameWidth-2)
+	maxContentHeight := max(1, maxFrameHeight-2)
+	innerW, innerH := a.namespaceInput.PreferredSize(maxContentWidth, maxContentHeight)
+	if innerW <= 0 {
+		innerW = maxContentWidth
+	}
+	if innerH <= 0 {
+		innerH = maxContentHeight
+	}
+	winW := innerW + 2
+	winH := innerH + 2
+	if winW > maxFrameWidth {
+		winW = maxFrameWidth
+		innerW = max(1, winW-2)
+	}
+	if winH > maxFrameHeight {
+		winH = maxFrameHeight
+		innerH = max(1, winH-2)
+	}
+	a.namespaceInput.SetDimensions(innerW, innerH)
+	modal.SetDimensions(a.width, a.height)
+	modal.SetWindowed(winW, winH, bg)
+	offsetX := panelOffset + max(0, (panelWidth-winW)/2)
 	offsetY := headerOffset + max(0, (panelHeight-winH)/2)
 	modal.SetWindowOffset(offsetX, offsetY)
 	modal.SetOnClose(func() tea.Cmd {
@@ -3608,19 +3637,45 @@ func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
 	dir := a.defaultCopyDir()
 	target := filepath.Join(dir, req.filename)
 	a.copyInput.Configure(req.subject, target)
-	modal.SetDimensions(a.width, a.height)
 	bg, _ := a.renderMainView()
-	winW := min(max(60, a.width/2), a.width-4)
-	if winW < 40 {
-		winW = 40
-	}
-	winH := min(14, a.height-4)
-	if winH < 10 {
-		winH = 10
-	}
-	modal.SetWindowed(winW, winH, bg)
 	leftWidth, rightWidth, panelHeight, headerOffset := a.panelAreaMetrics()
-	offsetX := max(0, (leftWidth+rightWidth-winW)/2)
+	panelWidth := leftWidth + rightWidth
+	if panelWidth <= 0 {
+		panelWidth = a.width
+	}
+	maxFrameWidth := min(a.width-4, panelWidth-2)
+	if maxFrameWidth < 10 {
+		maxFrameWidth = 10
+	}
+	maxFrameHeight := min(a.height-4, panelHeight-2)
+	if maxFrameHeight < 6 {
+		maxFrameHeight = 6
+	}
+	maxContentWidth := max(1, maxFrameWidth-2)
+	maxContentHeight := max(1, maxFrameHeight-2)
+	innerW, innerH := a.copyInput.PreferredSize(maxContentWidth, maxContentHeight)
+	if innerW <= 0 {
+		innerW = maxContentWidth
+	}
+	if innerH <= 0 {
+		innerH = maxContentHeight
+	}
+	winW := innerW + 2
+	winH := innerH + 2
+	if winW > maxFrameWidth {
+		winW = maxFrameWidth
+		innerW = max(1, winW-2)
+	}
+	if winH > maxFrameHeight {
+		winH = maxFrameHeight
+		innerH = max(1, winH-2)
+	}
+	if setter, ok := interface{}(a.copyInput).(interface{ SetDimensions(int, int) }); ok {
+		setter.SetDimensions(innerW, innerH)
+	}
+	modal.SetDimensions(a.width, a.height)
+	modal.SetWindowed(winW, winH, bg)
+	offsetX := max(0, (panelWidth-winW)/2)
 	offsetY := headerOffset + max(0, (panelHeight-winH)/2)
 	modal.SetWindowOffset(offsetX, offsetY)
 	modal.SetOnClose(func() tea.Cmd {
