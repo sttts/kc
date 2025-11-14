@@ -34,7 +34,7 @@ go build -o kc ./cmd/kc
 
 ## Releases
 
-See `docs/RELEASING.md` for the Goreleaser-driven process that publishes tagged builds and updates the Homebrew tap.
+Push a `v*` tag to trigger the Goreleaser workflow, which builds/signed binaries, publishes the GitHub Release, and refreshes the Homebrew tap. See `docs/RELEASING.md` for full details.
 
 ### Kubectl-style shortcuts
 

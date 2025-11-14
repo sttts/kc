@@ -26,6 +26,39 @@ archives:
 
 checksums:
   name_template: '{{ .ProjectName }}_checksums.txt'
+  algorithm: sha256
+
+signs:
+  - id: archive-signatures
+    cmd: gpg
+    args:
+      - --batch
+      - --pinentry-mode
+      - loopback
+      - --passphrase-file
+      - '{{ .Env.GPG_PASSPHRASE_FILE }}'
+      - --armor
+      - --detach-sign
+      - --output
+      - '${signature}'
+      - '${artifact}'
+    signature: '${artifact}.asc'
+    artifacts: archive
+  - id: checksum-signatures
+    cmd: gpg
+    args:
+      - --batch
+      - --pinentry-mode
+      - loopback
+      - --passphrase-file
+      - '{{ .Env.GPG_PASSPHRASE_FILE }}'
+      - --armor
+      - --detach-sign
+      - --output
+      - '${signature}'
+      - '${artifact}'
+    signature: '${artifact}.asc'
+    artifacts: checksum
 
 release:
   github:
