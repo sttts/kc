@@ -32,6 +32,10 @@ go build -o kc ./cmd/kc
 ./kc
 ```
 
+## Releases
+
+See `docs/RELEASING.md` for the Goreleaser-driven process that publishes tagged builds and updates the Homebrew tap.
+
 ### Kubectl-style shortcuts
 
 Kubernetes Commander accepts a subset of kubectl syntax so you can jump straight to the desired view:

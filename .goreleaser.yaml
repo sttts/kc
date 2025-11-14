@@ -1,0 +1,55 @@
+project_name: kc
+
+builds:
+  - id: kc
+    main: ./cmd/kc
+    binary: kc
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: kc
+    builds: [kc]
+    format: tar.gz
+    wrap_in_directory: false
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - LICENSE
+      - README.md
+
+checksums:
+  name_template: '{{ .ProjectName }}_checksums.txt'
+
+release:
+  github:
+    owner: sttts
+    name: kc
+  prerelease: auto
+
+changelog:
+  use: git
+
+brews:
+  - name: kc
+    ids: [kc]
+    homepage: https://github.com/sttts/kc
+    description: Two-panel Kubernetes TUI built entirely with AI
+    license: Apache-2.0
+    tap:
+      owner: sttts
+      name: homebrew-kc
+      branch: master
+    commit_author:
+      name: kc release bot
+      email: noreply@sttts.dev
+    install: |
+      bin.install "kc"
+    test: |
+      system "#{bin}/kc", "--version"
