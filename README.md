@@ -36,7 +36,7 @@ go build -o kc ./cmd/kc
 
 ```bash
 brew tap sttts/homebrew-kc
-brew install sttts/homebrew-kc/kc
+brew install --cask sttts/homebrew-kc/kc
 ```
 
 ## Releases
