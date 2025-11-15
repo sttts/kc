@@ -104,7 +104,7 @@ Current tasks
 
 ## Backlog (Post M3)
 - Menu bar (mc-style) with View options: sort keys, direction, column toggles, grouping.
-- Favorites list of resource types (seed from discovery alias "all"); allow users to add/remove favorites, persist, and use them to populate selectors/shortcuts.
+- Favorites list of resource types (allow users to add/remove favorites, persist, and use them to populate selectors/shortcuts).
 - Expand resource-specific hierarchies beyond pods/configmaps/secrets (e.g., workloads that expose child folders or logs) once higher-priority milestones land.
 - Left/Right panel modes: API, Describe, YAML, Logs (pin), Top (metrics), and Ctrl+U panel swap.
 - API group hierarchy mode under `/groups/...`.

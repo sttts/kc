@@ -120,6 +120,12 @@ func WhiteStyle() *lipgloss.Style {
 	return &s
 }
 
+// FavoriteResourceStyle highlights favorite resource rows.
+func FavoriteResourceStyle() *lipgloss.Style {
+	s := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF"))
+	return &s
+}
+
 func DimStyle() *lipgloss.Style {
 	s := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#7D7D7D"))
 	return &s

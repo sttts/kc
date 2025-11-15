@@ -258,6 +258,38 @@ func favoritesMap(list []string) map[string]bool {
 	return set
 }
 
+func favoritesFromCategories(entries []resourceEntry) []string {
+	if len(entries) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	favorites := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !hasAllCategory(entry.info.Categories) {
+			continue
+		}
+		key := strings.ToLower(entry.info.Resource)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		favorites = append(favorites, entry.info.Resource)
+	}
+	if len(favorites) == 0 {
+		return nil
+	}
+	return favorites
+}
+
+func hasAllCategory(categories []string) bool {
+	for _, cat := range categories {
+		if strings.EqualFold(cat, "all") {
+			return true
+		}
+	}
+	return false
+}
+
 type resourceEntry struct {
 	info ResourceInfo
 	gvr  schema.GroupVersionResource

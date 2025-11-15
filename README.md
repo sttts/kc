@@ -79,7 +79,7 @@ Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). Uni
 
 - `viewer.theme`, `viewer.mode` – chroma theme and wrap mode for YAML/text/log viewers.
 - `panel.table.mode`, `panel.scrolling.horizontal.step` – object-table rendering and panning behavior.
-- `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls.
+- `resources.showNonEmptyOnly`, `resources.order`, `resources.favorites` – resource-group listing controls (leave `favorites` empty to follow discovery's `all` category).
 - `objects.order`, `objects.columns` – server-side Table ordering and wide/normal column display.
 - `kubernetes.discovery.refresh`, `kubernetes.clusters.ttl` – discovery invalidation and cluster pool TTLs.
 - `input.mouse.doubleClickTimeout` – double-click threshold for Enter events.
@@ -120,21 +120,8 @@ resources:
   peekInterval: 10s
   # Default ordering: alphabetic by resource plural
   order: alpha
-  # Favorites are used when order=favorites
-  favorites:
-    - pods
-    - services
-    - deployments
-    - replicasets
-    - statefulsets
-    - daemonsets
-    - jobs
-    - cronjobs
-    - configmaps
-    - secrets
-    - ingresses
-    - networkpolicies
-    - persistentvolumeclaims
+  # Favorites are used when order=favorites; leave empty to use discovery's "all" category.
+  favorites: []
 
 objects:
   # Object list ordering: name | -name | creation | -creation

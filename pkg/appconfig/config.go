@@ -91,6 +91,7 @@ type ResourcesViewConfig struct {
 	// Order controls ordering of groups. Valid values are "alpha", "group", "favorites".
 	Order ResourcesViewOrder `json:"order"`
 	// Favorites lists resource plural names to prioritize when OrderFavorites is active.
+	// Leave empty to auto-populate from discovery's "all" category.
 	Favorites []string `json:"favorites"`
 	// Columns controls which server-side table columns are shown. Valid values are "normal" and "wide".
 	Columns string `json:"columns"`
@@ -162,12 +163,8 @@ func Default() *Config {
 			Order:            OrderAlpha,
 			Columns:          ColumnsModeNormal,
 			PeekInterval:     metav1.Duration{Duration: 10 * time.Second},
-			// Seed favorites with a sensible default set similar to `kubectl get all`.
-			Favorites: []string{
-				"pods", "services", "deployments", "replicasets", "statefulsets",
-				"daemonsets", "jobs", "cronjobs", "configmaps", "secrets",
-				"ingresses", "networkpolicies", "persistentvolumeclaims",
-			},
+			// Favorites empty by default so we can seed them from discovery's "all" category.
+			Favorites: nil,
 		},
 		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
 		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
@@ -235,9 +232,6 @@ func Load() (*Config, error) {
 		case OrderAlpha, OrderGroup, OrderFavorites:
 		default:
 			cfg.Resources.Order = OrderFavorites
-		}
-		if cfg.Resources.Favorites == nil {
-			cfg.Resources.Favorites = Default().Resources.Favorites
 		}
 		if strings.EqualFold(cfg.Resources.Columns, ColumnsModeWide) {
 			cfg.Resources.Columns = ColumnsModeWide
@@ -357,9 +351,6 @@ func Load() (*Config, error) {
 	case OrderAlpha, OrderGroup, OrderFavorites:
 	default:
 		cfg.Resources.Order = OrderFavorites
-	}
-	if cfg.Resources.Favorites == nil {
-		cfg.Resources.Favorites = Default().Resources.Favorites
 	}
 	if strings.EqualFold(cfg.Resources.Columns, ColumnsModeWide) {
 		cfg.Resources.Columns = ColumnsModeWide

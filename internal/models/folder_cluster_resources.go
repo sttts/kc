@@ -3,8 +3,10 @@ package models
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	table "github.com/sttts/kc/internal/table"
+	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -32,6 +34,7 @@ func (f *ClusterResourcesFolder) populate(ctx context.Context) ([]table.Row, err
 
 func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, error) {
 	_, order, favorites := f.viewSettings()
+	favSet := favoritesMap(favorites)
 	infos, err := f.Deps.Cl.GetResourceInfos()
 	if err != nil {
 		return nil, err
@@ -47,9 +50,15 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 		gvr := schema.GroupVersionResource{Group: info.GVK.Group, Version: info.GVK.Version, Resource: info.Resource}
 		entries = append(entries, resourceEntry{info: info, gvr: gvr})
 	}
-	sortResourceEntries(entries, order, favoritesMap(favorites))
+	if order == appconfig.OrderFavorites && len(favSet) == 0 {
+		favorites = favoritesFromCategories(entries)
+		favSet = favoritesMap(favorites)
+	}
+	sortResourceEntries(entries, order, favSet)
 	specs := make([]resourceGroupSpec, 0, len(entries))
 	nameStyle := WhiteStyle()
+	favoriteStyle := FavoriteResourceStyle()
+	highlightFavorites := order == appconfig.OrderFavorites && len(favSet) > 0
 	for _, entry := range entries {
 		verbsCopy := append([]string(nil), entry.info.Verbs...)
 		id := fmt.Sprintf("%s/%s/%s", entry.gvr.Group, entry.gvr.Version, entry.gvr.Resource)
@@ -60,12 +69,16 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 		pathCopy := append([]string(nil), basePath...)
 		gvr := entry.gvr
 		detail := fmt.Sprintf("%s (%s)", entry.info.Resource, gvLabel)
+		style := nameStyle
+		if highlightFavorites && favSet[strings.ToLower(entry.info.Resource)] {
+			style = favoriteStyle
+		}
 		specs = append(specs, resourceGroupSpec{
 			id:        id,
 			cells:     cellsCopy,
 			path:      pathCopy,
 			detail:    detail,
-			style:     nameStyle,
+			style:     style,
 			gvr:       gvr,
 			namespace: "",
 			watchable: true,

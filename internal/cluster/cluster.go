@@ -418,6 +418,7 @@ type ResourceInfo struct {
 	Resource   string
 	Namespaced bool
 	Verbs      []string
+	Categories []string
 }
 
 // GetResourceInfos returns API resource infos via discovery.
@@ -447,7 +448,8 @@ func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
 				GVK:        schema.GroupVersionKind{Group: gv.Group, Version: gv.Version, Kind: ar.Kind},
 				Resource:   ar.Name,
 				Namespaced: ar.Namespaced,
-				Verbs:      ar.Verbs,
+				Verbs:      append([]string(nil), ar.Verbs...),
+				Categories: append([]string(nil), ar.Categories...),
 			})
 		}
 	}

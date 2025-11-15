@@ -27,8 +27,8 @@ resources:
   peekInterval: 10s
   # Default ordering: alphabetic by resource plural
   order: alpha
-  # Favorites are used when order=favorites
-  favorites: [pods, services, deployments, replicasets, statefulsets, daemonsets, jobs, cronjobs, configmaps, secrets, ingresses, networkpolicies, persistentvolumeclaims]
+  # Favorites are used when order=favorites; leave empty to follow discovery's "all" category.
+  favorites: []
 
 objects:
   # Object list ordering: name | -name | creation | -creation

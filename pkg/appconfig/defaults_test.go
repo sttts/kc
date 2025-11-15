@@ -69,8 +69,8 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 		if out.Resources.Order == "" {
 			out.Resources.Order = fromCode.Resources.Order
 		}
-		if out.Resources.Favorites == nil {
-			out.Resources.Favorites = fromCode.Resources.Favorites
+		if len(out.Resources.Favorites) == 0 {
+			out.Resources.Favorites = nil
 		}
 		if out.Resources.PeekInterval.Duration == 0 {
 			out.Resources.PeekInterval = metav1.Duration{Duration: Default().Resources.PeekInterval.Duration}
