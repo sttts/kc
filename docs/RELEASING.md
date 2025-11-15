@@ -26,6 +26,19 @@ Configure these repository secrets for the workflow:
 | `RELEASE_GITHUB_TOKEN` | Personal access token with `repo` scope; needed to create releases and push to `sttts/homebrew-kc`. |
 | `RELEASE_GPG_PRIVATE_KEY` | ASCII-armored private key used for signing archives/checksums. |
 | `RELEASE_GPG_PASSPHRASE` | Passphrase for the key above (leave empty if the key is unencrypted). |
+| `MACOS_SIGN_P12` | Base64 of the exported Developer ID Application `.p12` certificate. |
+| `MACOS_SIGN_PASSWORD` | Password used when exporting the `.p12` file. |
+| `MACOS_NOTARY_KEY` | Base64 of the App Store Connect API key (`.p8`). |
+| `MACOS_NOTARY_KEY_ID` | The key ID of the App Store Connect API key. |
+| `MACOS_NOTARY_ISSUER_ID` | Issuer ID (UUID) from App Store Connect for that API key. |
+
+### Apple signing & notarization
+
+macOS binaries are signed with a Developer ID Application certificate and then notarized via App Store Connect so Gatekeeper trusts the downloaded archives. To configure this:
+
+1. In Apple Developer portal create/download a **Developer ID Application** certificate. Import it into Keychain, export it as a password-protected `.p12`, then base64-encode it (`base64 -w0 Certificates.p12 > macos_sign_p12.txt`). Store the contents in `MACOS_SIGN_P12` and the export password in `MACOS_SIGN_PASSWORD`.
+2. In App Store Connect create an **API key** with download/notarization access. Note the `Issuer ID` and `Key ID`, and base64-encode the downloaded `.p8` (`base64 -w0 ApiKey_ABC123.p8 > macos_notary_key.txt`). Store those values in `MACOS_NOTARY_KEY`, `MACOS_NOTARY_KEY_ID`, and `MACOS_NOTARY_ISSUER_ID`.
+3. Once configured, every tagged release will codesign and notarize the macOS binaries. After installation you can verify with `spctl -a -vv /opt/homebrew/bin/kc`.
 
 ### Verification / dry runs
 
