@@ -32,6 +32,13 @@ go build -o kc ./cmd/kc
 ./kc
 ```
 
+### Install via Homebrew
+
+```bash
+brew tap sttts/homebrew-kc
+brew install sttts/homebrew-kc/kc
+```
+
 ## Releases
 
 Push a `v*` tag to trigger the Goreleaser workflow, which builds/signed binaries, publishes the GitHub Release, and refreshes the Homebrew tap. See `docs/RELEASING.md` for full details.
