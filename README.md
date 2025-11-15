@@ -1,5 +1,7 @@
 # Kubernetes Commander (kc)
 
+[![Build Status](https://github.com/sttts/kc/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/sttts/kc/actions/workflows/build.yml)
+
 ![Kubernetes Commander TUI](docs/screenshot.png)
 
 An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired by Midnight Commander, powered by Go 1.24, Bubble Tea v2, and controller-runtime informers.
