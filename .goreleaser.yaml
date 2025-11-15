@@ -75,7 +75,7 @@ homebrew_casks:
     homepage: https://github.com/sttts/kc
     description: Two-panel Kubernetes TUI built entirely with AI
     license: Apache-2.0
-    directory: Formula
+    directory: Casks
     repository:
       owner: sttts
       name: homebrew-kc
