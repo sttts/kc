@@ -186,6 +186,12 @@ func (c *Cluster) Dynamic() dynamic.Interface {
 	return c.dyn
 }
 
+// DiscoveryClient exposes the cached discovery client backing the cluster.
+func (c *Cluster) DiscoveryClient() discovery.CachedDiscoveryInterface {
+	_ = c.ensureDiscovery()
+	return c.disco
+}
+
 // RefreshDiscovery invalidates cached discovery information and notifies listeners.
 func (c *Cluster) RefreshDiscovery() {
 	if err := c.ensureDiscovery(); err != nil {

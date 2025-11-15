@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
+	"github.com/sttts/kc/pkg/describe"
 )
 
 // Size describes the drawable rectangle granted to a widget.
@@ -38,7 +39,11 @@ type WidgetDeps struct {
 	Path             func() string
 	SelectionChanged func(context.Context, Selection) tea.Cmd
 	SelectedItem     func(context.Context) (models.Item, bool)
+	Describe         DescribeFunc
 }
+
+// DescribeFunc renders describe output for widget selections.
+type DescribeFunc func(context.Context, describe.Target) (describe.Result, error)
 
 // Selection represents the widget's current selection identity.
 type Selection struct {

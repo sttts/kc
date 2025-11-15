@@ -23,11 +23,14 @@ import (
 	navui "github.com/sttts/kc/internal/navigation"
 	"github.com/sttts/kc/internal/overlay"
 	"github.com/sttts/kc/internal/podfs"
+	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
+	describewidget "github.com/sttts/kc/internal/ui/panelcontent/describe"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/internal/ui/termctx"
 	viewpkg "github.com/sttts/kc/internal/ui/viewer"
 	"github.com/sttts/kc/pkg/appconfig"
+	describe "github.com/sttts/kc/pkg/describe"
 	"github.com/sttts/kc/pkg/kubeconfig"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -2011,7 +2014,9 @@ func (a *App) setupPanelInputs() {
 			return
 		}
 		panel.RegisterMode(PanelModeDescribe, func(p *Panel) PanelWidget {
-			return newPlaceholderWidget(p, fmt.Sprintf("%s describe view coming soon", name))
+			deps := p.manifestWidgetDeps()
+			deps.Describe = a.describeFunc()
+			return describewidget.New(deps)
 		})
 		panel.RegisterMode(PanelModeManifest, func(p *Panel) PanelWidget {
 			return manifestwidget.New(p.manifestWidgetDeps())
@@ -2030,6 +2035,31 @@ func (a *App) setupPanelInputs() {
 		a.rightPanel.SetActionHandlers(a.panelActionHandlers())
 		registerModes(a.rightPanel, "Right panel")
 	}
+}
+
+func (a *App) describeFunc() panelcontent.DescribeFunc {
+	return func(ctx context.Context, target describe.Target) (describe.Result, error) {
+		renderer, err := a.newDescribeRenderer()
+		if err != nil {
+			return describe.Result{}, err
+		}
+		return renderer.Describe(target)
+	}
+}
+
+func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
+	if a == nil || a.cl == nil {
+		return nil, fmt.Errorf("cluster client unavailable")
+	}
+	cfg := rest.CopyConfig(a.cl.GetConfig())
+	mapper := a.cl.RESTMapper()
+	disco := a.cl.DiscoveryClient()
+	var loader clientcmd.ClientConfig
+	if a.currentCtx != nil && a.currentCtx.Kubeconfig != nil && a.currentCtx.Kubeconfig.Config != nil {
+		overrides := &clientcmd.ConfigOverrides{CurrentContext: a.currentCtx.Name}
+		loader = clientcmd.NewDefaultClientConfig(*a.currentCtx.Kubeconfig.Config, overrides)
+	}
+	return describe.NewRenderer(cfg, mapper, disco, loader)
 }
 
 func (a *App) panelActionHandlers() PanelActionHandlers {
