@@ -83,7 +83,5 @@ homebrew_casks:
     commit_author:
       name: kc release bot
       email: noreply@sttts.dev
-    install: |
-      bin.install "kc"
-    test: |
-      system "#{bin}/kc", "--version"
+    binaries:
+      - kc
