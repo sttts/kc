@@ -13,6 +13,7 @@ import (
 	listwidget "github.com/sttts/kc/internal/ui/panelcontent/list"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Panel represents a file/resource panel
@@ -129,7 +130,7 @@ func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Sel
 		p.lastSelection = sel.Item
 	}
 	p.notifySelectionListeners(ctx, sel)
-	if !changed {
+	if !changed && !sel.Force {
 		return nil
 	}
 	panel := p
@@ -162,12 +163,34 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 	}
 	w.Resize(ctx, panelcontent.Size{Width: p.width, Height: p.height})
 	w.SetFocus(ctx, true)
-	cmd := w.Init(ctx)
-	p.widgetSelectionChanged(ctx, panelcontent.Selection{
-		ID:   p.currentSelectionID(ctx),
-		Path: p.currentPath,
-	})
-	return cmd
+	var cmds []tea.Cmd
+	if initCmd := w.Init(ctx); initCmd != nil {
+		cmds = append(cmds, initCmd)
+	}
+	if mode == PanelModeList {
+		var selItem models.Item
+		if item, ok := p.SelectedNavItem(ctx); ok {
+			selItem = item
+		}
+		if selCmd := p.widgetSelectionChanged(ctx, panelcontent.Selection{
+			ID:    p.currentSelectionID(ctx),
+			Path:  p.currentPath,
+			Item:  selItem,
+			Force: true,
+		}); selCmd != nil {
+			cmds = append(cmds, selCmd)
+		}
+	} else {
+		p.notifySelectionListeners(ctx, panelcontent.Selection{Path: p.currentPath})
+	}
+	switch len(cmds) {
+	case 0:
+		return nil
+	case 1:
+		return cmds[0]
+	default:
+		return tea.Batch(cmds...)
+	}
 }
 
 func (p *Panel) ensureActiveWidget(ctx context.Context) PanelWidget {
@@ -395,7 +418,16 @@ func (p *Panel) RefreshFolder(ctx context.Context) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.RefreshFolder(ctx)
 	}
-	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.currentSelectionID(ctx), Path: p.currentPath})
+	var selItem models.Item
+	if item, ok := p.SelectedNavItem(ctx); ok {
+		selItem = item
+	}
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{
+		ID:    p.currentSelectionID(ctx),
+		Path:  p.currentPath,
+		Item:  selItem,
+		Force: true,
+	})
 }
 
 // NotifySelection explicitly broadcasts a selection change to widgets.
@@ -414,6 +446,7 @@ func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection)
 	if sel.Item != nil {
 		p.lastSelection = sel.Item
 	}
+	ctrllog.FromContext(ctx).WithName("panel").Info("notify selection", "panel", p.title, "mode", p.mode, "selectionID", sel.ID, "force", sel.Force, "hasItem", sel.Item != nil)
 	p.notifySelectionListeners(ctx, sel)
 }
 
@@ -1006,6 +1039,18 @@ func (p *Panel) Items(ctx context.Context) []Item {
 		return lw.Items()
 	}
 	return nil
+}
+
+// CurrentSelection returns the latest selection snapshot.
+func (p *Panel) CurrentSelection(ctx context.Context) panelcontent.Selection {
+	sel := panelcontent.Selection{Path: p.currentPath}
+	if p.lastSelectionID != "" {
+		sel.ID = p.lastSelectionID
+	}
+	if p.lastSelection != nil {
+		sel.Item = p.lastSelection
+	}
+	return sel
 }
 
 // ColumnTitles exposes the current list column headers.

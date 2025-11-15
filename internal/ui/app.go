@@ -1162,12 +1162,35 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case PanelModeSelectedMsg:
 		if panel := a.panelByIndex(msg.PanelIndex); panel != nil {
+			log := ctrllog.FromContext(a.ctx).WithName("panelMode").WithValues("panelIdx", msg.PanelIndex, "mode", msg.Mode)
+			log.Info("switching panel mode")
 			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 			modeCmd := panel.SetMode(ctx, msg.Mode)
 			cancel()
 			if modeCmd != nil {
 				cmds = append(cmds, modeCmd)
 			}
+			ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
+			source := a.panelByIndex(1 - msg.PanelIndex)
+			if source == nil {
+				source = panel
+			}
+			if source != nil {
+				sel := source.CurrentSelection(ctxSel)
+				if sel.Item == nil {
+					if item, ok := source.SelectedNavItem(ctxSel); ok {
+						sel.Item = item
+					}
+				}
+				if sel.ID != "" || sel.Item != nil {
+					log.Info("replaying selection", "selectionID", sel.ID, "path", sel.Path)
+					sel.Force = true
+					panel.NotifySelection(ctxSel, sel)
+				} else {
+					log.Info("missing selection to replay")
+				}
+			}
+			cancelSel()
 			a.syncPanelConfig(panel)
 			if nav := a.navigatorForPanel(panel); nav != nil {
 				if rf, ok := nav.Current().(interface{ Refresh() }); ok {

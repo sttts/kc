@@ -50,6 +50,8 @@ type Selection struct {
 	ID   string
 	Path string
 	Item models.Item
+	// Force notifies listeners and other panels even when the ID remains unchanged.
+	Force bool
 }
 
 // SelectionProvider widgets expose the currently highlighted item.
