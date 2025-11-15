@@ -69,12 +69,13 @@ release:
 changelog:
   use: git
 
-brews:
+homebrew_casks:
   - name: kc
     ids: [kc]
     homepage: https://github.com/sttts/kc
     description: Two-panel Kubernetes TUI built entirely with AI
     license: Apache-2.0
+    directory: Formula
     repository:
       owner: sttts
       name: homebrew-kc
