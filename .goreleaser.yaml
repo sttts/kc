@@ -18,8 +18,6 @@ builds:
 
 archives:
   - id: kc
-    builds: [kc]
-    format: tar.gz
     wrap_in_directory: false
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     files:
@@ -80,7 +78,7 @@ brews:
     repository:
       owner: sttts
       name: homebrew-kc
-      branch: master
+      branch: main
     commit_author:
       name: kc release bot
       email: noreply@sttts.dev
