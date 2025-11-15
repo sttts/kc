@@ -7,7 +7,6 @@ func TestModeLabel(t *testing.T) {
 		PanelModeList:     "List",
 		PanelModeDescribe: "Describe",
 		PanelModeManifest: "Manifest",
-		PanelModeFile:     "File",
 	}
 	for mode, expect := range cases {
 		if got := modeLabel(mode); got != expect {

@@ -120,8 +120,6 @@ func modeLabel(mode PanelViewMode) string {
 		return "Describe"
 	case PanelModeManifest:
 		return "Manifest"
-	case PanelModeFile:
-		return "File"
 	default:
 		return "Unknown"
 	}

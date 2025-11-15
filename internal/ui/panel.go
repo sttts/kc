@@ -57,9 +57,6 @@ func NewPanel(title string) *Panel {
 	p.RegisterMode(PanelModeManifest, func(panel *Panel) panelcontent.Widget {
 		return manifestwidget.New(panel.manifestWidgetDeps())
 	})
-	p.RegisterMode(PanelModeFile, func(panel *Panel) panelcontent.Widget {
-		return newPlaceholderWidget(panel, "File mode placeholder")
-	})
 	return p
 }
 

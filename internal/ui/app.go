@@ -2021,9 +2021,6 @@ func (a *App) setupPanelInputs() {
 		panel.RegisterMode(PanelModeManifest, func(p *Panel) PanelWidget {
 			return manifestwidget.New(p.manifestWidgetDeps())
 		})
-		panel.RegisterMode(PanelModeFile, func(p *Panel) PanelWidget {
-			return newPlaceholderWidget(p, fmt.Sprintf("%s file view coming soon", name))
-		})
 	}
 	if a.leftPanel != nil {
 		a.leftPanel.SetEnvironmentSupplier(envSupplier)
