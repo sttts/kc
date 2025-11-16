@@ -48,7 +48,7 @@ func TestRepositionOnDataChange_NextThenPrev(t *testing.T) {
 	bt.Refresh(ctx)
 	// Move cursor to index 2 (id-02)
 	bt.cursor = 2
-	bt.Refresh(ctx)
+	bt.rebuildWindow(ctx)
 	id, _ := bt.CurrentID(ctx)
 	if id != "id-02" {
 		t.Fatalf("want id-02, got %s", id)

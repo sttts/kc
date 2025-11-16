@@ -93,15 +93,6 @@ func (w *Widget) View(ctx context.Context, frame panelcontent.Frame) string {
 }
 
 func (w *Widget) Resize(ctx context.Context, size panelcontent.Size) {
-	if size.Width <= 0 {
-		size.Width = 1
-	}
-	if size.Height <= 0 {
-		size.Height = 1
-	}
-	if w.width == size.Width && w.height == size.Height {
-		return
-	}
 	w.width = size.Width
 	w.height = size.Height
 	if w.bt != nil {
@@ -402,6 +393,7 @@ func (w *Widget) RefreshFolder(ctx context.Context) {
 		w.decorateBigTable(ctx, &bt)
 		w.bt = &bt
 	} else {
+		w.bt.SetList(ctx, w.folder)
 		w.bt.Refresh(ctx)
 	}
 	w.syncFromFolder(ctx)
