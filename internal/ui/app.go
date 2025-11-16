@@ -49,9 +49,6 @@ import (
 // EscTimeoutMsg is sent when the escape sequence times out
 type EscTimeoutMsg struct{}
 
-// FolderTickMsg triggers periodic folder refresh (debounced to ~1s).
-type FolderTickMsg struct{}
-
 // FolderDirtyMsg requests an immediate refresh for the given panel.
 type FolderDirtyMsg struct {
 	PanelIdx int
@@ -165,6 +162,8 @@ type App struct {
 	// Discovery refresh notifications
 	discoveryCh     chan struct{}
 	discoveryCancel func()
+	// Recent Bubble Tea messages for idle-loop diagnostics
+	msgLog []string
 	// Namespace auto-navigation state
 	namespaceAutoTarget    string
 	namespaceAutoAttempts  int
@@ -181,6 +180,7 @@ const (
 	namespaceRetryInterval    = 200 * time.Millisecond
 	namespaceRetryMaxAttempts = 50
 	copyRequestTimeout        = 30 * time.Second
+	msgLogLimit               = 512
 )
 
 var panelWidthPercentOptions = []int{25, 33, 50, 66, 75, 100}
@@ -239,7 +239,6 @@ func (a *App) Init() tea.Cmd {
 			a.terminal.Focus()
 			return nil
 		},
-		tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} }),
 	)
 }
 
@@ -365,6 +364,7 @@ func (a *App) setPanelFolder(ctx context.Context, panelIdx int, folder models.Fo
 		return
 	}
 	panel.SetFolder(ctx, folder, hasBack)
+	panel.RefreshFolder(ctx)
 	a.attachFolderDirtyListener(panelIdx, folder)
 }
 
@@ -705,6 +705,10 @@ func (a *App) makeEnterContextFunc(cfg *appconfig.Config) func(string, []string)
 
 // Update handles messages and updates the application state
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if a.cfg != nil {
+		a.logMsg(msg)
+	}
+
 	var cmds []tea.Cmd
 	a.pendingCmdsMu.Lock()
 	if len(a.pendingCmds) > 0 {
@@ -1224,25 +1228,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		panel.RefreshFolder(ctx)
 		cancel()
 		return a, nil
-	case FolderTickMsg:
-		// Refresh only when current folders report dirty to avoid unnecessary redraws.
-		if a.leftNav != nil && a.leftPanel != nil {
-			if d, ok := a.leftNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
-				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-				a.leftPanel.RefreshFolder(ctx)
-				cancel()
-			}
-		}
-		if a.rightNav != nil && a.rightPanel != nil {
-			if d, ok := a.rightNav.Current().(interface{ IsDirty() bool }); ok && d.IsDirty() {
-				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-				a.rightPanel.RefreshFolder(ctx)
-				cancel()
-			}
-		}
-		// Schedule next tick (lightweight check)
-		return a, tea.Tick(time.Second, func(time.Time) tea.Msg { return FolderTickMsg{} })
-
 	case DiscoveryRefreshedMsg:
 		a.handleDiscoveryRefresh()
 		return a, a.watchDiscovery()
@@ -4453,3 +4438,56 @@ func (a *App) GetObject(gvk schema.GroupVersionKind, namespace, name string) (ma
 
 // RESTMapper exposes the app's RESTMapper to viewers for resource→GVK resolution.
 func (a *App) RESTMapper() metamapper.RESTMapper { return a.cl.RESTMapper() }
+
+// logMsg appends Bubble Tea messages to a bounded buffer for later inspection.
+func (a *App) logMsg(msg tea.Msg) {
+	if a == nil {
+		return
+	}
+	if msgLogLimit == 0 {
+		return
+	}
+	entry := describeTeaMsg(msg)
+	a.msgLog = append(a.msgLog, entry)
+	if overflow := len(a.msgLog) - msgLogLimit; overflow > 0 {
+		copy(a.msgLog, a.msgLog[overflow:])
+		a.msgLog = a.msgLog[:len(a.msgLog)-overflow]
+	}
+}
+
+// resetMsgLog clears the diagnostic buffer.
+func (a *App) resetMsgLog() {
+	if a == nil {
+		return
+	}
+	a.msgLog = nil
+}
+
+// msgLogSnapshot copies the current diagnostic log for debugging or tests.
+func (a *App) msgLogSnapshot() []string {
+	if len(a.msgLog) == 0 {
+		return nil
+	}
+	out := make([]string, len(a.msgLog))
+	copy(out, a.msgLog)
+	return out
+}
+
+func describeTeaMsg(msg tea.Msg) string {
+	switch m := msg.(type) {
+	case tea.WindowSizeMsg:
+		return fmt.Sprintf("tea.WindowSizeMsg(%dx%d)", m.Width, m.Height)
+	case tea.KeyMsg:
+		return fmt.Sprintf("tea.KeyMsg(%s)", m.String())
+	case tea.MouseMsg:
+		return fmt.Sprintf("tea.MouseMsg(%s)", m.String())
+	case tea.BatchMsg:
+		return fmt.Sprintf("tea.BatchMsg(%d cmds)", len(m))
+	case fmt.Stringer:
+		return fmt.Sprintf("%T(%s)", msg, m.String())
+	case error:
+		return fmt.Sprintf("error(%v)", m)
+	default:
+		return fmt.Sprintf("%T", msg)
+	}
+}
