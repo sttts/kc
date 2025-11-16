@@ -55,11 +55,6 @@ const (
 	ModalModeFullscreen
 )
 
-// RedrawTickMsg is emitted periodically to force a re-render while a
-// windowed modal with a dynamic background is visible (e.g., for live
-// preview beneath the dialog).
-type RedrawTickMsg struct{}
-
 // ModalFooterHints allows content to contribute footer key hints
 // rendered next to the default "Esc Close".
 type ModalFooterHints interface {
@@ -242,12 +237,6 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := m.content.Update(updateMsg)
 	m.content = model
 	cmds = append(cmds, cmd)
-
-	// If we have a dynamic background provider, schedule a redraw tick so
-	// the composed background stays fresh even when only the selection moves.
-	if m.windowed && m.backgroundFunc != nil {
-		cmds = append(cmds, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return RedrawTickMsg{} }))
-	}
 
 	return m, tea.Batch(cmds...)
 }

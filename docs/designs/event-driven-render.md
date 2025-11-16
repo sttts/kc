@@ -14,7 +14,7 @@ Bubble Tea re-renders every time we return from `Update`, even if state hasn’t
 - ~~**FolderTickMsg** (`internal/ui/app.go`: Init + handler) – always scheduled every second, even when no folders are dirty. Every tick runs through `App.Update`, touches both panels, and returns another tick, forcing a render.~~ (Removed; dirty listeners now drive refreshes immediately after folder changes.)
 - **BusyTickMsg** (`internal/ui/app.go`: BusyShow/BusyTick cases) – once the spinner starts we keep ticking at 100ms regardless of whether the busy indicator is still visible until `BusyHideMsg` resets `busyActive`.
 - **toastTickMsg** (`internal/ui/app.go`: showToast/tick) – similar cadence to BusyTick; we continue to reschedule ticks after the toast expires until the handler notices `toastActive` is false.
-- **Modal RedrawTickMsg** (`internal/ui/modal.go`: 249) – any windowed modal with a background function schedules a redraw tick every 100ms to keep the background fresh, even when the modal content is static.
+- ~~**Modal RedrawTickMsg** (`internal/ui/modal.go`: 249) – any windowed modal with a background function schedules a redraw tick every 100ms to keep the background fresh, even when the modal content is static.~~ (Removed; modals now rely on real state changes to refresh backgrounds.)
 - **Escape-sequence timers** (`internal/ui/modal.go`: 207, `App.Update` ESC handler) – these only fire temporarily after ESC, but we should ensure they are short-lived and not re-arming when no modal is open.
 - **Background watchers** (`App.watchDiscovery`, namespace retry) – these rarely fire, but when they do they currently trigger a full render regardless of whether any visible state changed.
 
@@ -44,6 +44,6 @@ Add a helper `stateChanged bool` that is set anytime a message mutates state. At
 1. Add `stateChanged bool` to App.Update; set it whenever we mutate panels, toasts, busy flags, etc.; skip returning commands when false.
 2. Ensure every message handler that currently no-ops (e.g., FolderDirtyMsg when panel nil) doesn’t mark dirty.
 3. Stop scheduling FolderTickMsg unless needed (already debounced dirty listener triggers actual refresh). Optionally remove the tick entirely once we trust the dirty events. ✅
-4. Gate BusyTick/toastTick by checking `busyActive`/`toastActive` before scheduling.
+4. Gate BusyTick/toastTick by checking `busyActive`/`toastActive` before scheduling. (Partially done; they already short-circuit when inactive.)
 5. Extend Panel to expose `InvalidateCache` hooks (already added) and optionally `ShouldRender(width,height,focused bool)` to help App decide whether to render.
 6. Update docs to explain event-driven rendering so future features preserve the behavior.
