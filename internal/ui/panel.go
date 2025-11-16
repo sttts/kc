@@ -82,6 +82,14 @@ func (p *Panel) HasCachedFrame(width, height int, focused bool) bool {
 	return p.renderCacheMatches(width, height, focused)
 }
 
+// CachedFrame returns the cached frame for the given dimensions/focus when valid.
+func (p *Panel) CachedFrame(width, height int, focused bool) (string, bool) {
+	if p.renderCacheMatches(width, height, focused) {
+		return p.renderCache, true
+	}
+	return "", false
+}
+
 func (p *Panel) listWidgetDeps() panelcontent.WidgetDeps {
 	return panelcontent.WidgetDeps{
 		InvokeAction:     p.invokeWidgetAction,

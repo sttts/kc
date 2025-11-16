@@ -1630,6 +1630,9 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 		if width <= 0 {
 			return ""
 		}
+		if cached, ok := panel.CachedFrame(width, panelHeight, focused); ok {
+			return cached
+		}
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 		defer cancel()
 		return panel.Render(ctx, width, panelHeight, focused)
