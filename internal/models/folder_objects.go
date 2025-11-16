@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/lipgloss/v2"
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/internal/tablecache"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -104,7 +103,14 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		id := name
 		cells := buildCells(rr.Cells, vis, hasChild)
 		basePath := append(append([]string{}, o.Path()...), name)
-		style := styleForRow(rr.ObjectMeta.DeletionTimestamp)
+		info := RowStyleInfo{
+			GVR:        o.gvr,
+			GVK:        rr.TableTarget(),
+			ObjectMeta: rr.ObjectMeta,
+			BaseStyle:  WhiteStyle(),
+		}
+		info.Unstructured = unstructuredFromRow(rr)
+		style := applyRowStylers(info)
 		obj := NewObjectRow(id, cells, basePath, o.gvr, o.namespace, name, style)
 		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
@@ -149,11 +155,23 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		if hasChild {
 			title = "/" + name
 		}
-		var deletionTimestamp *metav1.Time
-		if item != nil {
-			deletionTimestamp = item.GetDeletionTimestamp()
+		meta := metav1.ObjectMeta{
+			Name:              name,
+			Namespace:         o.namespace,
+			UID:               item.GetUID(),
+			Labels:            item.GetLabels(),
+			Annotations:       item.GetAnnotations(),
+			CreationTimestamp: item.GetCreationTimestamp(),
 		}
-		style := styleForRow(deletionTimestamp)
+		meta.DeletionTimestamp = item.GetDeletionTimestamp()
+		info := RowStyleInfo{
+			GVR:          o.gvr,
+			GVK:          item.GroupVersionKind(),
+			ObjectMeta:   meta,
+			Unstructured: item,
+			BaseStyle:    WhiteStyle(),
+		}
+		style := applyRowStylers(info)
 		obj := NewObjectRow(name, []string{title}, basePath, o.gvr, o.namespace, name, style)
 		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
@@ -296,13 +314,6 @@ func objectDetails(namespace, name, kind, gv string) string {
 		return fmt.Sprintf("%s/%s (%s)", namespace, name, gv)
 	}
 	return fmt.Sprintf("%s (%s)", name, gv)
-}
-
-func styleForRow(deletionTimestamp *metav1.Time) *lipgloss.Style {
-	if deletionTimestamp != nil && !deletionTimestamp.IsZero() {
-		return DeletingStyle()
-	}
-	return WhiteStyle()
 }
 
 func ageColumnIndices(cols []table.Column) []int {

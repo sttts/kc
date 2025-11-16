@@ -131,7 +131,21 @@ func DimStyle() *lipgloss.Style {
 	return &s
 }
 
-var deletingRowStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF7B7B"))
+var (
+	deletingRowStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF7B7B"))
+	notReadyStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5C5C"))
+	jobSuccessStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#59B359"))
+	jobFailedStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF5C5C"))
+)
 
 // DeletingStyle highlights rows representing objects pending finalization.
 func DeletingStyle() *lipgloss.Style { return &deletingRowStyle }
+
+// NotReadyStyle highlights rows where Ready=False.
+func NotReadyStyle() *lipgloss.Style { return &notReadyStyle }
+
+// JobSuccessStyle highlights jobs that completed successfully.
+func JobSuccessStyle() *lipgloss.Style { return &jobSuccessStyle }
+
+// JobFailedStyle highlights jobs that exhausted retries unsuccessfully.
+func JobFailedStyle() *lipgloss.Style { return &jobFailedStyle }

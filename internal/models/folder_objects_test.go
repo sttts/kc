@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -206,5 +208,46 @@ func TestObjectsFolderRowsFromListDeletingStyle(t *testing.T) {
 	_, _, styles, _ := rows[0].Columns()
 	if len(styles) == 0 || styles[0] != DeletingStyle() {
 		t.Fatalf("expected deleting style for fallback list path")
+	}
+}
+
+func TestObjectsFolderReadyStylerFromTableRows(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	folder := NewObjectsFolder(Deps{}, gvr, "default", []string{"namespaces", "default", "pods"}, nil)
+	rl := &tablecache.RowList{
+		Columns: []metav1.TableColumnDefinition{
+			{Name: "Name"},
+		},
+	}
+	podObj := map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"status": map[string]interface{}{
+			"conditions": []interface{}{
+				map[string]interface{}{"type": "Ready", "status": "False"},
+			},
+		},
+	}
+	raw, err := json.Marshal(podObj)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	row := tablecache.Row{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: "default"},
+		TableRow: metav1.TableRow{
+			Cells:  []interface{}{"/pod"},
+			Object: runtime.RawExtension{Raw: raw},
+		},
+	}
+	row.SetTableTarget(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
+	rl.Items = append(rl.Items, row)
+
+	rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, appconfig.ObjectsOrderName)
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d", len(rows))
+	}
+	_, _, styles, _ := rows[0].Columns()
+	if styles[0] != NotReadyStyle() {
+		t.Fatalf("expected NotReadyStyle for unready pod")
 	}
 }
