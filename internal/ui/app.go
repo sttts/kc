@@ -83,6 +83,12 @@ type deleteTarget struct {
 	name      string
 }
 
+type cachedView struct {
+	view   string
+	cursor *tea.Cursor
+	valid  bool
+}
+
 type resourceDeletedMsg struct {
 	target deleteTarget
 	err    error
@@ -164,12 +170,10 @@ type App struct {
 	discoveryCancel func()
 	// Recent Bubble Tea messages for idle-loop diagnostics
 	msgLog []string
-	// Cached App.View rendering
-	viewCache             string
-	viewCacheCursor       *tea.Cursor
-	viewCacheValid        bool
-	functionBarCache      string
-	functionBarCacheValid bool
+	// Cached views
+	mainViewCache     cachedView
+	functionBarCache  cachedView
+	terminalAreaCache cachedView
 	// Namespace auto-navigation state
 	namespaceAutoTarget    string
 	namespaceAutoAttempts  int
@@ -265,6 +269,7 @@ func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
 	model, cmd := a.terminal.Update(msg)
 	a.terminal = model.(*Terminal)
 	a.invalidateView(reason)
+	a.invalidateTerminalArea(reason)
 	return cmd
 }
 
@@ -771,7 +776,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.pendingCmds = nil
 	}
 	a.pendingCmdsMu.Unlock()
-	viewWasValid := a.viewCacheValid
+	viewWasValid := a.mainViewCache.valid
 
 	// Always adapt size
 	switch msg := msg.(type) {
@@ -793,6 +798,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.height = msg.Height
 			a.invalidateView("window resize")
 			a.invalidateFunctionBar("window resize")
+			a.invalidateTerminalArea("window resize")
 
 			// Ensure active modal scales with terminal size
 			if a.modalManager != nil && a.modalManager.IsModalVisible() {
@@ -1331,6 +1337,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.terminal.SetShowPanels(!a.showTerminal)
 			a.invalidateView("ctrl+o toggle terminal")
 			a.invalidateFunctionBar("terminal toggle")
+			a.invalidateTerminalArea("terminal toggle")
 			// Always keep terminal focused for typing
 			a.terminal.Focus()
 			return a, nil
@@ -1473,6 +1480,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.showTerminal = false
 				a.invalidateView("ctrl+o exit terminal")
 				a.invalidateFunctionBar("terminal exit")
+				a.invalidateTerminalArea("terminal exit")
 				return a, nil
 			}
 			// Everything else goes to the terminal
@@ -1573,7 +1581,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
-	if len(cmds) == 0 && viewWasValid && a.viewCacheValid {
+	if len(cmds) == 0 && viewWasValid && a.mainViewCache.valid {
 		return a, nil
 	}
 	return a, tea.Batch(cmds...)
@@ -1670,13 +1678,13 @@ func (a *App) shouldRouteToPanel(key string) bool {
 
 // View renders the application
 func (a *App) View() (string, *tea.Cursor) {
-	if a.viewCacheValid {
-		return a.cachedView()
+	if view, cursor, ok := a.mainViewCache.get(); ok {
+		return view, cursor
 	}
 	// In fullscreen terminal mode, only show terminal
 	if a.showTerminal {
 		terminalView, terminalCursor := a.renderTerminalView()
-		a.cacheView(terminalView, terminalCursor)
+		a.mainViewCache.set(terminalView, terminalCursor)
 		return terminalView, terminalCursor
 	}
 
@@ -1686,11 +1694,11 @@ func (a *App) View() (string, *tea.Cursor) {
 	// Overlay modal if visible
 	if a.modalManager.IsModalVisible() {
 		modalView, modalCursor := a.modalManager.View()
-		a.cacheView(modalView, modalCursor)
+		a.mainViewCache.set(modalView, modalCursor)
 		return modalView, modalCursor
 	}
 
-	a.cacheView(mainView, mainCursor)
+	a.mainViewCache.set(mainView, mainCursor)
 	return mainView, mainCursor
 }
 
@@ -1792,8 +1800,13 @@ func (a *App) renderBusyOverlay() string {
 
 // renderTerminalArea renders the 2-line terminal area in main view
 func (a *App) renderTerminalArea() (string, *tea.Cursor) {
+	if view, cursor, ok := a.terminalAreaCache.get(); ok {
+		return view, cursor
+	}
 	terminalView, terminalCursor := a.terminal.View()
-	return terminalView, terminalCursor
+	a.terminalAreaCache.set(terminalView, terminalCursor)
+	view, cursor, _ := a.terminalAreaCache.get()
+	return view, cursor
 }
 
 // renderTerminalView renders the full-screen terminal view
@@ -1860,8 +1873,8 @@ func (a *App) refreshFoldersAfterViewChange() {
 
 // renderFunctionKeys renders the function key bar
 func (a *App) renderFunctionKeys() string {
-	if a.functionBarCacheValid {
-		return a.functionBarCache
+	if view, _, ok := a.functionBarCache.get(); ok {
+		return view
 	}
 	if a.toastActive {
 		msg := a.toastText
@@ -1925,9 +1938,9 @@ func (a *App) renderFunctionKeys() string {
 	fullWidthStyle := uistyles.FunctionKeyBarStyle.Width(a.width).Align(lipgloss.Left)
 	titleStyle := uistyles.FunctionKeyTitleStyle.Align(lipgloss.Center).Width(a.width - lipgloss.Width(joined) - 1)
 	titleRendered := titleStyle.Render(title)
-	a.functionBarCache = fullWidthStyle.Render(joined + " " + titleRendered)
-	a.functionBarCacheValid = true
-	return a.functionBarCache
+	a.functionBarCache.set(fullWidthStyle.Render(joined+" "+titleRendered), nil)
+	view, _, _ := a.functionBarCache.get()
+	return view
 }
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
@@ -1951,6 +1964,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 				a.terminal.SetShowPanels(true)
 				a.invalidateView("function bar return to panels")
 				a.invalidateFunctionBar("terminal exit")
+				a.invalidateTerminalArea("terminal exit")
 				return nil
 			}},
 		}
@@ -2000,6 +2014,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 				a.terminal.SetShowPanels(false)
 				a.invalidateView("function bar fullscreen")
 				a.invalidateFunctionBar("terminal enter")
+				a.invalidateTerminalArea("terminal enter")
 				return nil
 			}},
 		}
@@ -3164,6 +3179,7 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 		}
 		a.invalidateView("kubectl edit exit terminal")
 		a.invalidateFunctionBar("terminal exit")
+		a.invalidateTerminalArea("terminal exit")
 	}
 
 	cmd := exec.Command("kubectl", args...)
@@ -4594,6 +4610,31 @@ func describeTeaMsg(msg tea.Msg) string {
 	}
 }
 
+func (c *cachedView) invalidate() { c.valid = false }
+
+func (c *cachedView) set(view string, cursor *tea.Cursor) {
+	c.view = view
+	if cursor != nil {
+		copy := *cursor
+		c.cursor = &copy
+	} else {
+		c.cursor = nil
+	}
+	c.valid = true
+}
+
+func (c *cachedView) get() (string, *tea.Cursor, bool) {
+	if !c.valid {
+		return "", nil, false
+	}
+	var cursorCopy *tea.Cursor
+	if c.cursor != nil {
+		copy := *c.cursor
+		cursorCopy = &copy
+	}
+	return c.view, cursorCopy, true
+}
+
 func (a *App) invalidateView(reason string) {
 	if a == nil {
 		return
@@ -4601,7 +4642,7 @@ func (a *App) invalidateView(reason string) {
 	if reason != "" {
 		ctrllog.FromContext(a.ctx).WithName("ui").Info("view invalidated", "reason", reason)
 	}
-	a.viewCacheValid = false
+	a.mainViewCache.invalidate()
 }
 
 func (a *App) invalidateFunctionBar(reason string) {
@@ -4611,28 +4652,15 @@ func (a *App) invalidateFunctionBar(reason string) {
 	if reason != "" {
 		ctrllog.FromContext(a.ctx).WithName("ui").Info("function bar invalidated", "reason", reason)
 	}
-	a.functionBarCacheValid = false
+	a.functionBarCache.invalidate()
 }
 
-func (a *App) cacheView(view string, cursor *tea.Cursor) {
-	a.viewCache = view
-	if cursor != nil {
-		copy := *cursor
-		a.viewCacheCursor = &copy
-	} else {
-		a.viewCacheCursor = nil
+func (a *App) invalidateTerminalArea(reason string) {
+	if a == nil {
+		return
 	}
-	a.viewCacheValid = true
-}
-
-func (a *App) cachedView() (string, *tea.Cursor) {
-	if !a.viewCacheValid {
-		return "", nil
+	if reason != "" {
+		ctrllog.FromContext(a.ctx).WithName("ui").Info("terminal area invalidated", "reason", reason)
 	}
-	var cursorCopy *tea.Cursor
-	if a.viewCacheCursor != nil {
-		copy := *a.viewCacheCursor
-		cursorCopy = &copy
-	}
-	return a.viewCache, cursorCopy
+	a.terminalAreaCache.invalidate()
 }
