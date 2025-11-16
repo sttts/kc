@@ -58,7 +58,7 @@ func TestPodContainerFSFolderListsEntries(t *testing.T) {
 		PodFSFactory: fakePodFSFactory{session: session},
 	}
 	handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
-	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle)
+	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
 
 	rows := folder.Lines(ctx, 0, 10)
 	if len(rows) < 3 { // Back + two entries
@@ -88,7 +88,7 @@ func TestPodContainerFSFolderMissingShellMessage(t *testing.T) {
 		PodFSFactory: fakePodFSFactory{err: fmt.Errorf("%w", podfs.ErrShellMissing)},
 	}
 	handle := newContainerSessionHandle(deps.PodFSFactory, "ns", "pod", "container")
-	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle)
+	folder := NewPodContainerFSFolder(deps, []string{"containers", "pod", "root"}, "/", handle, false)
 
 	rows := folder.Lines(ctx, 0, 5)
 	if len(rows) < 2 {

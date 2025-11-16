@@ -111,8 +111,10 @@ func (f *PodContainerListFolder) buildRows(ctx context.Context) ([]table.Row, er
 	containers := f.extractContainers(podObj)
 	for _, c := range containers {
 		sectionPath := append(append([]string{}, f.Path()...), c.Name)
-		item := NewContainerItem(c.Name, []string{c.Label}, sectionPath, nameStyle, containerViewContent(f.Deps, f.Namespace, f.Pod, c.Name), func() (Folder, error) {
-			return NewPodContainerDetailFolder(f.Deps, sectionPath, f.Namespace, f.Pod, c.Name), nil
+		name := c.Name
+		kind := c.Kind
+		item := NewContainerItem(name, []string{c.Label}, sectionPath, nameStyle, containerViewContent(f.Deps, f.Namespace, f.Pod, name), func() (Folder, error) {
+			return NewPodContainerDetailFolder(f.Deps, sectionPath, f.Namespace, f.Pod, name, kind), nil
 		})
 		item.RowItem.details = c.Detail
 		rows = append(rows, item)
@@ -125,15 +127,15 @@ func (f *PodContainerListFolder) extractContainers(pod *corev1.Pod) []containerR
 	switch f.Kind {
 	case containerKindPrimary:
 		for _, c := range pod.Spec.Containers {
-			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: c.Image})
+			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: c.Image, Kind: containerKindPrimary})
 		}
 	case containerKindInit:
 		for _, c := range pod.Spec.InitContainers {
-			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "init"})
+			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "init", Kind: containerKindInit})
 		}
 	case containerKindEphemeral:
 		for _, c := range pod.Spec.EphemeralContainers {
-			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "ephemeral"})
+			records = append(records, containerRecord{Name: c.Name, Label: "/" + c.Name, Detail: "ephemeral", Kind: containerKindEphemeral})
 		}
 	}
 	return records
@@ -159,6 +161,7 @@ type containerRecord struct {
 	Name   string
 	Label  string
 	Detail string
+	Kind   containerKind
 }
 
 func newPodSectionRowSource(deps Deps, namespace, pod string, populate func(context.Context) ([]table.Row, error), onDirty func()) rowSource {

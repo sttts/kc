@@ -14,14 +14,19 @@ import (
 	"github.com/charmbracelet/lipgloss/v2"
 	"github.com/sttts/kc/internal/podfs"
 	table "github.com/sttts/kc/internal/table"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
-	fsSessionTimeout     = 30 * time.Second
-	fsDefaultTimeout     = 10 * time.Second
-	fsFileViewMaxBytes   = 512 * 1024
-	fsUnavailableMessage = "Pod filesystem browsing unavailable"
+	fsSessionTimeout        = 30 * time.Second
+	fsDefaultTimeout        = 10 * time.Second
+	fsFileViewMaxBytes      = 512 * 1024
+	fsHelperRetryInterval   = 1 * time.Second
+	fsContainerReadyTimeout = 5 * time.Second
+	fsUnavailableMessage    = "Pod filesystem browsing unavailable"
 )
 
 // PodContainerDetailFolder exposes container-level virtual entries (logs, root filesystem, etc.).
@@ -30,11 +35,12 @@ type PodContainerDetailFolder struct {
 	Namespace string
 	Pod       string
 	Container string
+	Kind      containerKind
 
 	session *containerSessionHandle
 }
 
-func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, container string) *PodContainerDetailFolder {
+func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, container string, kind containerKind) *PodContainerDetailFolder {
 	base := NewBaseFolder(deps, []table.Column{{Title: " Name"}}, path)
 	handle := newContainerSessionHandle(deps.PodFSFactory, namespace, pod, container)
 	folder := &PodContainerDetailFolder{
@@ -42,6 +48,7 @@ func NewPodContainerDetailFolder(deps Deps, path []string, namespace, pod, conta
 		Namespace:  namespace,
 		Pod:        pod,
 		Container:  container,
+		Kind:       kind,
 		session:    handle,
 	}
 	base.SetPopulate(folder.buildRows)
@@ -70,7 +77,7 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 		return rows, nil
 	}
 	rootItem := NewContainerSectionItem("root", []string{"/root"}, rootPath, WhiteStyle(), func() (Folder, error) {
-		return NewPodContainerFSFolder(f.Deps, rootPath, "/", f.session), nil
+		return NewPodContainerFSFolder(f.Deps, rootPath, "/", f.session, f.Kind == containerKindEphemeral), nil
 	})
 	if f.session != nil && f.session.HelperUsed() {
 		rootItem.RowItem.details = "Browse container filesystem (debug helper)"
@@ -84,11 +91,15 @@ func (f *PodContainerDetailFolder) buildRows(context.Context) ([]table.Row, erro
 // PodContainerFSFolder lists filesystem entries for a container under a given directory.
 type PodContainerFSFolder struct {
 	*BaseFolder
-	dir     string
-	session *containerSessionHandle
+	dir       string
+	session   *containerSessionHandle
+	ephemeral bool
+
+	refreshMu    sync.Mutex
+	refreshTimer *time.Timer
 }
 
-func NewPodContainerFSFolder(deps Deps, path []string, dir string, session *containerSessionHandle) *PodContainerFSFolder {
+func NewPodContainerFSFolder(deps Deps, path []string, dir string, session *containerSessionHandle, ephemeral bool) *PodContainerFSFolder {
 	if dir == "" {
 		dir = "/"
 	}
@@ -102,6 +113,7 @@ func NewPodContainerFSFolder(deps Deps, path []string, dir string, session *cont
 		BaseFolder: base,
 		dir:        sanitizeContainerPath(dir),
 		session:    session,
+		ephemeral:  ephemeral,
 	}
 	base.SetPopulate(folder.buildRows)
 	return folder
@@ -114,12 +126,22 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 		item.WithViewContent(errorViewContent("Pod filesystem unavailable", fsUnavailableMessage))
 		return []table.Row{item}, nil
 	}
+	if ready, status, detail := f.containerReady(ctx); !ready {
+		f.scheduleRefresh(fsHelperRetryInterval)
+		return f.containerProgressRows(status, detail), nil
+	}
 	sessionCtx, cancelSession := deriveContext(ctx, f.Deps.Ctx, fsSessionTimeout)
 	defer cancelSession()
 	sess, err := f.session.Session(sessionCtx)
 	if err != nil {
 		log := ctrllog.FromContext(sessionCtx).WithName("podfs_folder").
 			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", f.session.spec.Container)
+		if isTransientSessionError(err) || isContextError(err) {
+			log.Info("Session not ready; waiting for debug helper", "err", err)
+			f.session.Invalidate()
+			f.scheduleRefresh(fsHelperRetryInterval)
+			return f.helperProgressRows(err), nil
+		}
 		log.Error(err, "Session establishment failed")
 		item := NewSimpleItem("root_error", []string{"error"}, f.Path(), DimStyle())
 		detail := describeFSError("Open filesystem", err)
@@ -139,6 +161,12 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 	if err != nil {
 		log := ctrllog.FromContext(listCtx).WithName("podfs_folder").
 			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", f.session.spec.Container, "dir", f.dir)
+		if isTransientSessionError(err) || isContextError(err) {
+			log.Info("Filesystem helper still starting; retry scheduled", "err", err)
+			f.session.Invalidate()
+			f.scheduleRefresh(fsHelperRetryInterval)
+			return f.helperProgressRows(err), nil
+		}
 		log.Error(err, "List failed")
 		item := NewSimpleItem("root_error", []string{"error"}, f.Path(), DimStyle())
 		detail := describeFSError("List directory", err)
@@ -169,7 +197,7 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 		case podfs.EntryTypeDir:
 			item := NewPodFSDirItem(entryPath, cells, rowPath, WhiteStyle(), func(nextDir string) func() (Folder, error) {
 				return func() (Folder, error) {
-					return NewPodContainerFSFolder(f.Deps, rowPath, nextDir, f.session), nil
+					return NewPodContainerFSFolder(f.Deps, rowPath, nextDir, f.session, f.ephemeral), nil
 				}
 			}(entryPath))
 			item.RowItem.details = fmt.Sprintf("Directory (%s)", entryPath)
@@ -185,6 +213,181 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 		}
 	}
 	return rows, nil
+}
+
+func (f *PodContainerFSFolder) containerReady(ctx context.Context) (bool, string, string) {
+	if f == nil || !f.ephemeral || f.session == nil || f.Deps.Cl == nil {
+		return true, "", ""
+	}
+	name := strings.TrimSpace(f.session.spec.Container)
+	if name == "" {
+		return true, "", ""
+	}
+	readyCtx, cancel := deriveContext(ctx, f.Deps.Ctx, fsContainerReadyTimeout)
+	defer cancel()
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	obj, err := f.Deps.Cl.GetByGVR(readyCtx, gvr, f.session.spec.Namespace, f.session.spec.Pod)
+	if err != nil {
+		log := ctrllog.FromContext(readyCtx).WithName("podfs_folder").
+			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", name)
+		log.Error(err, "Fetch pod for ephemeral container readiness failed")
+		return true, "", ""
+	}
+	if obj == nil {
+		return false, "pending", fmt.Sprintf("Waiting for ephemeral container %s", name)
+	}
+	var pod corev1.Pod
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, &pod); err != nil {
+		log := ctrllog.FromContext(readyCtx).WithName("podfs_folder").
+			WithValues("namespace", f.session.spec.Namespace, "pod", f.session.spec.Pod, "container", name)
+		log.Error(err, "Decode pod for ephemeral container readiness failed")
+		return true, "", ""
+	}
+	status := findEphemeralStatus(&pod, name)
+	if status == nil {
+		if ephemeralSpecExists(&pod, name) {
+			return false, "creating", fmt.Sprintf("Creating ephemeral container %s", name)
+		}
+		return false, "pending", fmt.Sprintf("Waiting for ephemeral container %s", name)
+	}
+	switch {
+	case status.State.Running != nil:
+		return true, "", ""
+	case status.State.Waiting != nil:
+		detail := containerStateDetail("Waiting", status.State.Waiting.Reason, status.State.Waiting.Message)
+		return false, "waiting", detail
+	case status.State.Terminated != nil:
+		detail := containerStateDetail("Terminated", status.State.Terminated.Reason, status.State.Terminated.Message)
+		return false, "terminated", detail
+	default:
+		return false, "pending", fmt.Sprintf("Ephemeral container %s pending", name)
+	}
+}
+
+func containerStateDetail(prefix, reason, message string) string {
+	reason = strings.TrimSpace(reason)
+	message = strings.TrimSpace(message)
+	if reason == "" && message == "" {
+		return prefix
+	}
+	if reason != "" && message != "" {
+		return fmt.Sprintf("%s: %s - %s", prefix, reason, message)
+	}
+	if reason != "" {
+		return fmt.Sprintf("%s: %s", prefix, reason)
+	}
+	return fmt.Sprintf("%s: %s", prefix, message)
+}
+
+func findEphemeralStatus(pod *corev1.Pod, name string) *corev1.ContainerStatus {
+	if pod == nil {
+		return nil
+	}
+	for i := range pod.Status.EphemeralContainerStatuses {
+		if pod.Status.EphemeralContainerStatuses[i].Name == name {
+			return &pod.Status.EphemeralContainerStatuses[i]
+		}
+	}
+	return nil
+}
+
+func ephemeralSpecExists(pod *corev1.Pod, name string) bool {
+	if pod == nil {
+		return false
+	}
+	for i := range pod.Spec.EphemeralContainers {
+		if pod.Spec.EphemeralContainers[i].Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *PodContainerFSFolder) helperProgressRows(err error) []table.Row {
+	status := "starting..."
+	detail := "Preparing ephemeral debug helper container"
+	if err != nil {
+		msg := strings.TrimSpace(err.Error())
+		if msg != "" {
+			status = "retrying"
+			detail = fmt.Sprintf("Waiting for debug helper: %s", msg)
+		}
+	}
+	cells := []string{"debug helper", status, "", ""}
+	item := NewSimpleItem(f.helperPendingRowID(), cells, f.Path(), DimStyle())
+	item.RowItem.details = detail
+	return []table.Row{item}
+}
+
+func (f *PodContainerFSFolder) containerProgressRows(status, detail string) []table.Row {
+	label := "ephemeral container"
+	if f != nil && f.session != nil && strings.TrimSpace(f.session.spec.Container) != "" {
+		label = f.session.spec.Container
+	}
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "pending"
+	}
+	if detail == "" {
+		detail = fmt.Sprintf("Waiting for %s to be ready", label)
+	}
+	cells := []string{label, status, "", ""}
+	item := NewSimpleItem(f.containerPendingRowID(), cells, f.Path(), DimStyle())
+	item.RowItem.details = detail
+	return []table.Row{item}
+}
+
+func (f *PodContainerFSFolder) helperPendingRowID() string {
+	if f == nil {
+		return "__podfs_helper_pending__"
+	}
+	clean := strings.Trim(strings.ReplaceAll(f.dir, "/", "_"), "_")
+	if clean == "" {
+		clean = "root"
+	}
+	return "__podfs_helper_pending__" + clean
+}
+
+func (f *PodContainerFSFolder) containerPendingRowID() string {
+	if f == nil {
+		return "__podfs_container_pending__"
+	}
+	clean := strings.Trim(strings.ReplaceAll(f.dir, "/", "_"), "_")
+	if clean == "" {
+		clean = "root"
+	}
+	return "__podfs_container_pending__" + clean
+}
+
+func (f *PodContainerFSFolder) scheduleRefresh(delay time.Duration) {
+	if f == nil {
+		return
+	}
+	if delay <= 0 {
+		f.markDirty()
+		return
+	}
+	f.refreshMu.Lock()
+	if f.refreshTimer != nil {
+		f.refreshMu.Unlock()
+		return
+	}
+	ctx := f.Deps.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	f.refreshTimer = time.AfterFunc(delay, func() {
+		select {
+		case <-ctx.Done():
+			// Stop refreshing when the app context is canceled.
+		default:
+			f.markDirty()
+		}
+		f.refreshMu.Lock()
+		f.refreshTimer = nil
+		f.refreshMu.Unlock()
+	})
+	f.refreshMu.Unlock()
 }
 
 type PodFSDirItem struct {
