@@ -731,15 +731,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		msg.Width = max(40, msg.Width)
 		msg.Height = max(5, msg.Height)
 
-		a.width = msg.Width
-		a.height = msg.Height
+		sizeChanged := msg.Width != a.width || msg.Height != a.height
+		if sizeChanged {
+			a.width = msg.Width
+			a.height = msg.Height
 
-		// Ensure active modal scales with terminal size
-		if a.modalManager != nil && a.modalManager.IsModalVisible() {
-			if m := a.modalManager.GetActiveModal(); m != nil {
-				m.SetDimensions(a.width, a.height)
-				if vm, ok := m.content.(*ViewOptionsModel); ok {
-					a.layoutViewOptionsModal(m, vm, vm.PanelIndex(), "")
+			// Ensure active modal scales with terminal size
+			if a.modalManager != nil && a.modalManager.IsModalVisible() {
+				if m := a.modalManager.GetActiveModal(); m != nil {
+					m.SetDimensions(a.width, a.height)
+					if vm, ok := m.content.(*ViewOptionsModel); ok {
+						a.layoutViewOptionsModal(m, vm, vm.PanelIndex(), "")
+					}
 				}
 			}
 		}
@@ -753,7 +756,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			model, cmd := a.terminal.Update(terminalMsg)
 			a.terminal = model.(*Terminal)
-			cmds = append(cmds, cmd)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+
+		if !sizeChanged && len(cmds) == 0 {
+			return a, nil
 		}
 	}
 
