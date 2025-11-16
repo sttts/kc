@@ -340,3 +340,50 @@ func (s *windowSpyList) lastWindowCall() (lineCall, bool) {
 	}
 	return lineCall{}, false
 }
+
+type countingList struct {
+	rows  []Row
+	calls int
+}
+
+func (c *countingList) Lines(ctx context.Context, top, num int) []Row {
+	c.calls++
+	return append([]Row(nil), c.rows...)
+}
+
+func (c *countingList) Above(context.Context, string, int) []Row { return nil }
+
+func (c *countingList) Below(context.Context, string, int) []Row { return nil }
+
+func (c *countingList) Len(context.Context) int { return len(c.rows) }
+
+func (c *countingList) Find(context.Context, string) (int, Row, bool) {
+	if len(c.rows) == 0 {
+		return -1, nil, false
+	}
+	return 0, c.rows[0], true
+}
+
+func (c *countingList) reset() { c.calls = 0 }
+
+func TestBigTableSetSizeNoOp(t *testing.T) {
+	ctx := context.Background()
+	row := SimpleRow{ID: "a"}
+	style := lipgloss.NewStyle()
+	row.SetColumn(0, "a", &style)
+	list := &countingList{rows: []Row{row}}
+
+	bt := NewBigTable([]Column{{Title: "A"}}, list, 40, 10)
+	bt.SetList(ctx, list)
+	list.reset()
+
+	bt.SetSize(ctx, 80, 20)
+	if list.calls == 0 {
+		t.Fatalf("expected SetSize to rebuild window when size changes")
+	}
+	list.reset()
+	bt.SetSize(ctx, 80, 20)
+	if list.calls != 0 {
+		t.Fatalf("expected SetSize to no-op when size unchanged, calls=%d", list.calls)
+	}
+}

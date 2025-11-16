@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	pprof "net/http/pprof"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,6 +30,7 @@ type cliFlags struct {
 	Version    bool        `help:"Show version information"`
 	Kubeconfig string      `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
 	Namespace  string      `help:"Namespace to open on startup" short:"n"`
+	PprofAddr  string      `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
 	Root       rootCommand `cmd:"" hidden:"true" default:"1"`
 	Get        getCommand  `cmd:"get" help:"Mirror kubectl get"`
 	Logs       logsCommand `cmd:"logs" help:"Mirror kubectl logs"`
@@ -61,6 +64,7 @@ func main() {
 	// Set up controller-runtime logging. By default discard logs entirely.
 	// If DEBUG=1, write logs to ~/.kc/debug.log in dev-friendly format.
 	setupControllerRuntimeLogger()
+	startPprofServer(strings.TrimSpace(cli.PprofAddr))
 
 	if cli.Version {
 		showVersionInfo()
@@ -192,6 +196,25 @@ func setupControllerRuntimeLogger() {
 	klog.SetLogger(logr.Discard())
 	klog.SetOutput(io.Discard)
 	log.SetOutput(io.Discard)
+}
+
+func startPprofServer(addr string) {
+	if addr == "" {
+		return
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	go func() {
+		fmt.Fprintf(os.Stderr, "pprof: listening on http://%s/debug/pprof/\n", addr)
+		if err := http.ListenAndServe(addr, mux); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Fprintf(os.Stderr, "pprof server error: %v\n", err)
+		}
+	}()
 }
 
 func showHelp() {

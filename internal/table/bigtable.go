@@ -137,6 +137,9 @@ func (m *BigTable) SetSize(ctx context.Context, w, h int) {
 	if h < 6 {
 		h = 6
 	}
+	if w == m.w && h == m.h {
+		return
+	}
 	m.w, m.h = w, h
 	m.applyMode(ctx)
 }

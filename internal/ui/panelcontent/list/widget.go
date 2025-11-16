@@ -745,10 +745,15 @@ func (w *Widget) render(ctx context.Context, focused bool) string {
 		w.syncFromFolder(ctx)
 		if w.bt == nil {
 			w.ensureBigTable(ctx)
-		} else {
-			w.bt.SetList(ctx, w.folder)
-			w.bt.SetSize(ctx, max(1, w.width), max(1, w.height))
 		}
+		if w.bt == nil {
+			return uistyles.PanelContentStyle.
+				Width(w.width).
+				Height(w.height).
+				Align(lipgloss.Center).
+				Render("Loading...")
+		}
+		w.bt.SetSize(ctx, max(1, w.width), max(1, w.height))
 		w.bt.SetFocused(ctx, focused)
 		return lipgloss.NewStyle().
 			Background(lipgloss.Blue).
