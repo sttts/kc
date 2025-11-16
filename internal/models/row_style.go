@@ -104,6 +104,7 @@ func registerDefaultRowStylers() {
 	}))
 	registerReadyStylers()
 	registerJobStyler()
+	registerWorkloadStylers()
 }
 
 func registerReadyStylers() {
@@ -140,6 +141,54 @@ func registerJobStyler() {
 		return info.BaseStyle
 	})
 	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, styler)
+}
+
+func registerWorkloadStylers() {
+	deployStyler := rowStylerFunc(func(info RowStyleInfo) *lipgloss.Style {
+		if info.Unstructured == nil {
+			return info.BaseStyle
+		}
+		if deploymentNotReady(info.Unstructured) {
+			return NotReadyStyle()
+		}
+		return info.BaseStyle
+	})
+	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, deployStyler)
+
+	dsStyler := rowStylerFunc(func(info RowStyleInfo) *lipgloss.Style {
+		if info.Unstructured == nil {
+			return info.BaseStyle
+		}
+		desired, _, _ := unstructured.NestedInt64(info.Unstructured.Object, "status", "desiredNumberScheduled")
+		ready, _, _ := unstructured.NestedInt64(info.Unstructured.Object, "status", "numberReady")
+		available, _, _ := unstructured.NestedInt64(info.Unstructured.Object, "status", "numberAvailable")
+		if desired > 0 && (ready < desired || available < desired) {
+			return NotReadyStyle()
+		}
+		if readinessStatus(info.Unstructured, "NumberAvailable") == conditionFalse {
+			return NotReadyStyle()
+		}
+		return info.BaseStyle
+	})
+	RegisterRowStylerForGVR(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}, dsStyler)
+}
+
+func deploymentNotReady(u *unstructured.Unstructured) bool {
+	if u == nil {
+		return false
+	}
+	ready, _, _ := unstructured.NestedInt64(u.Object, "status", "readyReplicas")
+	available, _, _ := unstructured.NestedInt64(u.Object, "status", "availableReplicas")
+	replicas, _, _ := unstructured.NestedInt64(u.Object, "spec", "replicas")
+	if readinessStatus(u, "Available") == conditionFalse {
+		return true
+	}
+	if replicas > 0 {
+		if ready < replicas || available < replicas {
+			return true
+		}
+	}
+	return false
 }
 
 type conditionState string
