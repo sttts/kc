@@ -105,8 +105,15 @@ Current tasks
 ## Backlog (Post M3)
 - Menu bar (mc-style) with View options: sort keys, direction, column toggles, grouping.
 - Favorites list of resource types (allow users to add/remove favorites, persist, and use them to populate selectors/shortcuts).
-- Expand resource-specific hierarchies beyond pods/configmaps/secrets (e.g., workloads that expose child folders or logs) once higher-priority milestones land.
-- Left/Right panel modes: API, Describe, YAML, Logs (pin), Top (metrics), and Ctrl+U panel swap.
+- Age column should refresh while seconds/minutes tick even when rows are otherwise unchanged; consider scheduling redraws based on the displayed precision.
+- Highlight deleting objects (has deletionTimestamp) in light/bold red so pending deletions are obvious in lists.
+- Panel modes roadmap:
+  - Add API/raw response mode (execute `kubectl get -o json`) and YAML mode (pretty YAML view separate from manifest).
+  - Provide a logs pin mode so a panel can stay on `kubectl logs` output for the selected object.
+  - Implement a Top/metrics mode to show resource usage summaries.
+  - Add Ctrl+U (or similar) to swap left/right panel contents.
+- Selection sync options: let users choose whether describe/manifest follow left→right or right→left selection, or lock a panel to a specific resource.
+- Auto-refresh indicator in detail views (spinner/toast) so users know when describe/manifest content refreshes.
 - API group hierarchy mode under `/groups/...`.
 - Metrics integration for Top and consumption sorts; graceful degradation.
 - Extensible actions system: per-resource action registry and external tool integration with context/env passing.
@@ -126,3 +133,7 @@ Tracking
 - [ ] Wire watchers for group-level counts, or document that counts update on next access; consider caching counts with debounce.
 - [ ] Extend GVR→child registry with more defaults as needed (e.g., deployments→replicasets) and provide a public registration hook.
 - [ ] ConfigMap/Secret key editing (`F4`): launch an editor modal or external tool to mutate individual keys, then refresh the parent object.
+- Cleanup/refactors backlog:
+  - Remove temporary panel/panelMode debug logging or gate it behind verbose levels.
+  - Factor selection replay logic into a helper to avoid duplicated “fetch/force notify” code.
+  - Broaden panel tests to cover manifest/list modes and selection replay permutations.
