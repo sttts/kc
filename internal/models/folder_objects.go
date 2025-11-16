@@ -31,6 +31,9 @@ type ObjectsFolder struct {
 	objectOrder string
 	hasObjOrder bool
 	verbs       []string
+	ageMu       sync.Mutex
+	ageHooks    []*ageCellHook
+	ageTimer    *time.Timer
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
@@ -85,9 +88,11 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		cols[i] = table.Column{Title: c.Name}
 	}
 	o.SetColumns(cols)
+	ageCols := ageColumnIndices(cols)
 
 	idxs := orderRowIndices(rl.Items, order)
 	rows := make([]table.Row, 0, len(idxs))
+	var hooks []*ageCellHook
 	nameStyle := WhiteStyle()
 	gvStr := o.gvr.GroupVersion().String()
 	kind := o.kindString()
@@ -103,6 +108,12 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
 		obj.RowItem.details = objectDetails(o.namespace, name, kind, gvStr)
+		if len(ageCols) > 0 {
+			if hook := newAgeCellHook(ageCols, rr.ObjectMeta.CreationTimestamp.Time); hook != nil {
+				obj.RowItem.SetCellsHook(hook.apply)
+				hooks = append(hooks, hook)
+			}
+		}
 		if hasChild && ctor != nil {
 			ns := o.namespace
 			nm := name
@@ -113,10 +124,12 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 			rows = append(rows, obj)
 		}
 	}
+	o.installAgeHooks(hooks)
 	return rows
 }
 
 func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order string) []table.Row {
+	o.installAgeHooks(nil)
 	names := make([]string, 0, len(list.Items))
 	for i := range list.Items {
 		names = append(names, list.Items[i].GetName())
@@ -151,6 +164,9 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 }
 
 func (o *ObjectsFolder) kindString() string {
+	if o.Deps.Cl == nil {
+		return ""
+	}
 	if mapper := o.Deps.Cl.RESTMapper(); mapper != nil {
 		if k, err := mapper.KindFor(o.gvr); err == nil {
 			return k.Kind
@@ -272,6 +288,16 @@ func objectDetails(namespace, name, kind, gv string) string {
 		return fmt.Sprintf("%s/%s (%s)", namespace, name, gv)
 	}
 	return fmt.Sprintf("%s (%s)", name, gv)
+}
+
+func ageColumnIndices(cols []table.Column) []int {
+	idx := make([]int, 0, len(cols))
+	for i := range cols {
+		if strings.EqualFold(strings.TrimSpace(cols[i].Title), "age") {
+			idx = append(idx, i)
+		}
+	}
+	return idx
 }
 
 // liveObjectRowSource adapts an ObjectsFolder to the rowSource interface while
@@ -653,4 +679,65 @@ func accessorForEvent(obj interface{}) (metav1.Object, bool) {
 		}
 		return accessor, true
 	}
+}
+
+func (o *ObjectsFolder) installAgeHooks(hooks []*ageCellHook) {
+	o.ageMu.Lock()
+	defer o.ageMu.Unlock()
+	if len(hooks) == 0 {
+		o.ageHooks = nil
+		if o.ageTimer != nil {
+			o.ageTimer.Stop()
+			o.ageTimer = nil
+		}
+		return
+	}
+	o.ageHooks = hooks
+	interval := o.nextAgeIntervalLocked(time.Now())
+	o.scheduleAgeTimerLocked(interval)
+}
+
+func (o *ObjectsFolder) nextAgeIntervalLocked(now time.Time) time.Duration {
+	if len(o.ageHooks) == 0 {
+		return 0
+	}
+	var interval time.Duration
+	for _, hook := range o.ageHooks {
+		if hook == nil {
+			continue
+		}
+		if d := hook.nextInterval(now); d > 0 {
+			if interval == 0 || d < interval {
+				interval = d
+			}
+		}
+	}
+	return interval
+}
+
+func (o *ObjectsFolder) scheduleAgeTimerLocked(interval time.Duration) {
+	if o.ageTimer != nil {
+		o.ageTimer.Stop()
+		o.ageTimer = nil
+	}
+	if interval <= 0 {
+		return
+	}
+	o.ageTimer = time.AfterFunc(interval, o.ageTick)
+}
+
+func (o *ObjectsFolder) ageTick() {
+	if ctx := o.Deps.Ctx; ctx != nil {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+	}
+	o.BaseFolder.markDirtyFromSource()
+	o.ageMu.Lock()
+	defer o.ageMu.Unlock()
+	o.ageTimer = nil
+	interval := o.nextAgeIntervalLocked(time.Now())
+	o.scheduleAgeTimerLocked(interval)
 }

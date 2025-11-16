@@ -10,6 +10,8 @@ type RowItem struct {
 	table.SimpleRow
 	details string
 	path    []string
+	// cellsHook customizes cell values before returning them to the table.
+	cellsHook func([]string) []string
 }
 
 func NewRowItem(id string, cells []string, path []string, style *lipgloss.Style) *RowItem {
@@ -38,6 +40,20 @@ func (r *RowItem) Details() string { return r.details }
 func (r *RowItem) Path() []string  { return append([]string(nil), r.path...) }
 func (r *RowItem) ID() string      { return r.SimpleRow.ID }
 
+// Columns returns the row cells, applying any registered hook while keeping the
+// stored SimpleRow slice unchanged for subsequent renders.
+func (r *RowItem) Columns() (string, []string, []*lipgloss.Style, bool) {
+	id, cells, styles, ok := r.SimpleRow.Columns()
+	if !ok || r.cellsHook == nil {
+		return id, cells, styles, ok
+	}
+	cloned := append([]string(nil), cells...)
+	if updated := r.cellsHook(cloned); updated != nil {
+		cloned = updated
+	}
+	return id, cloned, styles, ok
+}
+
 func (r *RowItem) copyFrom(other *RowItem) {
 	if r == nil || other == nil {
 		return
@@ -45,6 +61,7 @@ func (r *RowItem) copyFrom(other *RowItem) {
 	r.SimpleRow = other.SimpleRow
 	r.details = other.details
 	r.path = append([]string(nil), other.path...)
+	r.cellsHook = other.cellsHook
 }
 
 func (r *RowItem) reset(id string, cells []string, path []string, style *lipgloss.Style) {
@@ -62,6 +79,7 @@ func (r *RowItem) reset(id string, cells []string, path []string, style *lipglos
 		r.SimpleRow.Styles[i] = style
 	}
 	r.path = append([]string(nil), path...)
+	r.cellsHook = nil
 }
 
 // SetDetails updates the human-readable details string exposed via Details().
@@ -70,4 +88,13 @@ func (r *RowItem) SetDetails(detail string) {
 		return
 	}
 	r.details = detail
+}
+
+// SetCellsHook installs or clears a transformer that mutates the visible cell
+// slice before rendering (e.g., for dynamic Age values).
+func (r *RowItem) SetCellsHook(hook func([]string) []string) {
+	if r == nil {
+		return
+	}
+	r.cellsHook = hook
 }

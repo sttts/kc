@@ -103,6 +103,7 @@ See `TODO.md` for the active development plan and current tasks. Keep every TODO
 
 ### Permission Issues
 - When commands fail due to permission or sandbox restrictions, stop and escalate to the user for guidance or approval before retrying.
+- Apply the same rule to any `git` command that errors because of permission problems (e.g., failing to create `index.lock`); do not retry without explicit approval or guidance.
 
 ### AI Disclosure
 - Add an explicit co-author trailer to every commit as the last line, using the AI’s name and the maker’s noreply domain, e.g.:

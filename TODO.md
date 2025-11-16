@@ -105,7 +105,7 @@ Current tasks
 ## Backlog (Post M3)
 - [ ] Menu bar (mc-style) with View options: sort keys, direction, column toggles, grouping. *(Later)*
 - [ ] Favorites list of resource types (allow users to add/remove favorites, persist, and use them to populate selectors/shortcuts). *(Later)*
-- [ ] Age column should refresh while seconds/minutes tick even when rows are otherwise unchanged; consider scheduling redraws based on the displayed precision. *(Next)*
+- [x] Age column auto-refreshes while seconds/minutes tick, scheduling redraws based on the displayed precision. *(Done)*
 - [ ] Highlight deleting objects (has deletionTimestamp) in light/bold red so pending deletions are obvious in lists. *(Next)*
 - [ ] Panel modes roadmap:
   - [ ] Provide a logs pin mode so a panel can stay on streaming `kubectl logs` output for the selected object. *(Later)*

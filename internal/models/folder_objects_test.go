@@ -6,6 +6,9 @@ import (
 	"time"
 
 	table "github.com/sttts/kc/internal/table"
+	"github.com/sttts/kc/internal/tablecache"
+	"github.com/sttts/kc/pkg/appconfig"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -92,4 +95,54 @@ func TestLiveObjectRowSourceRefresh(t *testing.T) {
 	if len(secondAgain) != len(rowsSet[1]) {
 		t.Fatalf("unexpected row count on cached read")
 	}
+}
+
+func TestObjectsFolderInstallsAgeHooks(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	folder := NewObjectsFolder(Deps{}, gvr, "default", []string{"namespaces", "default", "pods"}, nil)
+	created := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+	rl := &tablecache.RowList{
+		Columns: []metav1.TableColumnDefinition{
+			{Name: "Name"},
+			{Name: "Age"},
+		},
+		Items: []tablecache.Row{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "pod-a",
+					CreationTimestamp: metav1.NewTime(created),
+				},
+				TableRow: metav1.TableRow{
+					Cells: []interface{}{"/pod-a", "1s"},
+				},
+			},
+		},
+	}
+
+	rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, appconfig.ObjectsOrderName)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+
+	folder.ageMu.Lock()
+	if len(folder.ageHooks) != 1 {
+		t.Fatalf("expected a single age hook, got %d", len(folder.ageHooks))
+	}
+	hook := folder.ageHooks[0]
+	hook.now = func() time.Time { return created.Add(45 * time.Second) }
+	if folder.ageTimer != nil {
+		folder.ageTimer.Stop()
+		folder.ageTimer = nil
+	}
+	folder.ageMu.Unlock()
+
+	_, cells, _, ok := rows[0].Columns()
+	if !ok {
+		t.Fatalf("expected row columns")
+	}
+	if got := cells[1]; got != "45s" {
+		t.Fatalf("expected Age column to update dynamically, got %q", got)
+	}
+
+	folder.installAgeHooks(nil)
 }
