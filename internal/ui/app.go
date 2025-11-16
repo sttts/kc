@@ -767,6 +767,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.pendingCmds = nil
 	}
 	a.pendingCmdsMu.Unlock()
+	viewWasValid := a.viewCacheValid
 
 	// Always adapt size
 	switch msg := msg.(type) {
@@ -1561,6 +1562,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
+	if len(cmds) == 0 && viewWasValid && a.viewCacheValid {
+		return a, nil
+	}
 	return a, tea.Batch(cmds...)
 }
 
