@@ -174,6 +174,7 @@ type App struct {
 	startupIntentApplied   bool
 	helpViewer             *MarkdownHelpViewer
 	podfsFactory           podfs.Factory
+	folderDirtyTimers      [2]*time.Timer
 }
 
 const (
@@ -381,6 +382,7 @@ func (a *App) attachFolderDirtyListener(panelIdx int, folder models.Folder) {
 	if cancelPrev != nil {
 		cancelPrev()
 	}
+	a.stopFolderDirtyTimer(panelIdx)
 	assign := func(func()) {}
 	switch panelIdx {
 	case 0:
@@ -398,10 +400,34 @@ func (a *App) attachFolderDirtyListener(panelIdx int, folder models.Folder) {
 		return
 	}
 	cancel := obs.RegisterDirtyListener(func() {
-		idx := panelIdx
-		a.enqueueCmd(func() tea.Msg { return FolderDirtyMsg{PanelIdx: idx} })
+		a.scheduleFolderDirty(panelIdx)
 	})
 	assign(cancel)
+}
+
+func (a *App) scheduleFolderDirty(panelIdx int) {
+	if panelIdx < 0 || panelIdx >= len(a.folderDirtyTimers) {
+		return
+	}
+	const debounce = 75 * time.Millisecond
+	if timer := a.folderDirtyTimers[panelIdx]; timer != nil {
+		timer.Reset(debounce)
+		return
+	}
+	idx := panelIdx
+	a.folderDirtyTimers[idx] = time.AfterFunc(debounce, func() {
+		a.enqueueCmd(func() tea.Msg { return FolderDirtyMsg{PanelIdx: idx} })
+	})
+}
+
+func (a *App) stopFolderDirtyTimer(panelIdx int) {
+	if panelIdx < 0 || panelIdx >= len(a.folderDirtyTimers) {
+		return
+	}
+	if timer := a.folderDirtyTimers[panelIdx]; timer != nil {
+		timer.Stop()
+		a.folderDirtyTimers[panelIdx] = nil
+	}
 }
 
 func (a *App) panelIndexFor(panel *Panel) (int, bool) {
@@ -1220,6 +1246,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if panel == nil {
 			return a, nil
 		}
+		a.stopFolderDirtyTimer(msg.PanelIdx)
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 		panel.RefreshFolder(ctx)
 		cancel()

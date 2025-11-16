@@ -32,6 +32,18 @@ type Panel struct {
 	widgetFactories      map[PanelViewMode]PanelWidgetFactory
 	lastSelectionID      string
 	lastSelection        models.Item
+	cache                panelRenderCache
+}
+
+type panelRenderCache struct {
+	frameWidth  int
+	frameHeight int
+	path        string
+	header      string
+	content     string
+	footer      string
+	rendered    string
+	focused     bool
 }
 
 const panelContextTimeout = 250 * time.Millisecond
@@ -130,6 +142,7 @@ func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Sel
 		p.lastSelection = sel.Item
 	}
 	p.notifySelectionListeners(ctx, sel)
+	p.invalidateCache()
 	if !changed && !sel.Force {
 		return nil
 	}
@@ -185,10 +198,13 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 	}
 	switch len(cmds) {
 	case 0:
+		p.invalidateCache()
 		return nil
 	case 1:
+		p.invalidateCache()
 		return cmds[0]
 	default:
+		p.invalidateCache()
 		return tea.Batch(cmds...)
 	}
 }
@@ -279,6 +295,7 @@ func (p *Panel) SetFolder(ctx context.Context, f models.Folder, hasBack bool) {
 		lw.SetFolder(ctx, f, hasBack)
 	}
 	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.currentSelectionID(ctx), Path: p.currentPath})
+	p.invalidateCache()
 }
 
 // UseFolder toggles folder-backed rendering.
@@ -287,6 +304,7 @@ func (p *Panel) UseFolder(ctx context.Context, on bool) {
 		lw.UseFolder(on)
 	}
 	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.lastSelectionID, Path: p.currentPath})
+	p.invalidateCache()
 }
 
 // ClearFolder disables folder-backed rendering and clears current folder.
@@ -295,6 +313,7 @@ func (p *Panel) ClearFolder(ctx context.Context) {
 		lw.ClearFolder()
 	}
 	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: "", Path: p.currentPath})
+	p.invalidateCache()
 }
 
 // Folder returns the active folder if the list widget is folder-backed.
@@ -418,6 +437,7 @@ func (p *Panel) RefreshFolder(ctx context.Context) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.RefreshFolder(ctx)
 	}
+	p.invalidateCache()
 	var selItem models.Item
 	if item, ok := p.SelectedNavItem(ctx); ok {
 		selItem = item
@@ -564,6 +584,9 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	contentWidth := max(1, width-2)
 	frameHeight := max(2, height)
 	contentHeight := max(1, frameHeight-2)
+	if cached := p.cachedFrame(width, frameHeight, focused); cached != "" {
+		return cached
+	}
 
 	var (
 		footerFrame  string
@@ -571,8 +594,17 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 		info         panelcontent.FrameInfo
 	)
 
+	lastWidth, lastHeight := -1, -1
+	applyDims := func(w, h int) {
+		if w == lastWidth && h == lastHeight {
+			return
+		}
+		p.SetDimensions(ctx, w, h)
+		lastWidth, lastHeight = w, h
+	}
+
 	for i := 0; i < 3; i++ {
-		p.SetDimensions(ctx, contentWidth, contentHeight)
+		applyDims(contentWidth, contentHeight)
 		info = p.frameInfo(ctx)
 		footerContent := p.renderFooter(ctx, "", info.SuppressFooter)
 		footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
@@ -593,7 +625,7 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	}
 
 	// Ensure final dimensions are applied before rendering.
-	p.SetDimensions(ctx, contentWidth, contentHeight)
+	applyDims(contentWidth, contentHeight)
 	info = p.frameInfo(ctx)
 	footerContent := p.renderFooter(ctx, "", info.SuppressFooter)
 	footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
@@ -603,7 +635,7 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	}
 	frameHeight = max(2, height-footerHeight)
 	contentHeight = max(1, frameHeight-2)
-	p.SetDimensions(ctx, contentWidth, contentHeight)
+	applyDims(contentWidth, contentHeight)
 	info = p.frameInfo(ctx)
 
 	title := info.Breadcrumb
@@ -612,10 +644,12 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	}
 	contentView := p.renderContentFocused(ctx, focused)
 	frame := p.renderFrame(contentView, info, title, width, frameHeight, focused, footerFrame != "")
+	rendered := frame
 	if footerFrame != "" {
-		return lipgloss.JoinVertical(lipgloss.Top, frame, footerFrame)
+		rendered = lipgloss.JoinVertical(lipgloss.Top, frame, footerFrame)
 	}
-	return frame
+	p.cacheFrame(width, frameHeight, title, contentView, footerFrame, rendered, focused)
+	return rendered
 }
 
 // GetCurrentPath returns the current path for breadcrumbs
@@ -629,11 +663,21 @@ func (p *Panel) SetCurrentPath(path string) { p.currentPath = path }
 
 // SetDimensions sets the panel dimensions
 func (p *Panel) SetDimensions(ctx context.Context, width, height int) {
+	if width <= 0 {
+		width = 1
+	}
+	if height <= 0 {
+		height = 1
+	}
+	if p.width == width && p.height == height {
+		return
+	}
 	p.width = width
 	p.height = height
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		widget.Resize(ctx, panelcontent.Size{Width: width, Height: height})
 	}
+	p.invalidateCache()
 }
 
 func (p *Panel) frameInfo(ctx context.Context) panelcontent.FrameInfo {
@@ -734,16 +778,6 @@ func (p *Panel) renderContent(ctx context.Context) string {
 }
 
 // renderContentFocused renders the panel content with focus state
-func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string {
-	if widget := p.ensureActiveWidget(ctx); widget != nil {
-		return widget.View(ctx, panelcontent.Frame{
-			Size:    panelcontent.Size{Width: p.width, Height: p.height},
-			Focused: isFocused,
-		})
-	}
-	return ""
-}
-
 func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) string {
 	if suppress {
 		return ""
@@ -1079,3 +1113,34 @@ func (p *Panel) notifySelectionListeners(ctx context.Context, sel panelcontent.S
 		}
 	}
 }
+func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string {
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		return widget.View(ctx, panelcontent.Frame{
+			Size:    panelcontent.Size{Width: p.width, Height: p.height},
+			Focused: isFocused,
+		})
+	}
+	return ""
+}
+
+func (p *Panel) cachedFrame(width, height int, focused bool) string {
+	if p.cache.frameWidth == width && p.cache.frameHeight == height && p.cache.focused == focused && p.cache.rendered != "" {
+		return p.cache.rendered
+	}
+	return ""
+}
+
+func (p *Panel) cacheFrame(width, height int, title, content, footer, rendered string, focused bool) {
+	p.cache = panelRenderCache{
+		frameWidth:  width,
+		frameHeight: height,
+		path:        title,
+		header:      title,
+		content:     content,
+		footer:      footer,
+		rendered:    rendered,
+		focused:     focused,
+	}
+}
+
+func (p *Panel) invalidateCache() { p.cache = panelRenderCache{} }

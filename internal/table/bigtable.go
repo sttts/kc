@@ -59,6 +59,7 @@ type BigTable struct {
 	// Focus state: when unfocused, the selector highlight is hidden.
 	// The outer component is responsible for routing keys to the focused table.
 	focused bool
+	dirty   bool
 }
 
 // Styles groups all externally configurable styles.
@@ -114,6 +115,7 @@ func NewBigTable(cols []Column, list List, w, h int) BigTable {
 		xOff:      0,
 		hStep:     4,
 		focused:   true,
+		dirty:     true,
 	}
 	return bt
 }
@@ -141,6 +143,7 @@ func (m *BigTable) SetSize(ctx context.Context, w, h int) {
 		return
 	}
 	m.w, m.h = w, h
+	m.dirty = true
 	m.applyMode(ctx)
 }
 
@@ -157,6 +160,7 @@ func (m *BigTable) BorderVertical(ctx context.Context, v bool) *BigTable {
 func (m *BigTable) SetMode(ctx context.Context, md GridMode) {
 	if m.mode != md {
 		m.mode = md
+		m.dirty = true
 		m.applyMode(ctx)
 	}
 }
@@ -178,6 +182,7 @@ func (m *BigTable) SetList(ctx context.Context, list List) {
 	m.window = nil
 	m.windowTop = m.top
 	m.repositionOnDataChange(ctx)
+	m.dirty = true
 	m.rebuildWindow(ctx)
 }
 
@@ -232,6 +237,7 @@ func (m *BigTable) Select(ctx context.Context, id string) bool {
 	} else if m.cursor >= m.top+vis {
 		m.top = max(0, m.cursor-(vis-1))
 	}
+	m.dirty = true
 	m.rebuildWindow(ctx)
 	return true
 }
@@ -243,9 +249,11 @@ func (m *BigTable) Mark(ctx context.Context, id string, selected bool) bool {
 	}
 	if selected {
 		m.selected[id] = struct{}{}
+		m.dirty = true
 		return true
 	}
 	delete(m.selected, id)
+	m.dirty = true
 	return true
 }
 
@@ -254,6 +262,7 @@ func (m *BigTable) ClearMarks() {
 	for id := range m.selected {
 		delete(m.selected, id)
 	}
+	m.dirty = true
 }
 
 // SelectedIDs returns the set of marked row IDs (multi-select state).
@@ -292,6 +301,7 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 						m.top = max(0, m.cursor-(vis-1))
 					}
 				}
+				m.dirty = true
 				m.rebuildWindow(ctx)
 			}
 		case "up", "k":
@@ -300,6 +310,7 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 				if m.cursor < m.top {
 					m.top = m.cursor
 				}
+				m.dirty = true
 				m.rebuildWindow(ctx)
 			}
 		case "down", "j":
@@ -309,6 +320,7 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 				if m.cursor >= m.top+vis {
 					m.top = m.cursor - (vis - 1)
 				}
+				m.dirty = true
 				m.rebuildWindow(ctx)
 			}
 		case "pgup":
@@ -323,6 +335,7 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 			if m.cursor < m.top {
 				m.top = m.cursor
 			}
+			m.dirty = true
 			m.rebuildWindow(ctx)
 		case "pgdown":
 			vis := m.bodyRowsHeight()
@@ -336,16 +349,19 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 			if m.cursor >= m.top+vis {
 				m.top = max(0, m.cursor-(vis-1))
 			}
+			m.dirty = true
 			m.rebuildWindow(ctx)
 		case "home":
 			m.cursor = 0
 			m.top = 0
+			m.dirty = true
 			m.rebuildWindow(ctx)
 		case "end":
 			if n := m.list.Len(ctx); n > 0 {
 				m.cursor = n - 1
 				vis := m.bodyRowsHeight()
 				m.top = max(0, n-vis)
+				m.dirty = true
 				m.rebuildWindow(ctx)
 			}
 		case "left", "h":
@@ -354,6 +370,7 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 				if m.xOff < 0 {
 					m.xOff = 0
 				}
+				m.dirty = true
 				m.rebuildWindow(ctx)
 			}
 		case "right", "l":
@@ -363,6 +380,7 @@ func (m *BigTable) UpdateWithContext(ctx context.Context, msg tea.Msg) (tea.Cmd,
 				if m.xOff < 0 {
 					m.xOff = 0
 				}
+				m.dirty = true
 				m.rebuildWindow(ctx)
 			}
 		}
@@ -388,6 +406,10 @@ func (m *BigTable) refreshRowsOnly(ctx context.Context) { m.rebuildWindow(ctx) }
 // rebuildWindow sets the table rows to the current window [top:top+height)
 // and positions the table cursor at (cursor-top), updating the width cache.
 func (m *BigTable) rebuildWindow(ctx context.Context) {
+	if !m.dirty && m.bodyRow != "" {
+		return
+	}
+	m.dirty = false
 	// Compute how many data rows are visible and the total body height.
 	rowsVisible := m.bodyRowsHeight()
 	// rowsVisible already accounts for header and border lines.
@@ -620,18 +642,30 @@ func clampWindowSize(total, top, rowsVisible int) int {
 func (m *BigTable) applyMode(ctx context.Context) { m.rebuildWindow(ctx) }
 
 // Refresh forces a re-render of the current window without changing state.
-func (m *BigTable) Refresh(ctx context.Context) { m.rebuildWindow(ctx) }
+func (m *BigTable) Refresh(ctx context.Context) {
+	m.dirty = true
+	m.rebuildWindow(ctx)
+}
 
 // Focus sets the table as focused (selector visible on the focused row).
-func (m *BigTable) Focus(ctx context.Context) { m.focused = true; m.rebuildWindow(ctx) }
+func (m *BigTable) Focus(ctx context.Context) {
+	m.focused = true
+	m.dirty = true
+	m.rebuildWindow(ctx)
+}
 
 // Blur sets the table as unfocused (selector hidden).
-func (m *BigTable) Blur(ctx context.Context) { m.focused = false; m.rebuildWindow(ctx) }
+func (m *BigTable) Blur(ctx context.Context) {
+	m.focused = false
+	m.dirty = true
+	m.rebuildWindow(ctx)
+}
 
 // SetFocused toggles focus explicitly and returns the receiver for chaining.
 func (m *BigTable) SetFocused(ctx context.Context, v bool) *BigTable {
 	if m.focused != v {
 		m.focused = v
+		m.dirty = true
 		m.rebuildWindow(ctx)
 	}
 	return m
