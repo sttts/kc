@@ -164,6 +164,10 @@ type App struct {
 	discoveryCancel func()
 	// Recent Bubble Tea messages for idle-loop diagnostics
 	msgLog []string
+	// Cached App.View rendering
+	viewCache       string
+	viewCacheCursor *tea.Cursor
+	viewCacheValid  bool
 	// Namespace auto-navigation state
 	namespaceAutoTarget    string
 	namespaceAutoAttempts  int
@@ -250,6 +254,16 @@ func (a *App) enqueueCmd(cmd tea.Cmd) {
 	a.pendingCmdsMu.Lock()
 	a.pendingCmds = append(a.pendingCmds, cmd)
 	a.pendingCmdsMu.Unlock()
+}
+
+func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
+	if a.terminal == nil {
+		return nil
+	}
+	model, cmd := a.terminal.Update(msg)
+	a.terminal = model.(*Terminal)
+	a.invalidateView(reason)
+	return cmd
 }
 
 func cloneConfig(cfg *appconfig.Config) *appconfig.Config {
@@ -358,6 +372,17 @@ func (a *App) panelByIndex(idx int) *Panel {
 	return a.leftPanel
 }
 
+func (a *App) setActivePanel(idx int, reason string) {
+	if idx < 0 || idx > 1 {
+		return
+	}
+	if a.activePanel == idx {
+		return
+	}
+	a.activePanel = idx
+	a.invalidateView(reason)
+}
+
 func (a *App) setPanelFolder(ctx context.Context, panelIdx int, folder models.Folder, hasBack bool) {
 	panel := a.panelByIndex(panelIdx)
 	if panel == nil {
@@ -366,6 +391,31 @@ func (a *App) setPanelFolder(ctx context.Context, panelIdx int, folder models.Fo
 	panel.SetFolder(ctx, folder, hasBack)
 	panel.RefreshFolder(ctx)
 	a.attachFolderDirtyListener(panelIdx, folder)
+	a.invalidateView(fmt.Sprintf("panel %d folder assigned", panelIdx))
+}
+
+func (a *App) showModal(key string) {
+	if a.modalManager == nil {
+		return
+	}
+	a.modalManager.Show(key)
+	a.invalidateView("show modal " + key)
+}
+
+func (a *App) hideModal() {
+	if a.modalManager == nil {
+		return
+	}
+	a.modalManager.Hide()
+	a.invalidateView("hide modal")
+}
+
+func (a *App) hideModalName(name string) {
+	if a.modalManager == nil {
+		return
+	}
+	a.modalManager.HideName(name)
+	a.invalidateView("hide modal " + name)
 }
 
 func (a *App) attachFolderDirtyListener(panelIdx int, folder models.Folder) {
@@ -498,10 +548,11 @@ func (a *App) setPanelWidthPercent(panelIdx int, percent int) {
 		a.rightConfig.Panel.Width.RightPercent = a.rightPanelWidthPercent
 	}
 	if a.leftPanelWidthPercent == 0 && a.rightPanelWidthPercent == 100 {
-		a.activePanel = 1
+		a.setActivePanel(1, "panel width forced right")
 	} else if a.leftPanelWidthPercent == 100 && a.rightPanelWidthPercent == 0 {
-		a.activePanel = 0
+		a.setActivePanel(0, "panel width forced left")
 	}
+	a.invalidateView("panel width percent")
 }
 
 var panelWidthCycle = panelWidthPercentOptions
@@ -754,9 +805,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Width:  msg.Width,
 				Height: msg.Height - 1,
 			}
-			model, cmd := a.terminal.Update(terminalMsg)
-			a.terminal = model.(*Terminal)
-			if cmd != nil {
+			if cmd := a.updateTerminal(terminalMsg, "window resize"); cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}
@@ -861,7 +910,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					_ = appconfig.Save(a.cfg)
 				}
 				if m.Close && !closedBySubMsg {
-					a.modalManager.Hide()
+					a.hideModal()
 				}
 				return a, tea.Batch(subCmds...)
 			case ResourcesOptionsChangedMsg:
@@ -929,7 +978,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				if m.Close {
-					a.modalManager.Hide()
+					a.hideModal()
 				}
 				return a, nil
 			case ObjectOptionsChangedMsg:
@@ -986,7 +1035,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				if m.Close {
-					a.modalManager.Hide()
+					a.hideModal()
 				}
 				return a, nil
 			}
@@ -997,9 +1046,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// terminal (process output, window size). Background is snapshotted,
 			// so this stays light and keeps the 2-line terminal fresh.
 			if _, isKey := msg.(tea.KeyMsg); !isKey && a.terminal != nil {
-				tmodel, tcmd := a.terminal.Update(msg)
-				a.terminal = tmodel.(*Terminal)
-				cmds = append(cmds, tcmd)
+				if tcmd := a.updateTerminal(msg, "modal forward"); tcmd != nil {
+					cmds = append(cmds, tcmd)
+				}
 			}
 			return a, tea.Batch(cmds...)
 		}
@@ -1015,24 +1064,28 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.token == a.busyToken {
 			a.busyActive = true
 			a.busyFrame = 0
+			a.invalidateView("busy show")
 			return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return BusyTickMsg{} })
 		}
 		return a, nil
 	case BusyTickMsg:
 		if a.busyActive {
 			a.busyFrame = (a.busyFrame + 1) % 10
+			a.invalidateView("busy tick")
 			return a, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return BusyTickMsg{} })
 		}
 		return a, nil
 	case BusyHideMsg:
 		if msg.token == a.busyToken {
 			a.busyActive = false
+			a.invalidateView("busy hide")
 		}
 		return a, nil
 	case busyDoneMsg:
 		if msg.token == a.busyToken {
 			a.busyActive = false
 			a.busyToken++
+			a.invalidateView("busy done")
 		}
 		// Re-dispatch the original message for normal handling
 		return a, func() tea.Msg { return msg.msg }
@@ -1040,11 +1093,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.toastActive = true
 		a.toastText = msg.text
 		a.toastUntil = time.Now().Add(msg.ttl)
+		a.invalidateView("toast show")
 		return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
 	case toastTickMsg:
 		if a.toastActive {
 			if time.Now().After(a.toastUntil) {
 				a.toastActive = false
+				a.invalidateView("toast hide")
 			} else {
 				return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
 			}
@@ -1066,7 +1121,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case NamespaceCreateResultMsg:
 		if msg.Close {
-			a.modalManager.Hide()
+			a.hideModal()
 			if a.namespaceInput != nil {
 				a.namespaceInput.Reset()
 			}
@@ -1086,7 +1141,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case CopyToLocalResultMsg:
 		if msg.Close {
-			a.modalManager.Hide()
+			a.hideModal()
 			if a.copyInput != nil {
 				a.copyInput.BlurInputs()
 			}
@@ -1150,7 +1205,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DeleteConfirmMsg:
 		target := a.pendingDelete
 		if msg.Close {
-			a.modalManager.Hide()
+			a.hideModal()
 		}
 		// Clear pending delete regardless of confirmation outcome once we've captured it.
 		a.pendingDelete = nil
@@ -1211,7 +1266,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		a.modalManager.HideName(panelModeModalKey(msg.PanelIndex))
+		a.hideModalName(panelModeModalKey(msg.PanelIndex))
 		return a, tea.Batch(cmds...)
 	case resourceDeletedMsg:
 		if msg.err != nil {
@@ -1236,6 +1291,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 		panel.RefreshFolder(ctx)
 		cancel()
+		a.invalidateView(fmt.Sprintf("folder dirty panel %d", msg.PanelIdx))
 		return a, nil
 	case DiscoveryRefreshedMsg:
 		a.handleDiscoveryRefresh()
@@ -1263,6 +1319,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Toggle terminal mode
 			a.showTerminal = !a.showTerminal
 			a.terminal.SetShowPanels(!a.showTerminal)
+			a.invalidateView("ctrl+o toggle terminal")
 			// Always keep terminal focused for typing
 			a.terminal.Focus()
 			return a, nil
@@ -1273,15 +1330,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			if leftWidth <= 0 {
-				a.activePanel = 1
+				a.setActivePanel(1, "tab switch right-only")
 				return a, nil
 			}
 			if rightWidth <= 0 {
-				a.activePanel = 0
+				a.setActivePanel(0, "tab switch left-only")
 				return a, nil
 			}
 			// Switch between panels when both are visible
-			a.activePanel = (a.activePanel + 1) % 2
+			a.setActivePanel((a.activePanel+1)%2, "tab key toggle")
 			return a, nil
 
 		case "f10":
@@ -1403,19 +1460,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Only handle Ctrl-O to return to panel mode
 			if msg.String() == "ctrl+o" {
 				a.showTerminal = false
+				a.invalidateView("ctrl+o exit terminal")
 				return a, nil
 			}
 			// Everything else goes to the terminal
-			model, cmd := a.terminal.Update(msg)
-			a.terminal = model.(*Terminal)
-			cmds = append(cmds, cmd)
+			if cmd := a.updateTerminal(msg, "terminal key"); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 		} else {
 			// In panel mode, use smart key routing based on terminal state
 			// If user typed in the 2-line terminal, Enter and Ctrl+C must be SENT to the terminal,
 			// then reset typed state to return focus to the panels.
 			if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() {
-				model, cmd := a.terminal.Update(msg) // deliver to terminal
-				a.terminal = model.(*Terminal)
+				cmd := a.updateTerminal(msg, "panel forwarded to terminal")
 				a.terminal.ClearTyped() // reset typed; next keys route to panels
 				return a, cmd
 			}
@@ -1432,9 +1489,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				// Route to terminal
-				model, cmd := a.terminal.Update(msg)
-				a.terminal = model.(*Terminal)
-				cmds = append(cmds, cmd)
+				if cmd := a.updateTerminal(msg, "panel routed to terminal"); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
 		}
 
@@ -1446,12 +1503,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if rel, ok := mm.(tea.MouseReleaseMsg); ok && rel.Mouse().Button == tea.MouseLeft {
 						a.showTerminal = false
 						a.terminal.SetShowPanels(true)
+						a.invalidateView("terminal bar click exit")
 					}
 					return a, nil
 				}
-				model, cmd := a.terminal.Update(mm)
-				a.terminal = model.(*Terminal)
-				cmds = append(cmds, cmd)
+				if cmd := a.updateTerminal(mm, "terminal mouse"); cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 				return a, tea.Batch(cmds...)
 			}
 			m := mm.Mouse()
@@ -1497,9 +1555,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, tea.Batch(cmds...)
 		}
-		model, cmd := a.terminal.Update(msg)
-		a.terminal = model.(*Terminal)
-		cmds = append(cmds, cmd)
+		if cmd := a.updateTerminal(msg, ""); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
 
 	}
 
@@ -1597,9 +1655,13 @@ func (a *App) shouldRouteToPanel(key string) bool {
 
 // View renders the application
 func (a *App) View() (string, *tea.Cursor) {
+	if a.viewCacheValid {
+		return a.cachedView()
+	}
 	// In fullscreen terminal mode, only show terminal
 	if a.showTerminal {
 		terminalView, terminalCursor := a.renderTerminalView()
+		a.cacheView(terminalView, terminalCursor)
 		return terminalView, terminalCursor
 	}
 
@@ -1609,9 +1671,11 @@ func (a *App) View() (string, *tea.Cursor) {
 	// Overlay modal if visible
 	if a.modalManager.IsModalVisible() {
 		modalView, modalCursor := a.modalManager.View()
+		a.cacheView(modalView, modalCursor)
 		return modalView, modalCursor
 	}
 
+	a.cacheView(mainView, mainCursor)
 	return mainView, mainCursor
 }
 
@@ -1865,6 +1929,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			{label: uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels"), enabled: true, action: func() tea.Cmd {
 				a.showTerminal = false
 				a.terminal.SetShowPanels(true)
+				a.invalidateView("function bar return to panels")
 				return nil
 			}},
 		}
@@ -1912,6 +1977,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
 				a.showTerminal = true
 				a.terminal.SetShowPanels(false)
+				a.invalidateView("function bar fullscreen")
 				return nil
 			}},
 		}
@@ -2202,7 +2268,7 @@ func (a *App) showPanelModeModal(panelIdx int) tea.Cmd {
 	offsetY := headerOffset
 	modal.SetWindowOffset(offsetX, offsetY)
 	modal.SetOnClose(func() tea.Cmd { return nil })
-	a.modalManager.Show(key)
+	a.showModal(key)
 	return nil
 }
 
@@ -2252,7 +2318,7 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseM
 		return nil, nil, PanelMouseMsg{}, panelIdx, false
 	}
 	if panelIdx != a.activePanel {
-		a.activePanel = panelIdx
+		a.setActivePanel(panelIdx, "panel mouse focus")
 	}
 	model, cmd := panel.Update(panelMsg)
 	if model != nil {
@@ -2369,7 +2435,7 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 
 	a.layoutViewOptionsModal(modal, content, panelIdx, "")
 	modal.SetOnClose(func() tea.Cmd { return nil })
-	a.modalManager.Show("view_options")
+	a.showModal("view_options")
 	return nil
 }
 
@@ -2416,7 +2482,7 @@ func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
 	}
 	a.layoutViewOptionsModal(modal, content, -1, base)
 	a.viewerOptionsTarget = target
-	a.modalManager.Show("viewer_options")
+	a.showModal("viewer_options")
 	return nil
 }
 
@@ -2424,13 +2490,13 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 	target := a.viewerOptionsTarget
 	if msg.Viewer == nil {
 		if msg.Close {
-			a.modalManager.Hide()
+			a.hideModal()
 		}
 		return nil
 	}
 	if target == nil {
 		if msg.Close {
-			a.modalManager.Hide()
+			a.hideModal()
 		}
 		return nil
 	}
@@ -2457,7 +2523,7 @@ func (a *App) applyViewerOptions(msg ViewOptionsCommittedMsg) tea.Cmd {
 		}
 	}
 	if msg.Close {
-		a.modalManager.Hide()
+		a.hideModal()
 	}
 	a.viewerOptionsTarget = nil
 	return nil
@@ -2635,7 +2701,7 @@ func (a *App) createNamespaceForPanel(panel *Panel) tea.Cmd {
 		a.namespaceInput.Reset()
 		return nil
 	})
-	a.modalManager.Show("namespace_create")
+	a.showModal("namespace_create")
 	return nil
 }
 
@@ -2706,7 +2772,7 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 		a.pendingDelete = nil
 		return nil
 	})
-	a.modalManager.Show("delete_confirm")
+	a.showModal("delete_confirm")
 	return nil
 }
 
@@ -2802,7 +2868,7 @@ func (a *App) showHelp() tea.Cmd {
 		a.helpViewer.ScrollTop()
 		return nil
 	})
-	a.modalManager.Show("help")
+	a.showModal("help")
 	return nil
 }
 
@@ -2865,7 +2931,7 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 		onEdit = func() tea.Cmd { return a.editSelectionForPanel(panel) }
 	}
 	view := NewTextViewer(title, body, lang, mime, filename, theme, onEdit, nil, func() tea.Cmd {
-		a.modalManager.Hide()
+		a.hideModal()
 		return nil
 	})
 	view.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
@@ -2876,7 +2942,7 @@ func (a *App) openViewerForPanel(panel *Panel) tea.Cmd {
 	modal.SetDimensions(a.width, a.height)
 	modal.SetCloseOnSingleEsc(false)
 	a.modalManager.Register("yaml_viewer", modal)
-	a.modalManager.Show("yaml_viewer")
+	a.showModal("yaml_viewer")
 	return nil
 }
 
@@ -2922,7 +2988,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 	logsViewer.SetWrapMode(a.cfg != nil && strings.EqualFold(a.cfg.Viewer.Mode, appconfig.ViewerModeWrap))
 	logsViewer.SetOnOptions(func() tea.Cmd { return a.showViewerOptionsModal(logsViewer) })
 	logsViewer.SetOnClose(func() tea.Cmd {
-		a.modalManager.Hide()
+		a.hideModal()
 		return nil
 	})
 	modalTitle := a.modalTitleFromItem(item, title)
@@ -2935,7 +3001,7 @@ func (a *App) openLogsViewer(item models.Item, spec models.LogsSpec) tea.Cmd {
 		return nil
 	})
 	a.modalManager.Register("logs_viewer", modal)
-	a.modalManager.Show("logs_viewer")
+	a.showModal("logs_viewer")
 	return logsViewer.Init()
 }
 
@@ -3066,7 +3132,7 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 	// Ensure the UI returns to the primary panel view before launching the editor.
 	if a.modalManager != nil {
 		for a.modalManager.IsModalVisible() {
-			a.modalManager.Hide()
+			a.hideModal()
 		}
 	}
 	if a.showTerminal {
@@ -3074,6 +3140,7 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 		if a.terminal != nil {
 			a.terminal.SetShowPanels(true)
 		}
+		a.invalidateView("kubectl edit exit terminal")
 	}
 
 	cmd := exec.Command("kubectl", args...)
@@ -3145,7 +3212,7 @@ func (a *App) applyStartupIntentGet() tea.Cmd {
 			a.notifyIntentError("kubectl get %s: %v", res.name, err)
 			return nil
 		}
-		a.activePanel = 0
+		a.setActivePanel(0, "startup get focus left")
 		names := group.Names
 		switch len(names) {
 		case 0:
@@ -3226,7 +3293,7 @@ func (a *App) applyStartupIntentLogs() tea.Cmd {
 	ctxSel, cancelSel := context.WithTimeout(a.ctx, panelContextTimeout)
 	a.leftPanel.SelectByRowID(ctxSel, "logs_latest")
 	cancelSel()
-	a.activePanel = 0
+	a.setActivePanel(0, "startup logs focus left")
 	return a.openLogsViewerForIntent(intent)
 }
 
@@ -3683,7 +3750,7 @@ func (a *App) showCopyDialog(req *copyRequest) tea.Cmd {
 		return nil
 	})
 	a.pendingCopy = req
-	a.modalManager.Show("copy_local")
+	a.showModal("copy_local")
 	return a.copyInput.FocusPath()
 }
 
@@ -4124,11 +4191,11 @@ func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 	a.applyResourceOptions(a.leftPanel)
 	a.applyResourceOptions(a.rightPanel)
 	a.leftPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
-		a.activePanel = 0
+		a.setActivePanel(0, "left panel folder nav focus")
 		a.handleFolderNav(back, selID, next)
 	})
 	a.rightPanel.SetFolderNavHandler(func(back bool, selID string, next models.Folder) {
-		a.activePanel = 1
+		a.setActivePanel(1, "right panel folder nav focus")
 		a.handleFolderNav(back, selID, next)
 	})
 	ctxResetL, cancelResetL := context.WithTimeout(a.ctx, panelContextTimeout)
@@ -4502,4 +4569,37 @@ func describeTeaMsg(msg tea.Msg) string {
 	default:
 		return fmt.Sprintf("%T", msg)
 	}
+}
+
+func (a *App) invalidateView(reason string) {
+	if a == nil {
+		return
+	}
+	if reason != "" {
+		ctrllog.FromContext(a.ctx).WithName("ui").Info("view invalidated", "reason", reason)
+	}
+	a.viewCacheValid = false
+}
+
+func (a *App) cacheView(view string, cursor *tea.Cursor) {
+	a.viewCache = view
+	if cursor != nil {
+		copy := *cursor
+		a.viewCacheCursor = &copy
+	} else {
+		a.viewCacheCursor = nil
+	}
+	a.viewCacheValid = true
+}
+
+func (a *App) cachedView() (string, *tea.Cursor) {
+	if !a.viewCacheValid {
+		return "", nil
+	}
+	var cursorCopy *tea.Cursor
+	if a.viewCacheCursor != nil {
+		copy := *a.viewCacheCursor
+		cursorCopy = &copy
+	}
+	return a.viewCache, cursorCopy
 }
