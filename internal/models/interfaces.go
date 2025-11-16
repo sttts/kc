@@ -130,3 +130,8 @@ func DimStyle() *lipgloss.Style {
 	s := lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("#7D7D7D"))
 	return &s
 }
+
+var deletingRowStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FF7B7B"))
+
+// DeletingStyle highlights rows representing objects pending finalization.
+func DeletingStyle() *lipgloss.Style { return &deletingRowStyle }

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/lipgloss/v2"
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/internal/tablecache"
 	"github.com/sttts/kc/pkg/appconfig"
@@ -93,7 +94,6 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 	idxs := orderRowIndices(rl.Items, order)
 	rows := make([]table.Row, 0, len(idxs))
 	var hooks []*ageCellHook
-	nameStyle := WhiteStyle()
 	gvStr := o.gvr.GroupVersion().String()
 	kind := o.kindString()
 	ctor, hasChild := o.childConstructor()
@@ -104,7 +104,8 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 		id := name
 		cells := buildCells(rr.Cells, vis, hasChild)
 		basePath := append(append([]string{}, o.Path()...), name)
-		obj := NewObjectRow(id, cells, basePath, o.gvr, o.namespace, name, nameStyle)
+		style := styleForRow(rr.ObjectMeta.DeletionTimestamp)
+		obj := NewObjectRow(id, cells, basePath, o.gvr, o.namespace, name, style)
 		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
 		obj.RowItem.details = objectDetails(o.namespace, name, kind, gvStr)
@@ -131,22 +132,29 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order string) []table.Row {
 	o.installAgeHooks(nil)
 	names := make([]string, 0, len(list.Items))
+	byName := make(map[string]*unstructured.Unstructured, len(list.Items))
 	for i := range list.Items {
 		names = append(names, list.Items[i].GetName())
+		byName[list.Items[i].GetName()] = &list.Items[i]
 	}
 	sort.Strings(names)
 	rows := make([]table.Row, 0, len(names))
-	nameStyle := WhiteStyle()
 	gvStr := o.gvr.GroupVersion().String()
 	kind := o.kindString()
 	ctor, hasChild := o.childConstructor()
 	for _, name := range names {
+		item := byName[name]
 		basePath := append(append([]string{}, o.Path()...), name)
 		title := name
 		if hasChild {
 			title = "/" + name
 		}
-		obj := NewObjectRow(name, []string{title}, basePath, o.gvr, o.namespace, name, nameStyle)
+		var deletionTimestamp *metav1.Time
+		if item != nil {
+			deletionTimestamp = item.GetDeletionTimestamp()
+		}
+		style := styleForRow(deletionTimestamp)
+		obj := NewObjectRow(name, []string{title}, basePath, o.gvr, o.namespace, name, style)
 		obj.SetResourceVerbs(o.verbs)
 		obj.WithViewContent(objectViewContent(o.Deps, o.gvr, o.namespace, name))
 		obj.RowItem.details = objectDetails(o.namespace, name, kind, gvStr)
@@ -288,6 +296,13 @@ func objectDetails(namespace, name, kind, gv string) string {
 		return fmt.Sprintf("%s/%s (%s)", namespace, name, gv)
 	}
 	return fmt.Sprintf("%s (%s)", name, gv)
+}
+
+func styleForRow(deletionTimestamp *metav1.Time) *lipgloss.Style {
+	if deletionTimestamp != nil && !deletionTimestamp.IsZero() {
+		return DeletingStyle()
+	}
+	return WhiteStyle()
 }
 
 func ageColumnIndices(cols []table.Column) []int {

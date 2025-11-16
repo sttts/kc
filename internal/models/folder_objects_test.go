@@ -9,6 +9,7 @@ import (
 	"github.com/sttts/kc/internal/tablecache"
 	"github.com/sttts/kc/pkg/appconfig"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -145,4 +146,65 @@ func TestObjectsFolderInstallsAgeHooks(t *testing.T) {
 	}
 
 	folder.installAgeHooks(nil)
+}
+
+func TestObjectsFolderMarksDeletingRowsRed(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	folder := NewObjectsFolder(Deps{}, gvr, "default", []string{"namespaces", "default", "pods"}, nil)
+	now := metav1.NewTime(time.Now())
+	rl := &tablecache.RowList{
+		Columns: []metav1.TableColumnDefinition{
+			{Name: "Name"},
+		},
+		Items: []tablecache.Row{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "delete-me",
+					DeletionTimestamp: &now,
+				},
+				TableRow: metav1.TableRow{Cells: []interface{}{"/delete-me"}},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "regular"},
+				TableRow:   metav1.TableRow{Cells: []interface{}{"/regular"}},
+			},
+		},
+	}
+
+	rows := folder.rowsFromRowList(rl, appconfig.ColumnsModeNormal, appconfig.ObjectsOrderName)
+	var deleting table.Row
+	for _, row := range rows {
+		id, _, _, _ := row.Columns()
+		if id == "delete-me" {
+			deleting = row
+			break
+		}
+	}
+	if deleting == nil {
+		t.Fatalf("expected to find deleting row")
+	}
+	_, _, styles, _ := deleting.Columns()
+	if len(styles) == 0 || styles[0] != DeletingStyle() {
+		t.Fatalf("expected deleting row to use red style")
+	}
+}
+
+func TestObjectsFolderRowsFromListDeletingStyle(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
+	folder := NewObjectsFolder(Deps{}, gvr, "default", []string{"namespaces", "default", "configmaps"}, nil)
+	ts := metav1.NewTime(time.Now())
+	list := &unstructured.UnstructuredList{}
+	obj := unstructured.Unstructured{}
+	obj.SetName("delete-me")
+	obj.SetDeletionTimestamp(&ts)
+	list.Items = append(list.Items, obj)
+
+	rows := folder.rowsFromList(list, appconfig.ObjectsOrderName)
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d", len(rows))
+	}
+	_, _, styles, _ := rows[0].Columns()
+	if len(styles) == 0 || styles[0] != DeletingStyle() {
+		t.Fatalf("expected deleting style for fallback list path")
+	}
 }

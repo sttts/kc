@@ -106,7 +106,7 @@ Current tasks
 - [ ] Menu bar (mc-style) with View options: sort keys, direction, column toggles, grouping. *(Later)*
 - [ ] Favorites list of resource types (allow users to add/remove favorites, persist, and use them to populate selectors/shortcuts). *(Later)*
 - [x] Age column auto-refreshes while seconds/minutes tick, scheduling redraws based on the displayed precision. *(Done)*
-- [ ] Highlight deleting objects (has deletionTimestamp) in light/bold red so pending deletions are obvious in lists. *(Next)*
+- [x] Highlight deleting objects (has deletionTimestamp) in light/bold red so pending deletions are obvious in lists. *(Done)*
 - [ ] Panel modes roadmap:
   - [ ] Provide a logs pin mode so a panel can stay on streaming `kubectl logs` output for the selected object. *(Later)*
   - [ ] Implement a Top/metrics mode to show resource usage summaries. *(Later)*
