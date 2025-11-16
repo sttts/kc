@@ -96,7 +96,7 @@
 ### Environment Variables (Go builds)
 - Never set `GOPATH` or `GOCACHE` in commands or CI. Use the default environment so Go’s module and toolchain behavior works as intended.
 
-See `TODO.md` for the active development plan and current tasks.
+See `TODO.md` for the active development plan and current tasks. Keep every TODO entry prefixed with `- [ ]` / `- [x]` and check off items as soon as they are completed.
 
 ### Git Hygiene
 - If `index.lock` exists or a commit fails due to a lock, do not delete the lock; simply retry the operation later. Avoid forceful lock removal.
