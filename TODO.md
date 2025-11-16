@@ -103,19 +103,19 @@ Current tasks
 - [ ] Add small unit tests for command construction and state.
 
 ## Backlog (Post M3)
-- [ ] Menu bar (mc-style) with View options: sort keys, direction, column toggles, grouping.
-- [ ] Favorites list of resource types (allow users to add/remove favorites, persist, and use them to populate selectors/shortcuts).
-- [ ] Age column should refresh while seconds/minutes tick even when rows are otherwise unchanged; consider scheduling redraws based on the displayed precision.
-- [ ] Highlight deleting objects (has deletionTimestamp) in light/bold red so pending deletions are obvious in lists.
+- [ ] Menu bar (mc-style) with View options: sort keys, direction, column toggles, grouping. *(Later)*
+- [ ] Favorites list of resource types (allow users to add/remove favorites, persist, and use them to populate selectors/shortcuts). *(Later)*
+- [ ] Age column should refresh while seconds/minutes tick even when rows are otherwise unchanged; consider scheduling redraws based on the displayed precision. *(Next)*
+- [ ] Highlight deleting objects (has deletionTimestamp) in light/bold red so pending deletions are obvious in lists. *(Next)*
 - [ ] Panel modes roadmap:
-  - [ ] Provide a logs pin mode so a panel can stay on streaming `kubectl logs` output for the selected object.
-  - [ ] Implement a Top/metrics mode to show resource usage summaries.
-  - [ ] Add Ctrl+U (or similar) to swap left/right panel contents.
-- [ ] Selection sync options: let users choose whether describe/manifest follow left→right or right→left selection, or lock a panel to a specific resource.
-- [ ] Auto-refresh indicator in detail views (spinner/toast) so users know when describe/manifest content refreshes.
-- [ ] API group hierarchy mode under `/groups/...`.
-- [ ] Metrics integration for Top and consumption sorts; graceful degradation.
-- [ ] Extensible actions system: per-resource action registry and external tool integration with context/env passing.
+  - [ ] Provide a logs pin mode so a panel can stay on streaming `kubectl logs` output for the selected object. *(Later)*
+  - [ ] Implement a Top/metrics mode to show resource usage summaries. *(Later)*
+  - [ ] Add Ctrl+U (or similar) to swap left/right panel contents. *(Next)*
+- [ ] Selection sync options: let users choose whether describe/manifest follow left→right or right→left selection, or lock a panel to a specific resource. *(Needs clarification)*
+- [ ] Auto-refresh indicator in detail views (spinner/toast) so users know when describe/manifest content refreshes. *(Next)*
+- [ ] API group hierarchy mode under `/groups/...`. *(Later)*
+- [ ] Metrics integration for Top and consumption sorts; graceful degradation. *(Later)*
+- [ ] Extensible actions system: per-resource action registry and external tool integration with context/env passing. *(Later)*
 
 Tracking
 - Non-trivial logic MUST be unit-tested (see AGENTS.md).
@@ -125,14 +125,7 @@ Tracking
 - [ ] Non-trivial logic unit-tested per AGENTS.md.
 - [ ] Docs updated (README, REQUIREMENTS) as features land.
 - [ ] Basic performance sanity: UI remains responsive under list updates and watches.
-- [ ] Panel filtering & find
-  - [ ] Add object-list filtering (menu item) in panels; apply to current listing.
-  - [ ] Implement `Ctrl+F` find in panels with highlighted match and `F2` next.
-  - [ ] Add horizontal scrolling in panel object viewers similar to YAML (Left/Right, Ctrl-A/E), no wrapping.
-- [ ] Wire watchers for group-level counts, or document that counts update on next access; consider caching counts with debounce.
-- [ ] Extend GVR→child registry with more defaults as needed (e.g., deployments→replicasets) and provide a public registration hook.
-- [ ] ConfigMap/Secret key editing (`F4`): launch an editor modal or external tool to mutate individual keys, then refresh the parent object.
+- [ ] Extend GVR→child registry with more defaults as needed (e.g., deployments→replicasets) and provide a public registration hook. *(Next - lower priority)*
 - [ ] Cleanup/refactors backlog:
-  - [ ] Remove temporary panel/panelMode debug logging or gate it behind verbose levels.
-  - [ ] Factor selection replay logic into a helper to avoid duplicated “fetch/force notify” code.
-  - [ ] Broaden panel tests to cover manifest/list modes and selection replay permutations.
+  - [ ] Factor selection replay logic into a helper to avoid duplicated “fetch/force notify” code. *(Next)*
+  - [ ] Broaden panel tests to cover manifest/list modes and selection replay permutations. *(Next)*
