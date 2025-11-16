@@ -23,7 +23,7 @@ Bubble Tea re-renders every time we return from `Update`, even if state hasn’t
 - **Idle/keepalive messages**: FolderTickMsg (only needed as a fallback), BusyTickMsg (spinner), toastTickMsg. If they do not change state (e.g., spinner hidden, folder not dirty), absorb them and return `nil` so Bubble Tea doesn’t render.
 
 ### 2. Dirty Flags & Render Cache
-- Each panel already caches its last rendered frame. Expose `Panel.HasCachedFrame(width,height,focused)` so App can skip calling `Render` when nothing invalidated the cache.
+- Panels now cache their last rendered frame (keyed by width/height/focus) and expose `Panel.HasCachedFrame(...)`. Any state mutation (selection changes, SetDimensions, folder refreshes, etc.) invalidates the cache to guarantee correctness.
 - Track per-panel dirty flags set by: selection changes, folder dirty listener, SetDimensions, mode/focus changes.
 - When a dirty flag is false and there is no toast/busy update, skip returning a new model from `App.Update` (`return a, nil`).
 

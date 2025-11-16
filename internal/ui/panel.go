@@ -32,6 +32,11 @@ type Panel struct {
 	widgetFactories      map[PanelViewMode]PanelWidgetFactory
 	lastSelectionID      string
 	lastSelection        models.Item
+	renderCache          string
+	renderCacheWidth     int
+	renderCacheHeight    int
+	renderCacheFocused   bool
+	renderCacheValid     bool
 }
 
 const panelContextTimeout = 250 * time.Millisecond
@@ -59,6 +64,22 @@ func NewPanel(title string) *Panel {
 		return manifestwidget.New(panel.manifestWidgetDeps())
 	})
 	return p
+}
+
+func (p *Panel) invalidateRenderCache() {
+	p.renderCacheValid = false
+}
+
+func (p *Panel) renderCacheMatches(width, height int, focused bool) bool {
+	return p.renderCacheValid &&
+		p.renderCacheWidth == width &&
+		p.renderCacheHeight == height &&
+		p.renderCacheFocused == focused
+}
+
+// HasCachedFrame reports whether the last render can be reused for the given size/focus.
+func (p *Panel) HasCachedFrame(width, height int, focused bool) bool {
+	return p.renderCacheMatches(width, height, focused)
 }
 
 func (p *Panel) listWidgetDeps() panelcontent.WidgetDeps {
@@ -130,6 +151,9 @@ func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Sel
 		p.lastSelection = sel.Item
 	}
 	p.notifySelectionListeners(ctx, sel)
+	if changed || sel.Force {
+		p.invalidateRenderCache()
+	}
 	if !changed && !sel.Force {
 		return nil
 	}
@@ -155,6 +179,9 @@ func (p *Panel) RegisterMode(mode PanelViewMode, factory PanelWidgetFactory) {
 func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 	if current := p.ensureActiveWidget(ctx); current != nil && p.mode != mode {
 		current.SetFocus(ctx, false)
+	}
+	if p.mode != mode {
+		p.invalidateRenderCache()
 	}
 	p.mode = mode
 	w := p.ensureActiveWidget(ctx)
@@ -250,6 +277,7 @@ func (p *Panel) AvailableModes() []PanelViewMode {
 
 // SetResourceViewOptions sets the per-panel view toggles for resource groups.
 func (p *Panel) SetResourceViewOptions(showNonEmpty bool, order string) {
+	p.invalidateRenderCache()
 	if lw := p.listWidget(nil); lw != nil {
 		lw.SetResourceViewOptions(showNonEmpty, order)
 	}
@@ -278,6 +306,7 @@ func (p *Panel) SetFolder(ctx context.Context, f models.Folder, hasBack bool) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.SetFolder(ctx, f, hasBack)
 	}
+	p.invalidateRenderCache()
 	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.currentSelectionID(ctx), Path: p.currentPath})
 }
 
@@ -286,6 +315,7 @@ func (p *Panel) UseFolder(ctx context.Context, on bool) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.UseFolder(on)
 	}
+	p.invalidateRenderCache()
 	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.lastSelectionID, Path: p.currentPath})
 }
 
@@ -294,6 +324,7 @@ func (p *Panel) ClearFolder(ctx context.Context) {
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.ClearFolder()
 	}
+	p.invalidateRenderCache()
 	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: "", Path: p.currentPath})
 }
 
@@ -315,6 +346,7 @@ func (p *Panel) Enter(ctx context.Context) tea.Cmd {
 
 // SetTableMode updates the panel's table rendering mode ("scroll" or "fit").
 func (p *Panel) SetTableMode(ctx context.Context, mode string) {
+	p.invalidateRenderCache()
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.SetTableMode(ctx, mode)
 	}
@@ -330,6 +362,7 @@ func (p *Panel) TableMode() string {
 
 // SetColumnsMode updates which server-side table columns to show (normal or wide).
 func (p *Panel) SetColumnsMode(ctx context.Context, mode string) {
+	p.invalidateRenderCache()
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.SetColumnsMode(ctx, mode)
 	}
@@ -345,6 +378,7 @@ func (p *Panel) ColumnsMode() string {
 
 // SetObjectOrder updates object list ordering mode.
 func (p *Panel) SetObjectOrder(ctx context.Context, order string) {
+	p.invalidateRenderCache()
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.SetObjectOrder(ctx, order)
 	}
@@ -415,6 +449,7 @@ func (p *Panel) SetFolderNavHandler(h func(back bool, selID string, next models.
 // RefreshFolder refreshes the BigTable rows from the current folder list.
 // Used by periodic ticks to reflect informer-driven changes with a max 1s delay.
 func (p *Panel) RefreshFolder(ctx context.Context) {
+	p.invalidateRenderCache()
 	if lw := p.listWidget(ctx); lw != nil {
 		lw.RefreshFolder(ctx)
 	}
@@ -446,6 +481,7 @@ func (p *Panel) NotifySelection(ctx context.Context, sel panelcontent.Selection)
 	if sel.Item != nil {
 		p.lastSelection = sel.Item
 	}
+	p.invalidateRenderCache()
 	ctrllog.FromContext(ctx).WithName("panel").Info("notify selection", "panel", p.title, "mode", p.mode, "selectionID", sel.ID, "force", sel.Force, "hasItem", sel.Item != nil)
 	p.notifySelectionListeners(ctx, sel)
 }
@@ -459,10 +495,16 @@ func (p *Panel) SetResourceCatalog(infos []kccluster.ResourceInfo) {
 // Legacy live data sources removed; folders drive listings now.
 
 // SetViewConfig injects the view configuration (global + per resource overrides).
-func (p *Panel) SetViewConfig(cfg *ViewConfig) { p.viewConfig = cfg }
+func (p *Panel) SetViewConfig(cfg *ViewConfig) {
+	p.viewConfig = cfg
+	p.invalidateRenderCache()
+}
 
 // SetContextCountProvider injects a function to return the number of contexts.
-func (p *Panel) SetContextCountProvider(fn func() int) { p.contextCountProvider = fn }
+func (p *Panel) SetContextCountProvider(fn func() int) {
+	p.contextCountProvider = fn
+	p.invalidateRenderCache()
+}
 
 // countContexts returns the number of contexts or -1 if unknown.
 func (p *Panel) countContexts() int {
@@ -555,6 +597,9 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	if height <= 0 {
 		height = 1
 	}
+	if p.renderCacheMatches(width, height, focused) {
+		return p.renderCache
+	}
 	if ctx == nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(context.Background(), panelContextTimeout)
@@ -613,9 +658,15 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	contentView := p.renderContentFocused(ctx, focused)
 	frame := p.renderFrame(contentView, info, title, width, frameHeight, focused, footerFrame != "")
 	if footerFrame != "" {
-		return lipgloss.JoinVertical(lipgloss.Top, frame, footerFrame)
+		p.renderCache = lipgloss.JoinVertical(lipgloss.Top, frame, footerFrame)
+	} else {
+		p.renderCache = frame
 	}
-	return frame
+	p.renderCacheWidth = width
+	p.renderCacheHeight = height
+	p.renderCacheFocused = focused
+	p.renderCacheValid = true
+	return p.renderCache
 }
 
 // GetCurrentPath returns the current path for breadcrumbs
@@ -625,12 +676,22 @@ func (p *Panel) GetCurrentPath() string {
 
 // SetCurrentPath sets the breadcrumb path (absolute, leading slash) for this panel.
 // The App is responsible for computing the path via the navigator.
-func (p *Panel) SetCurrentPath(path string) { p.currentPath = path }
+func (p *Panel) SetCurrentPath(path string) {
+	if p.currentPath == path {
+		return
+	}
+	p.currentPath = path
+	p.invalidateRenderCache()
+}
 
 // SetDimensions sets the panel dimensions
 func (p *Panel) SetDimensions(ctx context.Context, width, height int) {
+	if width == p.width && height == p.height {
+		return
+	}
 	p.width = width
 	p.height = height
+	p.invalidateRenderCache()
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		widget.Resize(ctx, panelcontent.Size{Width: width, Height: height})
 	}
