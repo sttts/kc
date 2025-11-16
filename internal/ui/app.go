@@ -165,9 +165,11 @@ type App struct {
 	// Recent Bubble Tea messages for idle-loop diagnostics
 	msgLog []string
 	// Cached App.View rendering
-	viewCache       string
-	viewCacheCursor *tea.Cursor
-	viewCacheValid  bool
+	viewCache             string
+	viewCacheCursor       *tea.Cursor
+	viewCacheValid        bool
+	functionBarCache      string
+	functionBarCacheValid bool
 	// Namespace auto-navigation state
 	namespaceAutoTarget    string
 	namespaceAutoAttempts  int
@@ -381,6 +383,7 @@ func (a *App) setActivePanel(idx int, reason string) {
 	}
 	a.activePanel = idx
 	a.invalidateView(reason)
+	a.invalidateFunctionBar("active panel change")
 }
 
 func (a *App) setPanelFolder(ctx context.Context, panelIdx int, folder models.Folder, hasBack bool) {
@@ -392,6 +395,7 @@ func (a *App) setPanelFolder(ctx context.Context, panelIdx int, folder models.Fo
 	panel.RefreshFolder(ctx)
 	a.attachFolderDirtyListener(panelIdx, folder)
 	a.invalidateView(fmt.Sprintf("panel %d folder assigned", panelIdx))
+	a.invalidateFunctionBar(fmt.Sprintf("panel %d folder assigned", panelIdx))
 }
 
 func (a *App) showModal(key string) {
@@ -787,6 +791,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sizeChanged {
 			a.width = msg.Width
 			a.height = msg.Height
+			a.invalidateView("window resize")
+			a.invalidateFunctionBar("window resize")
 
 			// Ensure active modal scales with terminal size
 			if a.modalManager != nil && a.modalManager.IsModalVisible() {
@@ -1095,12 +1101,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.toastText = msg.text
 		a.toastUntil = time.Now().Add(msg.ttl)
 		a.invalidateView("toast show")
+		a.invalidateFunctionBar("toast show")
 		return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
 	case toastTickMsg:
 		if a.toastActive {
 			if time.Now().After(a.toastUntil) {
 				a.toastActive = false
 				a.invalidateView("toast hide")
+				a.invalidateFunctionBar("toast hide")
 			} else {
 				return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
 			}
@@ -1228,6 +1236,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		a.invalidateFunctionBar("selection changed")
 		return a, nil
 	case PanelModeSelectedMsg:
 		if panel := a.panelByIndex(msg.PanelIndex); panel != nil {
@@ -1321,6 +1330,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.showTerminal = !a.showTerminal
 			a.terminal.SetShowPanels(!a.showTerminal)
 			a.invalidateView("ctrl+o toggle terminal")
+			a.invalidateFunctionBar("terminal toggle")
 			// Always keep terminal focused for typing
 			a.terminal.Focus()
 			return a, nil
@@ -1462,6 +1472,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == "ctrl+o" {
 				a.showTerminal = false
 				a.invalidateView("ctrl+o exit terminal")
+				a.invalidateFunctionBar("terminal exit")
 				return a, nil
 			}
 			// Everything else goes to the terminal
@@ -1849,6 +1860,9 @@ func (a *App) refreshFoldersAfterViewChange() {
 
 // renderFunctionKeys renders the function key bar
 func (a *App) renderFunctionKeys() string {
+	if a.functionBarCacheValid {
+		return a.functionBarCache
+	}
 	if a.toastActive {
 		msg := a.toastText
 		maxw := a.width
@@ -1911,7 +1925,9 @@ func (a *App) renderFunctionKeys() string {
 	fullWidthStyle := uistyles.FunctionKeyBarStyle.Width(a.width).Align(lipgloss.Left)
 	titleStyle := uistyles.FunctionKeyTitleStyle.Align(lipgloss.Center).Width(a.width - lipgloss.Width(joined) - 1)
 	titleRendered := titleStyle.Render(title)
-	return fullWidthStyle.Render(joined + " " + titleRendered)
+	a.functionBarCache = fullWidthStyle.Render(joined + " " + titleRendered)
+	a.functionBarCacheValid = true
+	return a.functionBarCache
 }
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.
@@ -1934,6 +1950,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 				a.showTerminal = false
 				a.terminal.SetShowPanels(true)
 				a.invalidateView("function bar return to panels")
+				a.invalidateFunctionBar("terminal exit")
 				return nil
 			}},
 		}
@@ -1982,6 +1999,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 				a.showTerminal = true
 				a.terminal.SetShowPanels(false)
 				a.invalidateView("function bar fullscreen")
+				a.invalidateFunctionBar("terminal enter")
 				return nil
 			}},
 		}
@@ -3145,6 +3163,7 @@ func (a *App) runKubectlEdit(panelIdx int, panelPath string, obj models.ObjectIt
 			a.terminal.SetShowPanels(true)
 		}
 		a.invalidateView("kubectl edit exit terminal")
+		a.invalidateFunctionBar("terminal exit")
 	}
 
 	cmd := exec.Command("kubectl", args...)
@@ -4583,6 +4602,16 @@ func (a *App) invalidateView(reason string) {
 		ctrllog.FromContext(a.ctx).WithName("ui").Info("view invalidated", "reason", reason)
 	}
 	a.viewCacheValid = false
+}
+
+func (a *App) invalidateFunctionBar(reason string) {
+	if a == nil {
+		return
+	}
+	if reason != "" {
+		ctrllog.FromContext(a.ctx).WithName("ui").Info("function bar invalidated", "reason", reason)
+	}
+	a.functionBarCacheValid = false
 }
 
 func (a *App) cacheView(view string, cursor *tea.Cursor) {
