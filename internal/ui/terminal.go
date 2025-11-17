@@ -97,7 +97,8 @@ func (t *Terminal) Init() tea.Cmd {
 
 	// Start the shell command
 	// Note: bubbleterm handles cursor automatically through PTY, no need for ShowCursor()
-	return tea.Batch(t.terminal.Init(), t.terminal.StartCommand(cmd))
+	t.terminal.SetAutoPoll(false)
+	return tea.Batch(t.terminal.Init(), t.terminal.StartCommand(cmd), t.terminal.UpdateTerminal())
 }
 
 // SetEnv overrides the environment used when spawning the PTY shell.
@@ -116,7 +117,7 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if t.terminal != nil {
 			model, cmd := t.terminal.Update(msg)
 			t.terminal = model.(*bubbleterm.Model)
-			return t, cmd
+			return t, tea.Batch(cmd, t.terminal.UpdateTerminal())
 		}
 		return t, nil
 	}
@@ -154,7 +155,7 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		return t, cmd
+		return t, tea.Batch(cmd, t.terminal.UpdateTerminal())
 	}
 
 	return t, nil
@@ -364,7 +365,7 @@ func ctrlSequence(key tea.Key) (string, bool) {
 		return "", false
 	}
 	// Ignore combinations with additional modifiers (alt, meta, etc.).
-	if key.Mod&(^(tea.ModCtrl|tea.ModShift)) != 0 {
+	if key.Mod&(^(tea.ModCtrl | tea.ModShift)) != 0 {
 		return "", false
 	}
 

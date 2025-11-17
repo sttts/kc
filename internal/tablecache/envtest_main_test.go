@@ -5,13 +5,13 @@ import (
 	"os"
 	"testing"
 
+	kctesting "github.com/sttts/kc/internal/testing"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	kctesting "github.com/sttts/kc/internal/testing"
 )
 
 var (

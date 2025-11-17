@@ -183,6 +183,7 @@ type App struct {
 	startupIntentApplied   bool
 	helpViewer             *MarkdownHelpViewer
 	podfsFactory           podfs.Factory
+	folderDirtyCh          chan FolderDirtyMsg
 }
 
 const (
@@ -215,6 +216,7 @@ func NewApp() *App {
 		namespaceCreatePanel:   -1,
 		leftPanelWidthPercent:  50,
 		rightPanelWidthPercent: 50,
+		folderDirtyCh:          make(chan FolderDirtyMsg, 64),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
@@ -249,6 +251,7 @@ func (a *App) Init() tea.Cmd {
 			a.terminal.Focus()
 			return nil
 		},
+		a.waitFolderDirtyEvents(),
 	)
 }
 
@@ -260,6 +263,37 @@ func (a *App) enqueueCmd(cmd tea.Cmd) {
 	a.pendingCmdsMu.Lock()
 	a.pendingCmds = append(a.pendingCmds, cmd)
 	a.pendingCmdsMu.Unlock()
+}
+
+func (a *App) waitFolderDirtyEvents() tea.Cmd {
+	if a == nil || a.folderDirtyCh == nil {
+		return nil
+	}
+	ctx := a.ctx
+	ch := a.folderDirtyCh
+	return func() tea.Msg {
+		select {
+		case <-ctx.Done():
+			return nil
+		case msg, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			return msg
+		}
+	}
+}
+
+func (a *App) signalFolderDirty(panelIdx int) {
+	if a == nil || a.folderDirtyCh == nil {
+		return
+	}
+	msg := FolderDirtyMsg{PanelIdx: panelIdx}
+	select {
+	case a.folderDirtyCh <- msg:
+	default:
+		ctrllog.FromContext(a.ctx).WithName("folderDirty").Info("dropping folder dirty event", "panel", panelIdx)
+	}
 }
 
 func (a *App) updateTerminal(msg tea.Msg, reason string) tea.Cmd {
@@ -453,12 +487,15 @@ func (a *App) attachFolderDirtyListener(panelIdx int, folder models.Folder) {
 	}
 	obs, ok := folder.(models.DirtyObservable)
 	if !ok {
+		ctrllog.FromContext(a.ctx).WithName("folderDirty").Info("folder not dirty observable", "panel", panelIdx)
 		assign(nil)
 		return
 	}
 	cancel := obs.RegisterDirtyListener(func() {
+		log := ctrllog.FromContext(a.ctx).WithName("folderDirty")
+		log.Info("folder marked dirty", "panel", panelIdx)
 		idx := panelIdx
-		a.enqueueCmd(func() tea.Msg { return FolderDirtyMsg{PanelIdx: idx} })
+		a.signalFolderDirty(idx)
 	})
 	assign(cancel)
 }
@@ -1243,6 +1280,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		a.invalidateFunctionBar("selection changed")
+		a.invalidateView("selection changed")
 		return a, nil
 	case PanelModeSelectedMsg:
 		if panel := a.panelByIndex(msg.PanelIndex); panel != nil {
@@ -1308,7 +1346,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		panel.RefreshFolder(ctx)
 		cancel()
 		a.invalidateView(fmt.Sprintf("folder dirty panel %d", msg.PanelIdx))
-		return a, nil
+		// Always wake the renderer when data changed so cached frames are dropped
+		return a, tea.Batch(
+			tea.Tick(0, func(time.Time) tea.Msg { return nil }),
+			a.waitFolderDirtyEvents(),
+		)
 	case DiscoveryRefreshedMsg:
 		a.handleDiscoveryRefresh()
 		return a, a.watchDiscovery()
