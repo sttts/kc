@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -17,6 +18,12 @@ import (
 type ShellExitedMsg struct {
 	ExitCode string
 }
+
+type terminalPollMsg struct {
+	token uint64
+}
+
+const terminalPollInterval = 100 * time.Millisecond
 
 // Terminal represents the bottom terminal component
 type Terminal struct {
@@ -36,6 +43,10 @@ type Terminal struct {
 	ptyWantsMouse bool
 	log           logr.Logger
 	env           []string
+	lastPoll      time.Time
+	pollSeq       uint64
+	pollToken     uint64
+	pollScheduled bool
 }
 
 // NewTerminal creates a new terminal instance
@@ -98,7 +109,7 @@ func (t *Terminal) Init() tea.Cmd {
 	// Start the shell command
 	// Note: bubbleterm handles cursor automatically through PTY, no need for ShowCursor()
 	t.terminal.SetAutoPoll(false)
-	return tea.Batch(t.terminal.Init(), t.terminal.StartCommand(cmd), t.terminal.UpdateTerminal())
+	return tea.Batch(t.terminal.Init(), t.terminal.StartCommand(cmd), t.immediatePollCmd())
 }
 
 // SetEnv overrides the environment used when spawning the PTY shell.
@@ -117,9 +128,15 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if t.terminal != nil {
 			model, cmd := t.terminal.Update(msg)
 			t.terminal = model.(*bubbleterm.Model)
-			return t, tea.Batch(cmd, t.terminal.UpdateTerminal())
+			return t, tea.Batch(cmd, t.immediatePollCmd())
 		}
 		return t, nil
+	case terminalPollMsg:
+		if msg.token != t.pollToken {
+			return t, nil
+		}
+		t.pollScheduled = false
+		return t, t.immediatePollCmd()
 	}
 
 	// Always update bubbleterm first to check process status
@@ -155,7 +172,7 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		return t, tea.Batch(cmd, t.terminal.UpdateTerminal())
+		return t, tea.Batch(cmd, t.immediatePollCmd())
 	}
 
 	return t, nil
@@ -288,6 +305,50 @@ func renderTwoLineFrom(terminalView string, termCur *tea.Cursor, width int) (str
 		Height(2).
 		Render(strings.Join(lines, "\n"))
 	return view, &cur
+}
+
+func (t *Terminal) immediatePollCmd() tea.Cmd {
+	if t == nil || t.terminal == nil {
+		return nil
+	}
+	now := time.Now()
+	if !t.lastPoll.IsZero() {
+		elapsed := now.Sub(t.lastPoll)
+		if elapsed < terminalPollInterval {
+			if t.pollScheduled {
+				return nil
+			}
+			delay := terminalPollInterval - elapsed
+			return t.schedulePoll(delay)
+		}
+	}
+	t.lastPoll = now
+	t.pollScheduled = false
+	poll := t.terminal.UpdateTerminal()
+	timer := t.schedulePoll(terminalPollInterval)
+	if poll == nil {
+		return timer
+	}
+	if timer == nil {
+		return poll
+	}
+	return tea.Batch(poll, timer)
+}
+
+func (t *Terminal) schedulePoll(delay time.Duration) tea.Cmd {
+	if t == nil || t.terminal == nil {
+		return nil
+	}
+	if delay <= 0 {
+		delay = terminalPollInterval
+	}
+	t.pollSeq++
+	token := t.pollSeq
+	t.pollToken = token
+	t.pollScheduled = true
+	return tea.Tick(delay, func(time.Time) tea.Msg {
+		return terminalPollMsg{token: token}
+	})
 }
 
 type legacyKeyPressMsg struct {
