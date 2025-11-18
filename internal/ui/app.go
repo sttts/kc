@@ -1384,6 +1384,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.terminal.Focus()
 			return a, nil
 
+		case "ctrl+u":
+			a.swapPanels()
+			return a, nil
+
 		case "tab":
 			leftWidth, rightWidth, _, _ := a.panelAreaMetrics()
 			if leftWidth <= 0 && rightWidth <= 0 {
@@ -4705,4 +4709,37 @@ func (a *App) invalidateTerminalArea(reason string) {
 		ctrllog.FromContext(a.ctx).WithName("ui").Info("terminal area invalidated", "reason", reason)
 	}
 	a.terminalAreaCache.invalidate()
+}
+
+func (a *App) swapPanels() {
+	// Swap panel pointers
+	a.leftPanel, a.rightPanel = a.rightPanel, a.leftPanel
+
+	// Swap navigators
+	a.leftNav, a.rightNav = a.rightNav, a.leftNav
+
+	// Swap configs
+	a.leftConfig, a.rightConfig = a.rightConfig, a.leftConfig
+
+	// Detach old listeners
+	if a.leftFolderDirtyCancel != nil {
+		a.leftFolderDirtyCancel()
+		a.leftFolderDirtyCancel = nil
+	}
+	if a.rightFolderDirtyCancel != nil {
+		a.rightFolderDirtyCancel()
+		a.rightFolderDirtyCancel = nil
+	}
+
+	// Re-attach to new positions
+	if a.leftPanel != nil {
+		a.attachFolderDirtyListener(0, a.leftPanel.Folder())
+	}
+	if a.rightPanel != nil {
+		a.attachFolderDirtyListener(1, a.rightPanel.Folder())
+	}
+
+	// Invalidate everything
+	a.invalidateView("swap panels")
+	a.invalidateFunctionBar("swap panels")
 }

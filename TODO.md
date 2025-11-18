@@ -30,7 +30,7 @@ Current tasks
 - [ ] Panel modes roadmap:
   - [ ] Provide a logs pin mode so a panel can stay on streaming `kubectl logs` output for the selected object. *(Later)*
   - [ ] Implement a Top/metrics mode to show resource usage summaries. *(Later)*
-  - [ ] Add Ctrl+U (or similar) to swap left/right panel contents. *(Next)*
+  - [x] Add Ctrl+U (or similar) to swap left/right panel contents. *(Next)*
 - [ ] Selection sync options: let users choose whether describe/manifest follow left→right or right→left selection, or lock a panel to a specific resource. *(Needs clarification)*
 - [ ] Auto-refresh indicator in detail views (spinner/toast) so users know when describe/manifest content refreshes. *(Next)*
 - [ ] API group hierarchy mode under `/groups/...`. *(Later)*
