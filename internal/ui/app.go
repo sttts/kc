@@ -4742,4 +4742,7 @@ func (a *App) swapPanels() {
 	// Invalidate everything
 	a.invalidateView("swap panels")
 	a.invalidateFunctionBar("swap panels")
+
+	// Toggle active panel so focus follows the content
+	a.activePanel = (a.activePanel + 1) % 2
 }
