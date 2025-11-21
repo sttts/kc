@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss/v2"
+	"charm.land/lipgloss/v2"
 	models "github.com/sttts/kc/internal/models"
 	modeltesting "github.com/sttts/kc/internal/models/testing"
 	table "github.com/sttts/kc/internal/table"

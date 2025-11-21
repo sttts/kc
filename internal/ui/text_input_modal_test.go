@@ -22,6 +22,6 @@ func TestTextInputModalFieldHasNoExtraLines(t *testing.T) {
 	}
 	desc := m.renderDescription(40)
 	t.Logf("desc=%q", desc)
-	view, _ := m.View()
+	view := viewString(m.View())
 	t.Logf("view=%q", view)
 }

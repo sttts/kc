@@ -6,7 +6,7 @@ import (
 	"math"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	"github.com/sttts/kc/internal/ui/viewer"

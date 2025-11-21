@@ -18,7 +18,7 @@ go build ./cmd/kc
 
 ## Workflow & Expectations
 
-- Imports for Bubble Tea/Bubbles must use the v2 paths (e.g. `github.com/charmbracelet/bubbletea/v2`).
+- Imports for Bubble Tea/Bubbles must use the v2 paths (e.g. `charm.land/bubbletea/v2`).
 - Read `AGENTS.md` for logging rules, naming conventions, module boundaries, and UI guidelines. Contributions should follow those instructions unless you propose an intentional refactor.
 - The UI is driven by controller-runtime caches; avoid touching live clusters in tests. Envtests cover navigation and resource hierarchy behavior.
 - Always add or update tests when you change non-trivial logic. The envtest suites live under `internal/models` and `internal/navigation`.

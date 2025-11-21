@@ -1,8 +1,8 @@
 package ui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea/v2"
 	"strings"
 	"sync"
 	"time"

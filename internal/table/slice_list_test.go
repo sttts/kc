@@ -3,7 +3,7 @@ package table
 import (
 	"testing"
 
-	"github.com/charmbracelet/lipgloss/v2"
+	"charm.land/lipgloss/v2"
 )
 
 func makeRow(id string, n int) Row {

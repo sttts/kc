@@ -43,5 +43,5 @@ An importable, high-performance table component built on Bubble Tea v2. It suppo
 - Covers: selection overlay, provider ops, selector stability, and render height for Auto/Fit.
 
 ## Notes
-- Always import v2 packages: `github.com/charmbracelet/bubbletea/v2`, `github.com/charmbracelet/bubbles/v2/...`, `github.com/charmbracelet/lipgloss/v2`.
+- Always import v2 packages: `charm.land/bubbletea/v2`, `charm.land/bubbles/v2/...`, `charm.land/lipgloss/v2`.
 - Rows are ASCII only; ANSI is produced by styles. No custom ASCII truncation is performed by the component.

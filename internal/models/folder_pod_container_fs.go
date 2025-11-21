@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/lipgloss/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/podfs"
 	table "github.com/sttts/kc/internal/table"
 	corev1 "k8s.io/api/core/v1"

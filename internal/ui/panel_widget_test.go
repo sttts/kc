@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 )
@@ -18,7 +18,7 @@ func TestPanelModeSwitchesToManifest(t *testing.T) {
 	if panel.Mode() != PanelModeManifest {
 		t.Fatalf("expected manifest mode, got %v", panel.Mode())
 	}
-	view := panel.View()
+	view := viewString(panel.View())
 	if !strings.Contains(view, "Select a resource") {
 		t.Fatalf("expected manifest placeholder, got %q", view)
 	}

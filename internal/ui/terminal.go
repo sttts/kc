@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/go-logr/logr"
 	bubbleterm "github.com/taigrr/bubbleterm"
 )
@@ -184,21 +184,20 @@ func (t *Terminal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (t *Terminal) SetPTYWantsMouse(on bool) { t.ptyWantsMouse = on }
 
 // View renders the terminal
-func (t *Terminal) View() (string, *tea.Cursor) {
+func (t *Terminal) View() tea.View {
 	if t.terminal == nil {
 		cur := tea.NewCursor(0, 0)
 		cur.Blink = true
-		return "Terminal not initialized", cur
+		return viewWithCursor("Terminal not initialized", cur)
 	}
 
 	if t.showPanels {
 		view, cur := t.renderTwoLineViewWithCursor()
-		return view, cur
+		return viewWithCursor(view, cur)
 	}
 
-	// bubbleterm now implements CursorModel and returns cursor directly
-	terminalView, cursor := t.terminal.View()
-	return terminalView, cursor
+	terminalView, cursor := t.terminalView()
+	return viewWithCursor(terminalView, cursor)
 }
 
 // renderTwoLineViewWithCursor renders the 2-line view and returns cursor
@@ -211,7 +210,7 @@ func (t *Terminal) renderTwoLineViewWithCursor() (string, *tea.Cursor) {
 		return fallback, nil
 	}
 
-	terminalView, termCur := t.terminal.View()
+	terminalView, termCur := t.terminalView()
 	return renderTwoLineFrom(terminalView, termCur, t.width)
 }
 
@@ -224,7 +223,7 @@ func (t *Terminal) renderTwoLineView() string {
 			Render("Terminal not initialized")
 	}
 
-	terminalView, _ := t.terminal.View()
+	terminalView, _ := t.terminalView()
 	terminalLines := strings.Split(terminalView, "\n")
 
 	// Take the last 2 lines to show the cursor and previous line
@@ -247,6 +246,23 @@ func (t *Terminal) renderTwoLineView() string {
 		Width(t.width).
 		Height(2).
 		Render(content)
+}
+
+func (t *Terminal) terminalView() (string, *tea.Cursor) {
+	if t.terminal == nil {
+		return "", nil
+	}
+	switch term := any(t.terminal).(type) {
+	case interface{ View() tea.View }:
+		view := term.View()
+		return viewString(view), view.Cursor
+	case interface{ View() (string, *tea.Cursor) }:
+		return term.View()
+	case interface{ View() string }:
+		return term.View(), nil
+	default:
+		return "", nil
+	}
 }
 
 // renderTwoLineFrom produces a two-line view from a full terminal view and optional cursor.

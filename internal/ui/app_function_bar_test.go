@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/table"
 	uistyles "github.com/sttts/kc/internal/ui/styles"

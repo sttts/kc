@@ -3,7 +3,7 @@ package modeltesting
 import (
 	"strings"
 
-	lipgloss "github.com/charmbracelet/lipgloss/v2"
+	lipgloss "charm.land/lipgloss/v2"
 	models "github.com/sttts/kc/internal/models"
 )
 

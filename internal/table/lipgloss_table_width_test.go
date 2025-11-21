@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	lg "github.com/charmbracelet/lipgloss/v2"
-	lgtable "github.com/charmbracelet/lipgloss/v2/table"
+	lg "charm.land/lipgloss/v2"
+	lgtable "charm.land/lipgloss/v2/table"
 )
 
 // Test that Width(w) on lipgloss/table produces lines that include the frame

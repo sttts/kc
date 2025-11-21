@@ -3,7 +3,7 @@ package table
 import (
 	"context"
 
-	"github.com/charmbracelet/lipgloss/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Column describes a visible column with a title and desired width hint.

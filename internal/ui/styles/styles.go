@@ -1,6 +1,6 @@
 package styles
 
-import "github.com/charmbracelet/lipgloss/v2"
+import "charm.land/lipgloss/v2"
 
 // Color constants (ANSI base codes)
 // Note: Prefer lipgloss built-in ANSI constants where possible in code.

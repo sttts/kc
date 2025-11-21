@@ -3,7 +3,7 @@ package panelcontent
 import (
 	"context"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/pkg/describe"
 )

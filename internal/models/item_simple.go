@@ -1,6 +1,6 @@
 package models
 
-import "github.com/charmbracelet/lipgloss/v2"
+import "charm.land/lipgloss/v2"
 
 // SimpleItem embeds RowItem and can optionally expose view content.
 type SimpleItem struct {

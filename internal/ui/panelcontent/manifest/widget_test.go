@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss/v2"
+	"charm.land/lipgloss/v2"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )

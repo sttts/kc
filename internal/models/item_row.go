@@ -1,7 +1,7 @@
 package models
 
 import (
-	"github.com/charmbracelet/lipgloss/v2"
+	"charm.land/lipgloss/v2"
 	table "github.com/sttts/kc/internal/table"
 )
 

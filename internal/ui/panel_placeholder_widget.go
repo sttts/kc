@@ -3,7 +3,7 @@ package ui
 import (
 	"context"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )

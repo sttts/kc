@@ -1,6 +1,6 @@
 package models
 
-import "github.com/charmbracelet/lipgloss/v2"
+import "charm.land/lipgloss/v2"
 
 // ContainerSectionItem represents a category (containers/init/ephemeral) under a pod.
 type ContainerSectionItem struct {

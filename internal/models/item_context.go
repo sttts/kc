@@ -1,6 +1,6 @@
 package models
 
-import "github.com/charmbracelet/lipgloss/v2"
+import "charm.land/lipgloss/v2"
 
 // ContextItem represents a kubeconfig context entry, viewable and enterable.
 type ContextItem struct {
