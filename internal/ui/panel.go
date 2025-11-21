@@ -147,17 +147,17 @@ func (p *Panel) widgetSelectionChanged(ctx context.Context, sel panelcontent.Sel
 		sel.Path = p.currentPath
 	}
 	if sel.Item == nil {
-		if item, ok := p.SelectedNavItem(ctx); ok {
-			sel.Item = item
+		if lw := p.listWidget(ctx); lw != nil {
+			if item, ok := lw.SelectedNavItem(ctx); ok {
+				sel.Item = item
+			}
 		}
 	}
 	changed := sel.ID != "" && sel.ID != p.lastSelectionID
 	if sel.ID != "" {
 		p.lastSelectionID = sel.ID
 	}
-	if sel.Item != nil {
-		p.lastSelection = sel.Item
-	}
+	p.lastSelection = sel.Item
 	p.notifySelectionListeners(ctx, sel)
 	if changed || sel.Force {
 		p.invalidateRenderCache()
