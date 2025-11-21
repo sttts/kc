@@ -817,7 +817,8 @@ func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) 
 	if suppress {
 		return ""
 	}
-	status = strings.TrimSpace(status)
+	// The status string is rendered on the frame; avoid duplicating it in the footer line.
+	status = ""
 	renderedFooter := ""
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if fp, ok := widget.(panelcontent.FooterProvider); ok {
@@ -826,27 +827,18 @@ func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) 
 	}
 	lines := strings.Split(strings.TrimRight(renderedFooter, "\n"), "\n")
 	if len(lines) == 0 {
-		if status == "" {
-			return ""
-		}
 		lines = []string{""}
 	}
 	styled := make([]string, len(lines))
 	for i, line := range lines {
+		text := line
+		if lipgloss.Width(text) > p.width {
+			text = truncateToWidth(text, p.width)
+		}
 		style := uistyles.PanelFooterStyle.Copy().
 			Width(p.width).
 			Height(1)
-		if i == 0 && status != "" {
-			statusText := truncateToWidth(status, p.width-1)
-			left := truncateToWidth(line, p.width-lipgloss.Width(statusText)-1)
-			padding := p.width - lipgloss.Width(left) - lipgloss.Width(statusText)
-			if padding < 1 {
-				padding = 1
-			}
-			styled[i] = style.Render(left + strings.Repeat(" ", padding) + statusText)
-		} else {
-			styled[i] = style.Align(lipgloss.Left).Render(line)
-		}
+		styled[i] = style.Align(lipgloss.Left).Render(text)
 	}
 	return strings.Join(styled, "\n")
 }
@@ -934,14 +926,14 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 		border.BottomRight = "┤"
 	}
 
-	lines[len(lines)-1] = composeBottomBorder(lines[len(lines)-1], border, boxStyle, info, width, hasFooter)
+	lines[len(lines)-1] = composeBottomBorder(border, boxStyle, info, width, modeLabel(p.mode))
 
 	frame := top + "\n" + strings.Join(lines, "\n")
 
 	return frame
 }
 
-func composeBottomBorder(_ string, border lipgloss.Border, boxStyle lipgloss.Style, info panelcontent.FrameInfo, width int, hasFooter bool) string {
+func composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.Style, info panelcontent.FrameInfo, width int, mode string) string {
 	borderStyle := lipgloss.NewStyle().
 		Foreground(boxStyle.GetBorderBottomForeground()).
 		Background(boxStyle.GetBorderBottomBackground())
@@ -953,22 +945,31 @@ func composeBottomBorder(_ string, border lipgloss.Border, boxStyle lipgloss.Sty
 	leftWidth := lipgloss.Width(left)
 	rightWidth := lipgloss.Width(right)
 	indicatorWidth := lipgloss.Width(indicator)
-	available := width - leftWidth - rightWidth - indicatorWidth - connectorWidth
-	if available < 0 {
-		available = 0
+	contentWidth := width - leftWidth - rightWidth - indicatorWidth - connectorWidth
+	if contentWidth < 0 {
+		contentWidth = 0
 	}
-	statusText := strings.TrimSpace(info.FooterStatus)
-	if hasFooter {
-		statusText = ""
+
+	statusLabel := strings.TrimSpace(info.FooterStatus)
+	modeLabel := strings.TrimSpace(mode)
+	var parts []string
+	if statusLabel != "" {
+		parts = append(parts, statusLabel)
 	}
-	statusText = truncateStringToWidth(statusText, available)
-	status := ""
-	statusWidth := 0
-	if statusText != "" {
-		status = uistyles.PanelFooterStyle.Copy().Render(statusText)
-		statusWidth = lipgloss.Width(status)
+	if modeLabel != "" {
+		parts = append(parts, modeLabel)
 	}
-	fillerWidth := available - statusWidth
+	text := strings.Join(parts, " • ")
+	if text != "" {
+		text = truncateStringToWidth(text, contentWidth)
+	}
+	renderedText := ""
+	textWidth := 0
+	if text != "" {
+		renderedText = uistyles.PanelFooterStyle.Copy().Render(text)
+		textWidth = lipgloss.Width(renderedText)
+	}
+	fillerWidth := contentWidth - textWidth
 	if fillerWidth < 0 {
 		fillerWidth = 0
 	}
@@ -976,7 +977,8 @@ func composeBottomBorder(_ string, border lipgloss.Border, boxStyle lipgloss.Sty
 	if fillerWidth > 0 {
 		filler = borderStyle.Render(strings.Repeat(border.Bottom, fillerWidth))
 	}
-	return left + filler + status + connector + indicator + right
+
+	return left + filler + renderedText + connector + indicator + right
 }
 
 func indicatorGlyph(indicator string, fallback string) string {
