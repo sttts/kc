@@ -1358,13 +1358,25 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		// Handle global shortcuts first
 		switch msg.String() {
-		case "alt+f1", "ctrl+1":
+		case "ctrl+1":
+			leftWidth, _, _, _ := a.panelAreaMetrics()
+			if leftWidth <= 0 {
+				return a, nil
+			}
+			return a, a.cyclePanelMode(0)
+		case "ctrl+2":
+			_, rightWidth, _, _ := a.panelAreaMetrics()
+			if rightWidth <= 0 {
+				return a, nil
+			}
+			return a, a.cyclePanelMode(1)
+		case "alt+f1":
 			leftWidth, _, _, _ := a.panelAreaMetrics()
 			if leftWidth <= 0 {
 				return a, nil
 			}
 			return a, a.showViewOptionsModalForPanel(a.panelByIndex(0))
-		case "alt+f2", "ctrl+2":
+		case "alt+f2":
 			_, rightWidth, _, _ := a.panelAreaMetrics()
 			if rightWidth <= 0 {
 				return a, nil
