@@ -3,7 +3,6 @@ package manifest
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea/v2"
@@ -58,11 +57,14 @@ func (w *Widget) SetFocus(context.Context, bool) {}
 func (w *Widget) Teardown(context.Context) {}
 
 func (w *Widget) Footer(ctx context.Context, width int) string {
-	return w.viewer.Footer(width)
+	if status := strings.TrimSpace(w.viewer.FooterStatusText(width)); status != "" {
+		return status
+	}
+	return w.apiPathForSelection()
 }
 
 func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
-	info := panelcontent.FrameInfo{SuppressFooter: true, TopIndicator: "─", BottomIndicator: "─"}
+	info := panelcontent.FrameInfo{TopIndicator: "─", BottomIndicator: "─"}
 	breadcrumb := ""
 	if w.sel.Item != nil {
 		if path := w.sel.Item.Path(); len(path) > 0 {
@@ -78,25 +80,31 @@ func (w *Widget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoReques
 	if breadcrumb != "" {
 		info.Breadcrumb = breadcrumb
 	}
-	current, total := w.viewer.Position()
-	if total > 0 {
-		above, below := w.viewer.ScrollIndicators()
-		if above {
-			info.TopIndicator = "^"
+	above, below := w.viewer.ScrollIndicators()
+	if above {
+		info.TopIndicator = "^"
+	}
+	if below {
+		info.BottomIndicator = "v"
+	}
+	api := w.apiPathForSelection()
+	if api != "" {
+		current, total := w.viewer.Position()
+		if total > 0 {
+			info.FooterStatus = fmt.Sprintf("%d/%d", current, total)
 		}
-		if below {
-			info.BottomIndicator = "v"
-		}
-		percent := int(math.Round(float64(current) * 100 / float64(total)))
-		if percent < 0 {
-			percent = 0
-		}
-		if percent > 100 {
-			percent = 100
-		}
-		info.FooterStatus = fmt.Sprintf("%d/%d • %d%%", current, total, percent)
+		info.SuppressFooter = false
+	} else {
+		info.SuppressFooter = true
 	}
 	return info
+}
+
+func (w *Widget) apiPathForSelection() string {
+	if obj, ok := w.sel.Item.(models.ObjectItem); ok && obj != nil {
+		return apiPath(obj.GVR(), obj.Namespace(), obj.Name())
+	}
+	return ""
 }
 
 // OnSelectionChanged refreshes the manifest for the provided selection.

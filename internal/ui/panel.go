@@ -579,7 +579,7 @@ func (p *Panel) View() string {
 	info := p.frameInfo(ctx)
 	header := p.renderHeader(info.Breadcrumb, info.HeaderStatus)
 	content := p.renderContent(ctx)
-	footer := p.renderFooter(ctx, "", info.SuppressFooter)
+	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 
 	if footer == "" {
 		return lipgloss.JoinVertical(
@@ -627,7 +627,7 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	for i := 0; i < 3; i++ {
 		p.SetDimensions(ctx, contentWidth, contentHeight)
 		info = p.frameInfo(ctx)
-		footerContent := p.renderFooter(ctx, "", info.SuppressFooter)
+		footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 		footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
 		if footerHeight >= height {
 			footerFrame = ""
@@ -648,7 +648,7 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	// Ensure final dimensions are applied before rendering.
 	p.SetDimensions(ctx, contentWidth, contentHeight)
 	info = p.frameInfo(ctx)
-	footerContent := p.renderFooter(ctx, "", info.SuppressFooter)
+	footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 	footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
 	if footerHeight >= height {
 		footerFrame = ""
@@ -958,6 +958,9 @@ func composeBottomBorder(_ string, border lipgloss.Border, boxStyle lipgloss.Sty
 		available = 0
 	}
 	statusText := strings.TrimSpace(info.FooterStatus)
+	if hasFooter {
+		statusText = ""
+	}
 	statusText = truncateStringToWidth(statusText, available)
 	status := ""
 	statusWidth := 0

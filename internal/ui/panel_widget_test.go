@@ -28,11 +28,11 @@ func TestPanelModeSwitchesToManifest(t *testing.T) {
 		t.Fatalf("manifest widget does not implement FrameInfoProvider")
 	}
 	info := provider.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: panel.width})
-	if info.FooterStatus == "" {
-		t.Fatalf("expected manifest footer status")
-	}
 	if !info.SuppressFooter {
 		t.Fatalf("expected manifest to suppress footer")
+	}
+	if info.FooterStatus != "" {
+		t.Fatalf("expected manifest footer status to be empty without a selection, got %q", info.FooterStatus)
 	}
 }
 

@@ -53,7 +53,7 @@ func TestRenderFrameIndicatorsWithFooter(t *testing.T) {
 		t.Fatalf("expected top line to end with '▲┐', got %q", top)
 	}
 	bottom := lines[len(lines)-1]
-	if !strings.HasPrefix(bottom, "├") || !strings.Contains(bottom, "6/10 • 60%─▼") || !strings.HasSuffix(bottom, "▼┤") {
-		t.Fatalf("expected bottom line with status and arrow before corner, got %q", bottom)
+	if !strings.HasPrefix(bottom, "├") || strings.Contains(bottom, "6/10") || !strings.HasSuffix(bottom, "▼┤") {
+		t.Fatalf("expected bottom line with arrow and no status before corner when footer present, got %q", bottom)
 	}
 }
