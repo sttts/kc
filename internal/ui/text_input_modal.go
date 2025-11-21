@@ -3,9 +3,9 @@ package ui
 import (
 	"strings"
 
-	textinput "github.com/charmbracelet/bubbles/v2/textinput"
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	textinput "charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/overlay"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
@@ -71,8 +71,8 @@ func NewTextInputModal(cfg TextInputModalConfig) *TextInputModal {
 	ti.Prompt = ""
 	ti.Placeholder = cfg.Placeholder
 	ti.CharLimit = 0
-	ti.VirtualCursor = false
-	ti.Styles = modalTextInputStyles()
+	ti.SetVirtualCursor(false)
+	ti.SetStyles(modalTextInputStyles())
 	ti.SetValue(cfg.InitialValue)
 	ti.CursorEnd()
 	_ = ti.Focus()
@@ -127,7 +127,7 @@ func (m *TextInputModal) PreferredSize(maxContentWidth, maxContentHeight int) (i
 }
 
 // View renders the modal content and cursor.
-func (m *TextInputModal) View() (string, *tea.Cursor) {
+func (m *TextInputModal) View() tea.View {
 	width := m.clampWidth(m.width)
 	if width <= 0 {
 		width = m.clampWidth(m.desiredWidth())
@@ -135,7 +135,8 @@ func (m *TextInputModal) View() (string, *tea.Cursor) {
 	if width <= 0 {
 		width = 40
 	}
-	return m.render(width)
+	content, cursor := m.render(width)
+	return viewWithCursor(content, cursor)
 }
 
 // Update handles Tea messages.

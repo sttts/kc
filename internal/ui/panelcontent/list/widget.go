@@ -6,8 +6,8 @@ import (
 	"math"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	models "github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
@@ -755,11 +755,12 @@ func (w *Widget) render(ctx context.Context, focused bool) string {
 		}
 		w.bt.SetSize(ctx, max(1, w.width), max(1, w.height))
 		w.bt.SetFocused(ctx, focused)
+		tableView := w.bt.View()
 		return lipgloss.NewStyle().
 			Background(lipgloss.Blue).
 			Width(w.width).
 			Height(w.height).
-			Render(w.bt.View())
+			Render(viewString(tableView))
 	}
 
 	if len(w.items) == 0 {
@@ -1150,4 +1151,11 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func viewString(view tea.View) string {
+	if view.Content == nil {
+		return ""
+	}
+	return fmt.Sprint(view.Content)
 }

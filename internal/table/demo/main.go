@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/pkg/appconfig"
 )
@@ -229,7 +229,7 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
-func (a app) View() string {
+func (a app) View() tea.View {
 	modes := []string{"none", "verticals"}
 	cur := modes[a.bstateL]
 	if a.focus == 1 {
@@ -241,8 +241,10 @@ func (a app) View() string {
 	// Join table views side by side with a space separator.
 	leftView := a.left.View()
 	rightView := a.right.View()
-	body := joinSideBySide(leftView, rightView, " ")
-	return strings.Join([]string{help, body}, "\n")
+	body := joinSideBySide(viewString(leftView), viewString(rightView), " ")
+	view := tea.NewView(strings.Join([]string{help, body}, "\n"))
+	view.AltScreen = true
+	return view
 }
 
 // joinSideBySide merges two multi-line strings with a separator between columns.
@@ -267,13 +269,20 @@ func joinSideBySide(aStr, bStr, sep string) string {
 	return strings.Join(out, "\n")
 }
 
+func viewString(view tea.View) string {
+	if view.Content == nil {
+		return ""
+	}
+	return fmt.Sprint(view.Content)
+}
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	provider := ""
 	if len(os.Args) > 1 {
 		provider = os.Args[1]
 	}
-	if _, err := tea.NewProgram(newApp(provider), tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(newApp(provider)).Run(); err != nil {
 		fmt.Println("error:", err)
 	}
 }

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
 )
@@ -717,7 +717,7 @@ func (m *ViewOptionsModel) maxLabelWidth() int {
 }
 
 // View renders the dialog body (without frame).
-func (m *ViewOptionsModel) View() string {
+func (m *ViewOptionsModel) View() tea.View {
 	if m.height <= 0 {
 		m.height = len(m.entries)
 		if m.height == 0 {
@@ -765,7 +765,7 @@ func (m *ViewOptionsModel) View() string {
 			lines = append(lines, st.Width(m.width).Render(line))
 		}
 	}
-	return strings.Join(lines, "\n")
+	return tea.NewView(strings.Join(lines, "\n"))
 }
 
 // FooterHints exposes the keyboard hints for the modal footer.

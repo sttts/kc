@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
@@ -97,7 +97,7 @@ func (m *DeleteConfirmModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *DeleteConfirmModel) View() string {
+func (m *DeleteConfirmModel) View() tea.View {
 	innerWidth := max(30, m.width-4)
 	const buttonWidth = 8
 	separatorWidth := 1
@@ -136,7 +136,7 @@ func (m *DeleteConfirmModel) View() string {
 		h: 1,
 	}
 	spacer := bg.Copy().Render("")
-	return lipgloss.JoinVertical(lipgloss.Left, titleView, spacer, bodyView, spacer, helpView)
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, titleView, spacer, bodyView, spacer, helpView))
 }
 
 func (m *DeleteConfirmModel) renderOption(label string, width int, focused bool) string {

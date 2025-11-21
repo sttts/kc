@@ -3,8 +3,8 @@ package ui
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -80,7 +80,7 @@ func (rs *ResourceSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the resource selector
-func (rs *ResourceSelector) View() string {
+func (rs *ResourceSelector) View() tea.View {
 	// Create header
 	header := rs.renderHeader()
 
@@ -90,12 +90,12 @@ func (rs *ResourceSelector) View() string {
 	// Create footer
 	footer := rs.renderFooter()
 
-	return lipgloss.JoinVertical(
+	return tea.NewView(lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		content,
 		footer,
-	)
+	))
 }
 
 // SetDimensions sets the selector dimensions

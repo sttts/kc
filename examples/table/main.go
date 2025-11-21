@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	tea "charm.land/bubbletea/v2"
 	table "github.com/sttts/kc/internal/table"
 )
 
@@ -23,11 +24,11 @@ func main() {
 	bt := table.NewBigTable(cols, list, 60, 10)
 	bt.SetMode(ctx, table.ModeFit)
 	bt.SetFocused(ctx, true)
-	fmt.Println("Fit mode:\n" + bt.View())
+	fmt.Println("Fit mode:\n" + viewString(bt.View()))
 
 	bt.SetMode(ctx, table.ModeScroll)
 	bt.SetFocused(ctx, true)
-	fmt.Println("\nScroll mode:\n" + bt.View())
+	fmt.Println("\nScroll mode:\n" + viewString(bt.View()))
 }
 
 type rowData struct {
@@ -41,4 +42,11 @@ var data = []rowData{
 	{ID: "pods", Name: "/pods", Group: "", Count: "12"},
 	{ID: "deployments", Name: "/deployments", Group: "apps", Count: "5"},
 	{ID: "configmaps", Name: "/configmaps", Group: "", Count: "8"},
+}
+
+func viewString(view tea.View) string {
+	if view.Content == nil {
+		return ""
+	}
+	return fmt.Sprint(view.Content)
 }

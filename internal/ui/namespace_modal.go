@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -69,7 +69,7 @@ func (m *NamespaceCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *NamespaceCreateModel) View() (string, *tea.Cursor) {
+func (m *NamespaceCreateModel) View() tea.View {
 	return m.modal.View()
 }
 

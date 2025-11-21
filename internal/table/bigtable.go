@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
-	lgtable "github.com/charmbracelet/lipgloss/v2/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	lgtable "charm.land/lipgloss/v2/table"
 )
 
 // GridMode controls how the table renders horizontally.
@@ -377,7 +377,7 @@ func (m *BigTable) Update(msg tea.Msg) (tea.Cmd, tea.Cmd) {
 }
 
 // View renders the component.
-func (m *BigTable) View() string { return strings.TrimRight(m.bodyRow, "\n") }
+func (m *BigTable) View() tea.View { return tea.NewView(strings.TrimRight(m.bodyRow, "\n")) }
 
 // no app header/help line inside BigTable; outer app should render it
 // no BigTable footer; outer app should render any footers/help lines
@@ -414,7 +414,7 @@ func (m *BigTable) rebuildWindow(ctx context.Context) {
 	m.ensureWindow(ctx, rowsVisible)
 
 	// Single lipgloss table: headers + data rows; no outside borders or underline.
-	t := lgtable.New().Wrap(false).Height(m.h).Width(m.w).WithOverflowRow(false)
+	t := lgtable.New().Wrap(false).Height(m.h).Width(m.w)
 	// Use lipgloss.table column borders when enabled via m.bColumn.
 	t = t.Border(lipgloss.NormalBorder()).BorderStyle(m.styles.Border)
 	t = t.BorderTop(false).BorderBottom(false).BorderLeft(false).BorderRight(false)

@@ -1,6 +1,11 @@
 package table
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+)
 
 func TestRenderRowsSelectedOverlay(t *testing.T) {
 	rows := []Row{
@@ -14,9 +19,17 @@ func TestRenderRowsSelectedOverlay(t *testing.T) {
 	bt := NewBigTable(cols, NewSliceList(rows), 10, 6)
 	bt.SetMode(ctx, ModeFit)
 	bt.Refresh(ctx)
-	s := bt.View()
+	view := bt.View()
+	s := viewString(view)
 	if len(s) == 0 {
 		t.Fatalf("empty view")
 	}
 	// We don't assert exact ANSI; just that rendering completed
+}
+
+func viewString(view tea.View) string {
+	if view.Content == nil {
+		return ""
+	}
+	return fmt.Sprint(view.Content)
 }

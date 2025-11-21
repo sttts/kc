@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // trimRightEachLine trims trailing spaces on every line to make visual
@@ -52,7 +52,7 @@ func TestView_25x6_NoBorders(t *testing.T) {
 			bt.SetMode(ctx, tc.mode)
 			bt.Select(ctx, "id-0006")
 			bt.Refresh(ctx)
-			got := trimRightEachLine(bt.View())
+			got := trimRightEachLine(viewString(bt.View()))
 			lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
 			if len(lines) != 6 {
 				t.Fatalf("want 6 lines (header+5 body), got %d\n%s", len(lines), got)
@@ -86,7 +86,7 @@ func TestView_25x6_VerticalOnly_TwoColumns(t *testing.T) {
 			bt.SetMode(ctx, tc.mode)
 			bt.Select(ctx, "id-0008")
 			bt.Refresh(ctx)
-			got := trimRightEachLine(bt.View())
+			got := trimRightEachLine(viewString(bt.View()))
 			lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
 			if len(lines) != 6 {
 				t.Fatalf("want 6 lines (header+5 body), got %d\n%s", len(lines), got)

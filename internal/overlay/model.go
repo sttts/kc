@@ -1,11 +1,13 @@
 package overlay
 
 import (
-	tea "github.com/charmbracelet/bubbletea/v2"
+	"fmt"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // Model composes Foreground over Background at the requested position/offsets.
-type viewer interface{ View() (string, *tea.Cursor) }
+type viewer interface{ View() tea.View }
 
 // Model composes Foreground over Background at the requested position/offsets.
 type Model struct {
@@ -32,24 +34,35 @@ func (m *Model) Init() tea.Cmd { return nil }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
 
-func (m *Model) View() string {
-	if m.Foreground == nil && m.Background == nil {
-		return ""
-	}
-	if m.Foreground == nil {
-		s, _ := m.Background.View()
-		return s
-	}
-	if m.Background == nil {
-		s, _ := m.Foreground.View()
-		return s
-	}
-	fg, _ := m.Foreground.View()
-	bg, _ := m.Background.View()
-	return Composite(
+func (m *Model) View() tea.View {
+	background := func() tea.View {
+		if m.Background == nil {
+			return tea.NewView("")
+		}
+		return m.Background.View()
+	}()
+
+	foreground := func() tea.View {
+		if m.Foreground == nil {
+			return tea.NewView("")
+		}
+		return m.Foreground.View()
+	}()
+
+	fg := viewString(foreground)
+	bg := viewString(background)
+
+	return tea.NewView(Composite(
 		fg,
 		bg,
 		m.XPosition, m.YPosition,
 		m.XOffset, m.YOffset,
-	)
+	))
+}
+
+func viewString(view tea.View) string {
+	if view.Content == nil {
+		return ""
+	}
+	return fmt.Sprint(view.Content)
 }

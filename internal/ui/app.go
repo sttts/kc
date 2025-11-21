@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	readmedoc "github.com/sttts/kc"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
@@ -1735,15 +1735,21 @@ func (a *App) shouldRouteToPanel(key string) bool {
 }
 
 // View renders the application
-func (a *App) View() (string, *tea.Cursor) {
+func (a *App) View() tea.View {
 	if view, cursor, ok := a.mainViewCache.get(); ok {
-		return view, cursor
+		v := viewWithCursor(view, cursor)
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
 	}
 	// In fullscreen terminal mode, only show terminal
 	if a.showTerminal {
 		terminalView, terminalCursor := a.renderTerminalView()
 		a.mainViewCache.set(terminalView, terminalCursor)
-		return terminalView, terminalCursor
+		v := viewWithCursor(terminalView, terminalCursor)
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
 	}
 
 	// In normal mode, show main view
@@ -1751,13 +1757,21 @@ func (a *App) View() (string, *tea.Cursor) {
 
 	// Overlay modal if visible
 	if a.modalManager.IsModalVisible() {
-		modalView, modalCursor := a.modalManager.View()
-		a.mainViewCache.set(modalView, modalCursor)
-		return modalView, modalCursor
+		modalView := a.modalManager.View()
+		modalCursor := modalView.Cursor
+		modalContent := viewString(modalView)
+		a.mainViewCache.set(modalContent, modalCursor)
+		v := viewWithCursor(modalContent, modalCursor)
+		v.AltScreen = true
+		v.MouseMode = tea.MouseModeCellMotion
+		return v
 	}
 
 	a.mainViewCache.set(mainView, mainCursor)
-	return mainView, mainCursor
+	v := viewWithCursor(mainView, mainCursor)
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // renderMainView renders the main two-panel view
@@ -1861,8 +1875,9 @@ func (a *App) renderTerminalArea() (string, *tea.Cursor) {
 	if view, cursor, ok := a.terminalAreaCache.get(); ok {
 		return view, cursor
 	}
-	terminalView, terminalCursor := a.terminal.View()
-	a.terminalAreaCache.set(terminalView, terminalCursor)
+	terminalView := a.terminal.View()
+	terminalContent := viewString(terminalView)
+	a.terminalAreaCache.set(terminalContent, terminalView.Cursor)
 	view, cursor, _ := a.terminalAreaCache.get()
 	return view, cursor
 }
@@ -1870,7 +1885,9 @@ func (a *App) renderTerminalArea() (string, *tea.Cursor) {
 // renderTerminalView renders the full-screen terminal view
 func (a *App) renderTerminalView() (string, *tea.Cursor) {
 	// Get terminal view
-	terminalView, terminalCursor := a.terminal.View()
+	tv := a.terminal.View()
+	terminalView := viewString(tv)
+	terminalCursor := tv.Cursor
 
 	// Compose with a one-line toggle message at the bottom. To ensure it's visible,
 	// clamp the terminal content to a.height-1 lines.
@@ -2571,8 +2588,8 @@ func (a *App) showViewerOptionsModal(target viewerOptionsTarget) tea.Cmd {
 	})
 	base := ""
 	if active := a.modalManager.GetActiveModal(); active != nil {
-		if view, _ := active.View(); view != "" {
-			base = view
+		if view := active.View(); viewString(view) != "" {
+			base = viewString(view)
 		}
 	}
 	a.layoutViewOptionsModal(modal, content, -1, base)
@@ -4001,8 +4018,6 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	// Create program with proper options
 	p := tea.NewProgram(
 		app,
-		tea.WithAltScreen(),        // Use alternate screen buffer
-		tea.WithMouseCellMotion(),  // Enable mouse support
 		tea.WithoutSignalHandler(), // Handle signals ourselves
 	)
 

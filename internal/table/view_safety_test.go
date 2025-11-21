@@ -15,7 +15,7 @@ func TestViewNoReplacementRune_Scroll(t *testing.T) {
 	bt := NewBigTable(cols, NewSliceList(rows), 24, 8)
 	bt.SetMode(ctx, ModeScroll)
 	bt.Refresh(ctx)
-	s := bt.View()
+	s := viewString(bt.View())
 	if strings.ContainsRune(s, '\uFFFD') {
 		t.Fatalf("view contains replacement rune in Scroll mode: %q", s)
 	}
@@ -31,7 +31,7 @@ func TestViewNoReplacementRune_Fit(t *testing.T) {
 	bt := NewBigTable(cols, NewSliceList(rows), 24, 8)
 	bt.SetMode(ctx, ModeFit)
 	bt.Refresh(ctx)
-	s := bt.View()
+	s := viewString(bt.View())
 	if strings.ContainsRune(s, '\uFFFD') {
 		t.Fatalf("view contains replacement rune in Fit mode: %q", s)
 	}

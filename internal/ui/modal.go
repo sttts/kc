@@ -1,12 +1,13 @@
 package ui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/overlay"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
@@ -35,10 +36,6 @@ type Modal struct {
 	footerHotspots []footerHotspot
 	footerCursor   *tea.Cursor
 	mode           ModalMode
-}
-
-type cursorView interface {
-	View() (string, *tea.Cursor)
 }
 
 type modalEscapeHandler interface {
@@ -243,13 +240,14 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the modal and optionally returns a cursor when the content
 // exposes one (e.g., viewer search input).
-func (m *Modal) View() (string, *tea.Cursor) {
+func (m *Modal) View() tea.View {
 	if !m.visible {
-		return "", nil
+		return tea.NewView("")
 	}
 	m.footerHotspots = m.footerHotspots[:0]
 	m.footerCursor = nil
 	var contentCur *tea.Cursor
+	var inner string
 	// Fullscreen modal styled like panel
 	// Reserve 1 line for overlay header and 1 terminal line for the function key bar outside the frame.
 	// The framed box below has total height (m.height-2); its interior height is (m.height-2) - bottom border (1) = m.height-3.
@@ -315,15 +313,7 @@ func (m *Modal) View() (string, *tea.Cursor) {
 		if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
 			setter.SetDimensions(innerW, innerH)
 		}
-		inner := ""
-		if m.content != nil {
-			switch viewable := m.content.(type) {
-			case cursorView:
-				inner, contentCur = viewable.View()
-			case interface{ View() string }:
-				inner = viewable.View()
-			}
-		}
+		inner, contentCur = renderModelView(m.content)
 
 		frameBg := lipgloss.Color(uistyles.ColorModalBg)
 		frameFg := lipgloss.Color(uistyles.ColorModalFg)
@@ -400,23 +390,18 @@ func (m *Modal) View() (string, *tea.Cursor) {
 		if cursor == nil {
 			cursor = m.footerCursorForView()
 		}
-		return lipgloss.NewStyle().
-			Width(m.width).
-			Height(m.height).
-			Render(composed), cursor
+		return viewWithCursor(
+			lipgloss.NewStyle().
+				Width(m.width).
+				Height(m.height).
+				Render(composed),
+			cursor,
+		)
 	}
-	var inner string
 	if setter, ok := m.content.(interface{ SetDimensions(int, int) }); ok {
 		setter.SetDimensions(contentW, contentH)
 	}
-	if m.content != nil {
-		switch viewable := m.content.(type) {
-		case cursorView:
-			inner, contentCur = viewable.View()
-		case interface{ View() string }:
-			inner = viewable.View()
-		}
-	}
+	inner, contentCur = renderModelView(m.content)
 	// Build frame with overlay title (match focused panel style)
 	modalBg := lipgloss.Color(uistyles.ColorModalBg)
 	modalFg := lipgloss.Color(uistyles.ColorModalFg)
@@ -499,7 +484,28 @@ func (m *Modal) View() (string, *tea.Cursor) {
 	if cursor == nil {
 		cursor = m.footerCursorForView()
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, frame, footerLine), cursor
+	return viewWithCursor(lipgloss.JoinVertical(lipgloss.Left, frame, footerLine), cursor)
+}
+
+func renderModelView(model tea.Model) (string, *tea.Cursor) {
+	if model == nil {
+		return "", nil
+	}
+	view := model.View()
+	return viewString(view), view.Cursor
+}
+
+func viewWithCursor(content string, cursor *tea.Cursor) tea.View {
+	view := tea.NewView(content)
+	view.Cursor = cursor
+	return view
+}
+
+func viewString(view tea.View) string {
+	if view.Content == nil {
+		return ""
+	}
+	return fmt.Sprint(view.Content)
 }
 
 func shiftMouseMsg(msg tea.MouseMsg, dx, dy int) tea.MouseMsg {
@@ -908,15 +914,15 @@ func (mm *ModalManager) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return mm, nil
 }
 
-// View renders the active modal (if any) and returns its view/cursor.
-func (mm *ModalManager) View() (string, *tea.Cursor) {
+// View renders the active modal (if any) and returns its view.
+func (mm *ModalManager) View() tea.View {
 	if len(mm.stack) > 0 {
 		name := mm.stack[len(mm.stack)-1]
 		if modal, exists := mm.modals[name]; exists {
 			return modal.View()
 		}
 	}
-	return "", nil
+	return tea.NewView("")
 }
 
 // sliceANSIByColumns returns a substring by visible columns, ignoring ANSI

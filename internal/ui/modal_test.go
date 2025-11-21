@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 )
 
 // mockModel is a simple mock model for testing
@@ -23,8 +23,8 @@ func (m *mockModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *mockModel) View() string {
-	return m.content
+func (m *mockModel) View() tea.View {
+	return tea.NewView(m.content)
 }
 
 func (m *mockModel) SetDimensions(width, height int) {
@@ -38,7 +38,7 @@ func (m *capturingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *capturingModel) View() string { return "" }
+func (m *capturingModel) View() tea.View { return tea.NewView("") }
 
 func (m *capturingModel) SetDimensions(width, height int) {}
 

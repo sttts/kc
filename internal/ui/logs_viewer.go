@@ -7,8 +7,8 @@ import (
 	"io"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/ui/viewer"
 )
 
@@ -113,11 +113,11 @@ func (v *LogsViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return v, nil
 }
 
-func (v *LogsViewer) View() string {
+func (v *LogsViewer) View() tea.View {
 	if v.height <= 0 || v.width <= 0 {
-		return ""
+		return tea.NewView("")
 	}
-	return v.inner.View(viewer.Frame{Width: v.width, Height: v.height, Focused: true})
+	return tea.NewView(v.inner.View(viewer.Frame{Width: v.width, Height: v.height, Focused: true}))
 }
 
 func (v *LogsViewer) FooterHints() []FooterHint {

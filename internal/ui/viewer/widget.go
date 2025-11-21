@@ -5,12 +5,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	textinput "charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	chroma "github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
-	textinput "github.com/charmbracelet/bubbles/v2/textinput"
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
@@ -93,8 +93,8 @@ func New(theme string) *Widget {
 	styles.Focused.Placeholder = searchInputStyle.Copy().Foreground(lipgloss.Color("#808080"))
 	styles.Blurred = styles.Focused
 	styles.Cursor.Color = lipgloss.Color("#ff8c00")
-	ti.Styles = styles
-	ti.VirtualCursor = false
+	ti.SetStyles(styles)
+	ti.SetVirtualCursor(false)
 	ti.Blur()
 	return &Widget{
 		theme:            theme,

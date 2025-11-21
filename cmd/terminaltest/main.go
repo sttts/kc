@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	bubbleterm "github.com/taigrr/bubbleterm"
 )
 
@@ -24,7 +24,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(m).Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "run program: %v\n", err)
 		os.Exit(1)
 	}
@@ -87,8 +87,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m *model) View() (string, *tea.Cursor) {
-	view, cursor := m.term.View()
+func (m *model) View() tea.View {
+	view, cursor := m.terminalView()
 	lines := strings.Split(view, "\n")
 	status := statusLine
 	if m.width > 0 {
@@ -96,7 +96,11 @@ func (m *model) View() (string, *tea.Cursor) {
 	}
 	style := lipgloss.NewStyle().Width(m.width)
 	lines = append(lines, style.Render(status))
-	return strings.Join(lines, "\n"), cursor
+	content := strings.Join(lines, "\n")
+	v := tea.NewView(content)
+	v.Cursor = cursor
+	v.AltScreen = true
+	return v
 }
 
 func padToWidth(text string, width int) string {
@@ -105,4 +109,25 @@ func padToWidth(text string, width int) string {
 		return text
 	}
 	return text + strings.Repeat(" ", width-w)
+}
+
+func (m *model) terminalView() (string, *tea.Cursor) {
+	switch term := any(m.term).(type) {
+	case interface{ View() tea.View }:
+		view := term.View()
+		return viewString(view), view.Cursor
+	case interface{ View() (string, *tea.Cursor) }:
+		return term.View()
+	case interface{ View() string }:
+		return term.View(), nil
+	default:
+		return "", nil
+	}
+}
+
+func viewString(view tea.View) string {
+	if view.Content == nil {
+		return ""
+	}
+	return fmt.Sprint(view.Content)
 }

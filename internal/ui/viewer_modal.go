@@ -1,7 +1,7 @@
 package ui
 
 import (
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
 	"github.com/sttts/kc/internal/ui/viewer"
 )
 
@@ -49,11 +49,11 @@ func (v *TextViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return v, nil
 }
 
-func (v *TextViewer) View() string {
+func (v *TextViewer) View() tea.View {
 	if v.height <= 0 || v.width <= 0 {
-		return ""
+		return tea.NewView("")
 	}
-	return v.inner.View(viewer.Frame{Width: v.width, Height: v.height, Focused: true})
+	return tea.NewView(v.inner.View(viewer.Frame{Width: v.width, Height: v.height, Focused: true}))
 }
 
 func (v *TextViewer) FooterHints() []FooterHint {

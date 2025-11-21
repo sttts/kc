@@ -1,12 +1,12 @@
 # Repository Guidelines
 
 ## Dependencies Policy (Important)
-- Only use Bubble Tea v2: import `github.com/charmbracelet/bubbletea/v2` everywhere (including tests). Do NOT import `github.com/charmbracelet/bubbletea` without `/v2`.
+- Only use Bubble Tea v2: import `charm.land/bubbletea/v2` everywhere (including tests). Do NOT import `charm.land/bubbletea` without `/v2`.
 - Keep module paths consistent with Go’s major version semantics. If a module ships a v2+, the import path must include the `/vN` suffix.
 - If you see mixed v0/v1 vs v2 imports, fix them immediately and run `go mod tidy`.
 - Example:
-  - Correct: `tea "github.com/charmbracelet/bubbletea/v2"`
-  - Incorrect: `tea "github.com/charmbracelet/bubbletea"` (will break types between v1/v2)
+  - Correct: `tea "charm.land/bubbletea/v2"`
+  - Incorrect: `tea "charm.land/bubbletea"` (will break types between v1/v2)
 
 ## Project Structure & Module Organization
 - `cmd/kc/`: Application entrypoint (main package).
@@ -102,8 +102,10 @@ See `TODO.md` for the active development plan and current tasks. Keep every TODO
 - If `index.lock` exists or a commit fails due to a lock, do not delete the lock; simply retry the operation later. Avoid forceful lock removal.
 
 ### Permission Issues
-- When commands fail due to permission or sandbox restrictions, stop and escalate to the user for guidance or approval before retrying.
+- Do not override default Go/module cache locations; running with custom caches is too slow.
+- When commands fail due to permission or sandbox restrictions, stop and escalate to the user for guidance or approval before retrying. Re-run the command with escalation rather than changing cache locations.
 - Apply the same rule to any `git` command that errors because of permission problems (e.g., failing to create `index.lock`); do not retry without explicit approval or guidance.
+- Never use `git add -A`; stage only the intended files explicitly.
 
 ### AI Disclosure
 - Add an explicit co-author trailer to every commit as the last line, using the AI’s name and the maker’s noreply domain, e.g.:

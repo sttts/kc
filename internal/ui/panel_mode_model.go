@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
@@ -61,7 +61,7 @@ func (m *PanelModeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *PanelModeModel) View() string {
+func (m *PanelModeModel) View() tea.View {
 	base := lipgloss.NewStyle().
 		Background(lipgloss.Color(uistyles.ColorModalBg)).
 		Foreground(lipgloss.Color(uistyles.ColorModalFg))
@@ -96,7 +96,7 @@ func (m *PanelModeModel) View() string {
 	if m.height > 0 && (end-start) < m.height {
 		view += strings.Repeat("\n", m.height-(end-start))
 	}
-	return base.Width(m.width).Height(m.height).Render(view)
+	return tea.NewView(base.Width(m.width).Height(m.height).Render(view))
 }
 
 // FooterHints supplies modal footer hints.

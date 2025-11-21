@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
@@ -171,9 +171,9 @@ func (m *ResourcesOptionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *ResourcesOptionsModel) View() string {
+func (m *ResourcesOptionsModel) View() tea.View {
 	if len(m.options) == 0 {
-		return ""
+		return tea.NewView("")
 	}
 	labels := make([]string, len(m.options))
 	values := make([]string, len(m.options))
@@ -228,7 +228,7 @@ func (m *ResourcesOptionsModel) View() string {
 		rows = append(rows, rowStyle.Width(m.width).Render(""))
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
 func (m *ResourcesOptionsModel) FooterHints() []FooterHint {

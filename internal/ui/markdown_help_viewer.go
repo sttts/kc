@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/lipgloss/v2"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
 
@@ -166,9 +166,9 @@ func (v *MarkdownHelpViewer) scrollBy(delta int) {
 }
 
 // View renders the currently visible markdown slice.
-func (v *MarkdownHelpViewer) View() string {
+func (v *MarkdownHelpViewer) View() tea.View {
 	if v.width <= 0 || v.height <= 0 {
-		return ""
+		return tea.NewView("")
 	}
 	total := len(v.rendered)
 	if total == 0 {
@@ -186,7 +186,7 @@ func (v *MarkdownHelpViewer) View() string {
 			buf[i] = strings.Repeat(" ", max(0, v.width))
 		}
 	}
-	return strings.Join(buf, "\n")
+	return tea.NewView(strings.Join(buf, "\n"))
 }
 
 // FooterHints surfaces keyboard shortcuts for modal footer.

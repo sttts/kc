@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
@@ -572,7 +572,7 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the panel
-func (p *Panel) View() string {
+func (p *Panel) View() tea.View {
 	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
 	defer cancel()
 
@@ -582,19 +582,19 @@ func (p *Panel) View() string {
 	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 
 	if footer == "" {
-		return lipgloss.JoinVertical(
+		return tea.NewView(lipgloss.JoinVertical(
 			lipgloss.Left,
 			header,
 			content,
-		)
+		))
 	}
 
-	return lipgloss.JoinVertical(
+	return tea.NewView(lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		content,
 		footer,
-	)
+	))
 }
 
 // Render draws the fully framed panel, including optional footer, using the provided dimensions.
