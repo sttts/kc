@@ -1356,20 +1356,25 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.watchDiscovery()
 
 	case tea.KeyMsg:
+		press, isPress := msg.(tea.KeyPressMsg)
+		if !isPress {
+			return a, nil
+		}
+		// Prefer modifier-aware matching to cover both KeyMsg and KeyPressMsg forms.
+		if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {
+			switch key.Code {
+			case '1':
+				if cmd := a.cyclePanelModeIfVisible(0); cmd != nil {
+					return a, cmd
+				}
+			case '2':
+				if cmd := a.cyclePanelModeIfVisible(1); cmd != nil {
+					return a, cmd
+				}
+			}
+		}
 		// Handle global shortcuts first
-		switch msg.String() {
-		case "ctrl+1":
-			leftWidth, _, _, _ := a.panelAreaMetrics()
-			if leftWidth <= 0 {
-				return a, nil
-			}
-			return a, a.cyclePanelMode(0)
-		case "ctrl+2":
-			_, rightWidth, _, _ := a.panelAreaMetrics()
-			if rightWidth <= 0 {
-				return a, nil
-			}
-			return a, a.cyclePanelMode(1)
+		switch press.String() {
 		case "alt+f1":
 			leftWidth, _, _, _ := a.panelAreaMetrics()
 			if leftWidth <= 0 {
@@ -2318,6 +2323,27 @@ func (a *App) cyclePanelMode(idx int) tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	return panel.SetMode(ctx, next)
+}
+
+func (a *App) cyclePanelModeIfVisible(idx int) tea.Cmd {
+	leftWidth, rightWidth, _, _ := a.panelAreaMetrics()
+	// Only cycle when both panels are visible to avoid acting on hidden panes.
+	if leftWidth <= 0 || rightWidth <= 0 {
+		return nil
+	}
+	switch idx {
+	case 0:
+		if leftWidth <= 0 {
+			return nil
+		}
+	case 1:
+		if rightWidth <= 0 {
+			return nil
+		}
+	default:
+		return nil
+	}
+	return a.cyclePanelMode(idx)
 }
 
 func panelModeModalKey(idx int) string {
