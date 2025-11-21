@@ -249,8 +249,8 @@ github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO
 github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o6fzry7u4=
 github.com/stretchr/testify v1.8.4 h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcUk=
 github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXlSw2iwfAo=
-github.com/sttts/bubbleterm v0.0.0-20251121162659-53096ebaaa7e h1:Xoormjfz0TNlAVjeJHqdcIaRuWNxjjHB8KFK+HFfYbw=
-github.com/sttts/bubbleterm v0.0.0-20251121162659-53096ebaaa7e/go.mod h1:YDPWkaIiaxiN21bf7OvudPyw4nJgu8hKsJ6UjvzK8eU=
+github.com/sttts/bubbleterm v0.0.0-20251121190830-bcb6b4e18c20 h1:i5FzGfNukxAAvshKcHU2d1KSxO+32tjF6LATVeQI2U4=
+github.com/sttts/bubbleterm v0.0.0-20251121190830-bcb6b4e18c20/go.mod h1:YDPWkaIiaxiN21bf7OvudPyw4nJgu8hKsJ6UjvzK8eU=
 github.com/xlab/treeprint v1.2.0 h1:HzHnuAF1plUN2zGlAFHbSQP2qJ0ZAD3XF5XD7OesXRQ=
 github.com/xlab/treeprint v1.2.0/go.mod h1:gj5Gd3gPdKtR1ikdDK6fnFLdmIS0X30kTTuNd/WEJu0=
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e h1:JVG44RsyaB9T2KIHavMF/ppJZNG9ZpyihvCd0w101no=
