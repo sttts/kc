@@ -28,14 +28,15 @@ Current tasks
 - [ ] Menu bar (mc-style) with View options: sort keys, direction, column toggles, grouping. *(Later)*
 - [ ] Favorites list of resource types (allow users to add/remove favorites, persist, and use them to populate selectors/shortcuts). *(Later)*
 - [ ] Panel modes roadmap:
-  - [ ] Provide a logs pin mode so a panel can stay on streaming `kubectl logs` output for the selected object. *(Later)*
-  - [ ] Implement a Top/metrics mode to show resource usage summaries. *(Later)*
-  - [x] Add Ctrl+U (or similar) to swap left/right panel contents. *(Next)*
+- [ ] Provide a logs pin mode so a panel can stay on streaming `kubectl logs` output for the selected object. *(Later)*
+- [ ] Implement a Top/metrics mode to show resource usage summaries. *(Later)*
+- [x] Add Ctrl+U (or similar) to swap left/right panel contents. *(Next)*
 - [ ] Selection sync options: let users choose whether describe/manifest follow left→right or right→left selection, or lock a panel to a specific resource. *(Needs clarification)*
 - [ ] Auto-refresh indicator in detail views (spinner/toast) so users know when describe/manifest content refreshes. *(Next)*
 - [ ] API group hierarchy mode under `/groups/...`. *(Later)*
 - [ ] Metrics integration for Top and consumption sorts; graceful degradation. *(Later)*
 - [ ] Extensible actions system: per-resource action registry and external tool integration with context/env passing. *(Later)*
+- [ ] Replace direct namespace list checks with informer-backed existence checks to avoid raw client list calls during navigation. *(Next)*
 
 Tracking
 - Non-trivial logic MUST be unit-tested (see AGENTS.md).
