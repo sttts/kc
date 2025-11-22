@@ -22,6 +22,7 @@ import (
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	// Table-rendering cache integration
 	tablecache "github.com/sttts/kc/internal/tablecache"
@@ -357,6 +358,8 @@ func (c *Cluster) GVKToGVR(gvk schema.GroupVersionKind) (schema.GroupVersionReso
 // ListByGVR lists objects using the cache-backed client and returns an UnstructuredList.
 func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*unstructured.UnstructuredList, error) {
 	_ = c.ensureDiscovery()
+	log := ctrllog.FromContext(ctx).WithName("cluster")
+	log.Info("client list", "gvr", gvr.String(), "namespace", namespace)
 	k, err := c.RESTMapper().KindFor(gvr)
 	if err != nil {
 		return nil, err
@@ -381,6 +384,8 @@ func (c *Cluster) HasAnyByGVR(ctx context.Context, gvr schema.GroupVersionResour
 	if err := c.ensureDiscovery(); err != nil {
 		return false, err
 	}
+	log := ctrllog.FromContext(ctx).WithName("cluster")
+	log.Info("client hasAny peek", "gvr", gvr.String(), "namespace", namespace, "limit", 1)
 	res := c.dyn.Resource(gvr)
 	var iface dynamic.ResourceInterface
 	if namespace != "" {
@@ -399,6 +404,8 @@ func (c *Cluster) HasAnyByGVR(ctx context.Context, gvr schema.GroupVersionResour
 // GetByGVR fetches one object as Unstructured using the cache-backed client.
 func (c *Cluster) GetByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error) {
 	_ = c.ensureDiscovery()
+	log := ctrllog.FromContext(ctx).WithName("cluster")
+	log.Info("client get", "gvr", gvr.String(), "namespace", namespace, "name", name)
 	k, err := c.RESTMapper().KindFor(gvr)
 	if err != nil {
 		return nil, err

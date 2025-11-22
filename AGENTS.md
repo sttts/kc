@@ -53,6 +53,7 @@
 - Treat `Deps.Ctx` as the long-lived root context (e.g., for informers). For request-scoped or short-lived work, derive a child context from it and pass that down. Accessing `Deps.Ctx` directly should be the exception, not the default.
 - Never store `context.Context` on structs; pass it explicitly through call chains. The sole allowed long-lived context is `Deps.Ctx` for cluster/informer lifecycle management.
 - In Go tests, use `t.Context()` to derive request-scoped contexts instead of `context.Background()` or `context.TODO()`.
+- Every real client request (non-cache/informer) must log an INFO line before issuing the request (e.g., REST/dynamic/client-go List/Get/Delete/Watch), including GVR/namespace and key parameters, so DEBUG=1 traces outbound calls.
 
 ## Abstraction Guidelines
 - Prefer composition over wrapping: do not re-invent controller-runtime/client-go abstractions. Embed or compose original types instead of creating near-duplicates.
