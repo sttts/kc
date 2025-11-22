@@ -38,7 +38,11 @@ go build -o kc ./cmd/kc
 
 ```bash
 brew tap sttts/homebrew-kc
+# macOS (notarized GUI build)
 brew install --cask sttts/homebrew-kc/kc
+
+# Linux / CLI-only formula
+brew install sttts/homebrew-kc/kc
 ```
 
 ## Releases
