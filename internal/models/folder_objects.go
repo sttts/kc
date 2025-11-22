@@ -25,15 +25,17 @@ import (
 // ObjectsFolder provides shared scaffolding for object list folders.
 type ObjectsFolder struct {
 	*BaseFolder
-	gvr         schema.GroupVersionResource
-	namespace   string
-	rows        *liveObjectRowSource
-	objectOrder string
-	hasObjOrder bool
-	verbs       []string
-	ageMu       sync.Mutex
-	ageHooks    []*ageCellHook
-	ageTimer    *time.Timer
+	gvr                schema.GroupVersionResource
+	namespace          string
+	rows               *liveObjectRowSource
+	objectOrder        string
+	hasObjOrder        bool
+	verbs              []string
+	ageMu              sync.Mutex
+	ageHooks           []*ageCellHook
+	ageTimer           *time.Timer
+	Filter             func(*tablecache.Row) bool
+	FilterUnstructured func(*unstructured.Unstructured) bool
 }
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
@@ -99,6 +101,9 @@ func (o *ObjectsFolder) rowsFromRowList(rl *tablecache.RowList, columnsMode, ord
 
 	for _, ii := range idxs {
 		rr := &rl.Items[ii]
+		if o.Filter != nil && !o.Filter(rr) {
+			continue
+		}
 		name := rowName(rr)
 		id := name
 		cells := buildCells(rr.Cells, vis, hasChild)
@@ -140,6 +145,9 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 	names := make([]string, 0, len(list.Items))
 	byName := make(map[string]*unstructured.Unstructured, len(list.Items))
 	for i := range list.Items {
+		if o.FilterUnstructured != nil && !o.FilterUnstructured(&list.Items[i]) {
+			continue
+		}
 		names = append(names, list.Items[i].GetName())
 		byName[list.Items[i].GetName()] = &list.Items[i]
 	}
