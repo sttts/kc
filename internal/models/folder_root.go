@@ -51,6 +51,7 @@ func (f *RootFolder) populate(ctx context.Context) ([]table.Row, error) {
 		detail:    "namespaces (v1)",
 		style:     nameStyle,
 		gvr:       gvrNamespaces,
+		gvk:       schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"},
 		watchable: true,
 		enter: func() (Folder, error) {
 			return NewClusterObjectsFolder(f.Deps, gvrNamespaces, nsPathCopy, NamespaceResourceVerbs()), nil

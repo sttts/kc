@@ -80,6 +80,7 @@ func (f *ClusterResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, erro
 			detail:    detail,
 			style:     style,
 			gvr:       gvr,
+			gvk:       entry.info.GVK,
 			namespace: "",
 			watchable: true,
 			verbs:     verbsCopy,

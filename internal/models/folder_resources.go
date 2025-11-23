@@ -304,6 +304,7 @@ type resourceGroupSpec struct {
 	style     *lipgloss.Style
 	detail    string
 	gvr       schema.GroupVersionResource
+	gvk       schema.GroupVersionKind
 	namespace string
 	watchable bool
 	enter     func() (Folder, error)
@@ -350,6 +351,6 @@ func (f *ResourcesFolder) ensureResourceGroupItem(spec resourceGroupSpec) (*Reso
 	if existing, ok := f.items[spec.id]; ok {
 		return existing, false
 	}
-	item := NewResourceGroupItem(f.Deps, spec.gvr, spec.namespace, spec.id, spec.cells, spec.path, spec.detail, spec.style, spec.watchable, spec.enter)
+	item := NewResourceGroupItem(f.Deps, spec.gvr, spec.gvk, spec.namespace, spec.id, spec.cells, spec.path, spec.detail, spec.style, spec.watchable, spec.enter)
 	return item, true
 }

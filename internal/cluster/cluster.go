@@ -139,7 +139,8 @@ func (c *Cluster) ensureDiscovery() error {
 	if c.mapper != nil && c.baseMapper != nil && c.disco != nil && c.dyn != nil {
 		return nil
 	}
-	dc, err := discovery.NewDiscoveryClientForConfig(c.GetConfig())
+	ctrllog.Log.WithName("cluster").Info("initializing discovery clients", "cluster", fmt.Sprintf("%p", c))
+	dc, err := discovery.NewDiscoveryClientForConfig(rest.CopyConfig(c.GetConfig()))
 	if err != nil {
 		return err
 	}
@@ -207,9 +208,11 @@ func (c *Cluster) RefreshDiscovery() {
 		return
 	}
 	if c.disco != nil {
+		ctrllog.Log.WithName("discovery").V(1).Info("RefreshDiscovery invalidate", "cache", fmt.Sprintf("%p", c.disco))
 		c.disco.Invalidate()
 	}
 	if c.baseMapper != nil {
+		ctrllog.Log.WithName("discovery").V(1).Info("RefreshDiscovery reset mapper", "mapper", fmt.Sprintf("%p", c.baseMapper))
 		c.baseMapper.Reset()
 	}
 	c.notifyDiscoveryListeners()
@@ -436,14 +439,19 @@ func (c *Cluster) StorageCount(ctx context.Context, gvr schema.GroupVersionResou
 	}
 	c.storageMu.RLock()
 	defer c.storageMu.RUnlock()
-	if c.storageCounts == nil {
+	counts := c.storageCounts
+	if counts == nil {
 		return 0, false
 	}
-	if cnt, ok := c.storageCounts[gvr.GroupResource()]; ok {
+	if cnt, ok := counts[gvr.GroupResource()]; ok {
 		return cnt, true
 	}
-	// Metrics present but GVR absent → treat as zero.
-	return 0, true
+	// Metrics are resource-name scoped (group label may be empty). Try a group-less key.
+	if cnt, ok := counts[schema.GroupResource{Group: "", Resource: gvr.Resource}]; ok {
+		return cnt, true
+	}
+	// No metrics entry at all for this resource name; cannot conclude emptiness.
+	return 0, false
 }
 
 func (c *Cluster) refreshStorageMetrics(ctx context.Context, maxAge time.Duration) bool {
@@ -532,11 +540,10 @@ type ResourceInfo struct {
 
 // GetResourceInfos returns API resource infos via discovery.
 func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
-	dc, err := discovery.NewDiscoveryClientForConfig(c.GetConfig())
-	if err != nil {
+	if err := c.ensureDiscovery(); err != nil {
 		return nil, err
 	}
-	lists, err := dc.ServerPreferredResources()
+	lists, err := c.disco.ServerPreferredResources()
 	if err != nil {
 		// Allow partial discovery results when some aggregated APIs fail (e.g., metrics.k8s.io).
 		if len(lists) == 0 {

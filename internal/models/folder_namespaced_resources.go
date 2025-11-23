@@ -90,6 +90,7 @@ func (f *NamespacedResourcesFolder) resourceGroupSpecs() ([]resourceGroupSpec, e
 			detail:    detail,
 			style:     style,
 			gvr:       gvr,
+			gvk:       entry.info.GVK,
 			namespace: ns,
 			watchable: true,
 			enter: func() (Folder, error) {

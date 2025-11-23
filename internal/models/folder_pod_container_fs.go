@@ -423,7 +423,7 @@ func podFSFileViewContent(folder *PodContainerFSFolder, fsPath string, size int6
 		if limit <= 0 || limit > fsFileViewMaxBytes {
 			limit = fsFileViewMaxBytes
 		}
-		data, err := folder.readFileContent(nil, fsPath, limit)
+		data, err := folder.readFileContent(folder.Deps.Ctx, fsPath, limit)
 		if err != nil {
 			return "", "", "", "", "", err
 		}

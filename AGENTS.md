@@ -101,13 +101,13 @@
 See `TODO.md` for the active development plan and current tasks. Keep every TODO entry prefixed with `- [ ]` / `- [x]` and check off items as soon as they are completed.
 
 ### Git Hygiene
-- If `index.lock` exists or a commit fails due to a lock, do not delete the lock; simply retry the operation later. Avoid forceful lock removal. Escalate the situation to the user instead of forcing the lock.
+- If `index.lock` exists or a commit fails due to a lock, stop and escalate to the user. Do not delete or retry until the user explicitly clears or approves a retried command.
 
 ### Permission Issues
-- Do not override default Go/module cache locations; running with custom caches is too slow.
-- When commands fail due to permission or sandbox restrictions, stop and escalate to the user for guidance or approval before retrying. Re-run the command with escalation rather than changing cache locations.
-- Apply the same rule to any `git` command that errors because of permission problems (e.g., failing to create `index.lock`); do not retry without explicit approval or guidance.
-- Never use `git add -A`; stage only the intended files explicitly.
+- Do not override default Go/module cache locations.
+- If a command fails due to permissions or sandboxing, stop and escalate before retrying. Use escalation rather than changing cache locations.
+- Apply the same rule to git permission/lock errors (e.g., `index.lock`): stop and escalate; do not retry until the user approves.
+- Never use `git add -A`; stage only intended files.
 
 ### AI Disclosure
 - Add an explicit co-author trailer to every commit as the last line, using the AI’s name and the maker’s noreply domain, e.g.:

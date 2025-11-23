@@ -25,6 +25,8 @@ type ResourceGroupItem struct {
 	gvr       schema.GroupVersionResource
 	namespace string
 	watchable bool
+	gvk       schema.GroupVersionKind
+	gvkKnown  bool
 
 	mu         sync.Mutex
 	count      int
@@ -45,14 +47,17 @@ type ResourceGroupItem struct {
 	nextPeekScheduled   bool
 }
 
-func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, namespace, id string, cells []string, path []string, detail string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
+func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, gvk schema.GroupVersionKind, namespace, id string, cells []string, path []string, detail string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
 	row := NewRowItem(id, cells, path, style)
 	row.details = detail
+	gvkKnown := gvk.Kind != ""
 	return &ResourceGroupItem{
 		RowItem:   row,
 		enter:     enter,
 		deps:      deps,
 		gvr:       gvr,
+		gvk:       gvk,
+		gvkKnown:  gvkKnown,
 		namespace: namespace,
 		watchable: watchable,
 	}
@@ -170,12 +175,17 @@ func (r *ResourceGroupItem) TryCount() (int, bool) {
 
 func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 	ctx := r.deps.Ctx
-	gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
-	if err != nil {
-		return 0, false
+	if !r.gvkKnown {
+		gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
+		if err != nil {
+			crlog.FromContext(r.deps.Ctx).Info("mapper KindFor failed", "gvr", r.gvr.String(), "namespace", r.namespace, "error", err)
+			return 0, false
+		}
+		r.gvk = gvk
+		r.gvkKnown = true
 	}
 	obj := &unstructured.Unstructured{}
-	obj.SetGroupVersionKind(gvk)
+	obj.SetGroupVersionKind(r.gvk)
 	informer, err := r.deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(true))
 	if err != nil {
 		if apierrors.IsMethodNotSupported(err) {
@@ -254,20 +264,18 @@ func (r *ResourceGroupItem) countViaClient(ctx context.Context) (int, bool) {
 
 func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 	ctx := r.deps.Ctx
-	// Prefer apiserver metrics if available; missing GVR in metrics implies zero.
-	if cnt, ok := r.deps.Cl.StorageCount(ctx, r.gvr, r.peekInterval()); ok {
+	// Prefer apiserver metrics when they definitively report zero.
+	// Metrics are keyed by resource name only (no group/version). A zero count means
+	// no objects of this resource name exist anywhere; any non-zero still requires
+	// peeks/informers to localize existence.
+	if cnt, ok := r.deps.Cl.StorageCount(ctx, r.gvr, r.peekInterval()); ok && cnt == 0 {
 		r.lastPeek = time.Now()
 		r.lastError = time.Time{}
 		r.emptyKnown = true
-		if cnt == 0 {
-			r.empty = true
-			r.count = 0
-			r.countKnown = true
-			return true, true
-		}
-		r.empty = false
-		// Count is non-zero; allow informer path to refine count asynchronously.
-		return false, true
+		r.empty = true
+		r.count = 0
+		r.countKnown = true
+		return true, true
 	}
 	crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
 	has, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
@@ -305,6 +313,8 @@ func (r *ResourceGroupItem) CopyFrom(other *ResourceGroupItem) {
 	r.enter = other.enter
 	r.deps = other.deps
 	r.gvr = other.gvr
+	r.gvk = other.gvk
+	r.gvkKnown = other.gvkKnown
 	r.namespace = other.namespace
 	r.watchable = other.watchable
 }
@@ -322,6 +332,10 @@ func (r *ResourceGroupItem) applySpec(spec resourceGroupSpec, deps Deps, created
 	r.enter = spec.enter
 	r.deps = deps
 	r.gvr = spec.gvr
+	if spec.gvk.Kind != "" {
+		r.gvk = spec.gvk
+		r.gvkKnown = true
+	}
 	r.namespace = spec.namespace
 	switch {
 	case created:

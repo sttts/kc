@@ -34,7 +34,8 @@ func TestResourceGroupItemUpdatesCountOnInformerEvents(t *testing.T) {
 		AppConfig: appconfig.Default(),
 	}
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
-	item := NewResourceGroupItem(deps, gvr, ns, "id", []string{"/configmaps", "v1", ""}, []string{"namespaces", ns, "configmaps"}, "configmaps", WhiteStyle(), true, nil)
+	gvk := schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}
+	item := NewResourceGroupItem(deps, gvr, gvk, ns, "id", []string{"/configmaps", "v1", ""}, []string{"namespaces", ns, "configmaps"}, "configmaps", WhiteStyle(), true, nil)
 
 	if count := item.Count(); count != 1 {
 		t.Fatalf("initial count = %d, want 1", count)
