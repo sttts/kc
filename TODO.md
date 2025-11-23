@@ -10,6 +10,8 @@ Current tasks
 ## Pod Filesystem Browser follow-ups
 - [ ] Implement per-image/per-container shell probes, cache the results, and short-circuit to the fallback path when built-in shells/tools are missing.
 
+- [ ] Upgrade controller-runtime to a newer release to improve informer/cache behavior and reduce API churn.
+
 ## Milestone 3 — Terminal Follows Navigation
 - Terminal context manager for the integrated PTY session.
 - Strategy (non-destructive preferred):
