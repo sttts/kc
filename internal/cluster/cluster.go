@@ -1,9 +1,12 @@
 package cluster
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +43,11 @@ type Cluster struct {
 
 	// tableCache serves Row/RowList objects backed by server-side Table responses.
 	tableCache crcache.Cache
+
+	// storageCounts caches apiserver_storage_objects counts keyed by GVR.
+	storageMu      sync.RWMutex
+	storageCounts  map[schema.GroupResource]int
+	storageFetched time.Time
 
 	cancel  context.CancelFunc
 	refresh time.Duration
@@ -417,6 +425,100 @@ func (c *Cluster) GetByGVR(ctx context.Context, gvr schema.GroupVersionResource,
 		return nil, err
 	}
 	return u, nil
+}
+
+// StorageCount returns the number of objects for a GVR based on apiserver_storage_objects metrics.
+// When metrics are unavailable or stale, ok=false and callers should fall back to client peeks.
+// When metrics are available and the GVR is missing from the metrics, count=0 and ok=true.
+func (c *Cluster) StorageCount(ctx context.Context, gvr schema.GroupVersionResource, maxAge time.Duration) (int, bool) {
+	if !c.refreshStorageMetrics(ctx, maxAge) {
+		return 0, false
+	}
+	c.storageMu.RLock()
+	defer c.storageMu.RUnlock()
+	if c.storageCounts == nil {
+		return 0, false
+	}
+	if cnt, ok := c.storageCounts[gvr.GroupResource()]; ok {
+		return cnt, true
+	}
+	// Metrics present but GVR absent → treat as zero.
+	return 0, true
+}
+
+func (c *Cluster) refreshStorageMetrics(ctx context.Context, maxAge time.Duration) bool {
+	c.storageMu.RLock()
+	ageOk := !c.storageFetched.IsZero() && time.Since(c.storageFetched) < maxAge && c.storageCounts != nil
+	c.storageMu.RUnlock()
+	if ageOk {
+		return true
+	}
+	counts, err := c.fetchStorageMetrics(ctx)
+	if err != nil {
+		return false
+	}
+	c.storageMu.Lock()
+	c.storageCounts = counts
+	c.storageFetched = time.Now()
+	c.storageMu.Unlock()
+	return true
+}
+
+func (c *Cluster) fetchStorageMetrics(ctx context.Context) (map[schema.GroupResource]int, error) {
+	cfg := rest.CopyConfig(c.GetConfig())
+	httpClient, err := rest.HTTPClientFor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	url := strings.TrimSuffix(cfg.Host, "/") + "/metrics"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "text/plain")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("metrics: unexpected status %d", resp.StatusCode)
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	const prefix = "apiserver_storage_objects{"
+	counts := make(map[schema.GroupResource]int)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		rbrace := strings.Index(line, "}")
+		if rbrace <= len(prefix) {
+			continue
+		}
+		labelStr := line[len(prefix):rbrace]
+		valStr := strings.TrimSpace(line[rbrace+1:])
+		val, err := strconv.ParseFloat(valStr, 64)
+		if err != nil {
+			continue
+		}
+		labels := make(map[string]string)
+		for _, kv := range strings.Split(labelStr, ",") {
+			parts := strings.SplitN(strings.TrimSpace(kv), "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			labels[strings.TrimSpace(parts[0])] = strings.Trim(parts[1], `"`)
+		}
+		group := labels["group"]
+		resource := labels["resource"]
+		if resource == "" {
+			continue
+		}
+		gr := schema.GroupResource{Group: group, Resource: resource}
+		counts[gr] = int(val)
+	}
+	return counts, scanner.Err()
 }
 
 // ResourceInfo describes a discoverable API resource kind.

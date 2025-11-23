@@ -126,7 +126,6 @@ func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 		r.mu.Unlock()
 		return r.empty
 	}
-	crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
 	empty, ok := r.peekEmptyLocked()
 	prevEmpty := r.emptyKnown && r.empty
 	r.lastPeek = time.Now()
@@ -258,6 +257,22 @@ func (r *ResourceGroupItem) countViaClient(ctx context.Context) (int, bool) {
 
 func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 	ctx := r.deps.Ctx
+	// Prefer apiserver metrics if available; missing GVR in metrics implies zero.
+	if cnt, ok := r.deps.Cl.StorageCount(ctx, r.gvr, r.peekInterval()); ok {
+		r.lastPeek = time.Now()
+		r.lastError = time.Time{}
+		r.emptyKnown = true
+		if cnt == 0 {
+			r.empty = true
+			r.count = 0
+			r.countKnown = true
+			return true, true
+		}
+		r.empty = false
+		// Count is non-zero; allow informer path to refine count asynchronously.
+		return false, true
+	}
+	crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
 	has, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
 	if err != nil {
 		r.lastPeek = time.Now()
