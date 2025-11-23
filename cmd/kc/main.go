@@ -62,8 +62,8 @@ func main() {
 	}
 
 	// Set up controller-runtime logging. By default discard logs entirely.
-	// If DEBUG=1, write logs to ~/.kc/debug.log in dev-friendly format.
-	setupControllerRuntimeLogger()
+	// If DEBUG=1, write logs to stderr during startup, then switch to ~/.kc/debug.log when the UI starts.
+	switchToUILogger := setupControllerRuntimeLogger()
 	startPprofServer(strings.TrimSpace(cli.PprofAddr))
 
 	if cli.Version {
@@ -86,6 +86,9 @@ func main() {
 	runCfg := ui.RunConfig{
 		Namespace:     ns,
 		StartupIntent: intent,
+	}
+	if switchToUILogger != nil {
+		switchToUILogger()
 	}
 	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -162,40 +165,43 @@ func selectNamespace(global, override string) string {
 }
 
 // setupControllerRuntimeLogger configures controller-runtime's global logger.
-// Default: drop logs. If DEBUG=1, write to ~/.kc/debug.log.
-func setupControllerRuntimeLogger() {
+// Default: drop logs. If DEBUG=1, write to stderr during startup, then switch
+// to ~/.kc/debug.log (dev-friendly format) when the returned switch function is called.
+func setupControllerRuntimeLogger() func() {
 	if os.Getenv("DEBUG") == "1" {
 		if home, err := os.UserHomeDir(); err == nil {
 			dir := filepath.Join(home, ".kc")
-			// Best-effort create directory and file; fallback to discard on error.
 			if err := os.MkdirAll(dir, 0o700); err == nil {
 				fpath := filepath.Join(dir, "debug.log")
-				// recreate the log file on each start to avoid unbounded growth
 				_ = os.Remove(fpath)
 				f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 				if err == nil {
-					// We intentionally do not close f until process exit.
-					l := crzap.New(
-						crzap.UseDevMode(true),
-						crzap.WriteTo(f),
-					)
-					ctrllog.SetLogger(l)
-					log.SetOutput(f)
+					// Startup: tee to stderr so logs are visible before the UI takes over.
+					startupWriter := io.MultiWriter(os.Stderr, f)
+					startupLogger := crzap.New(crzap.UseDevMode(true), crzap.WriteTo(startupWriter))
+					ctrllog.SetLogger(startupLogger)
+					log.SetOutput(startupWriter)
 					log.SetFlags(0)
-					klog.SetOutput(f)
-					// Redirect klog to the controller-runtime logger (zap)
+					klog.SetOutput(startupWriter)
 					klog.SetLogger(ctrllog.Log)
-					return
+					// Return switcher to redirect logs to file only once the UI starts.
+					return func() {
+						fileLogger := crzap.New(crzap.UseDevMode(true), crzap.WriteTo(f))
+						ctrllog.SetLogger(fileLogger)
+						log.SetOutput(f)
+						log.SetFlags(0)
+						klog.SetOutput(f)
+						klog.SetLogger(ctrllog.Log)
+					}
 				}
 			}
 		}
 	}
-	// Fallback: discard all controller-runtime logs
 	ctrllog.SetLogger(logr.Discard())
-	// Redirect klog to discard as well
 	klog.SetLogger(logr.Discard())
 	klog.SetOutput(io.Discard)
 	log.SetOutput(io.Discard)
+	return nil
 }
 
 func startPprofServer(addr string) {
