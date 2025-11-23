@@ -46,7 +46,7 @@ func init() {
 
 	// apps/v1
 	RegisterChild(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, func(deps Deps, ns, name string, basePath []string) Folder {
-		return NewChildResourceGroupsFolder(deps,
+		return NewChildResourceTypesFolder(deps,
 			schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"},
 			ns, name,
 			[]schema.GroupVersionResource{
@@ -56,7 +56,7 @@ func init() {
 		)
 	})
 	RegisterChild(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"}, func(deps Deps, ns, name string, basePath []string) Folder {
-		return NewChildResourceGroupsFolder(deps,
+		return NewChildResourceTypesFolder(deps,
 			schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"},
 			ns, name,
 			[]schema.GroupVersionResource{
@@ -66,7 +66,7 @@ func init() {
 		)
 	})
 	RegisterChild(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}, func(deps Deps, ns, name string, basePath []string) Folder {
-		return NewChildResourceGroupsFolder(deps,
+		return NewChildResourceTypesFolder(deps,
 			schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"},
 			ns, name,
 			[]schema.GroupVersionResource{
@@ -78,7 +78,7 @@ func init() {
 
 	// batch/v1
 	RegisterChild(schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, func(deps Deps, ns, name string, basePath []string) Folder {
-		return NewChildResourceGroupsFolder(deps,
+		return NewChildResourceTypesFolder(deps,
 			schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"},
 			ns, name,
 			[]schema.GroupVersionResource{
