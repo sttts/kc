@@ -3479,6 +3479,7 @@ type resolvedResource struct {
 	gvr        schema.GroupVersionResource
 	namespaced bool
 	rowID      string
+	namespace  string
 }
 
 func (a *App) resolveGetResources(namespace string, order []string) (map[string]resolvedResource, string) {
@@ -3492,12 +3493,6 @@ func (a *App) resolveGetResources(namespace string, order []string) (map[string]
 			}
 			continue
 		}
-		if !namespaced {
-			if warn == "" {
-				warn = fmt.Sprintf("%s: cluster-scoped resources not yet supported", res)
-			}
-			continue
-		}
 		ns := namespace
 		if namespaced && ns == "" {
 			ns = corev1.NamespaceDefault
@@ -3507,6 +3502,7 @@ func (a *App) resolveGetResources(namespace string, order []string) (map[string]
 			gvr:        gvr,
 			namespaced: namespaced,
 			rowID:      resourceRowID(ns, gvr, namespaced),
+			namespace:  ns,
 		}
 	}
 	return resolved, warn
@@ -3518,7 +3514,23 @@ func (a *App) goToResourceFolder(res resolvedResource) error {
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 	defer cancel()
-	if _, err := navui.GoTo(ctx, a.leftNav, []navui.GoToStep{{SelectionID: res.rowID, Enter: true}}); err != nil {
+	// Start from root to ensure cluster-scoped resources are reachable.
+	for a.leftNav.HasBack() {
+		a.leftNav.Back()
+	}
+	steps := []navui.GoToStep{}
+	if res.namespaced {
+		nsName := res.namespace
+		if nsName == "" {
+			nsName = corev1.NamespaceDefault
+		}
+		steps = append(steps,
+			navui.GoToStep{SelectionID: "namespaces", Enter: true},
+			navui.GoToStep{SelectionID: nsName, Enter: true},
+		)
+	}
+	steps = append(steps, navui.GoToStep{SelectionID: res.rowID, Enter: true})
+	if _, err := navui.GoTo(ctx, a.leftNav, steps); err != nil {
 		return err
 	}
 	a.syncPanelWithNavigator(0)
