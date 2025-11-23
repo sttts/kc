@@ -4065,9 +4065,7 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		// Refresh contexts so logs use the file-only, unnamed logger (no lingering "startup" name).
 		baseLog := ctrllog.Log
 		ctx = ctrllog.IntoContext(ctx, baseLog)
-		if app.ctx != nil {
-			app.ctx = ctrllog.IntoContext(app.ctx, baseLog)
-		}
+		app.ctx = ctrllog.IntoContext(app.ctx, baseLog)
 		log = ctrllog.FromContext(ctx)
 	}
 
@@ -4630,16 +4628,16 @@ func (a *App) selectCurrentContext() *kubeconfig.Context {
 			}
 			for _, kc := range a.kubeMgr.GetKubeconfigs() {
 				if sameFilepath(kc.Path, p) {
-					if ctx := a.kubeMgr.GetCurrentContext(kc); ctx != nil {
-						return ctx
+					if c := a.kubeMgr.GetCurrentContext(kc); c != nil {
+						return c
 					}
 				}
 			}
 		}
 	}
 	for _, kc := range a.kubeMgr.GetKubeconfigs() {
-		if ctx := a.kubeMgr.GetCurrentContext(kc); ctx != nil {
-			return ctx
+		if c := a.kubeMgr.GetCurrentContext(kc); c != nil {
+			return c
 		}
 	}
 	cs := a.kubeMgr.GetContexts()

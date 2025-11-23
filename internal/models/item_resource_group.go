@@ -170,9 +170,6 @@ func (r *ResourceGroupItem) TryCount() (int, bool) {
 
 func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 	ctx := r.deps.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
 	if err != nil {
 		return 0, false
@@ -441,13 +438,10 @@ func (r *ResourceGroupItem) scheduleRecount() {
 			r.recounting = false
 			r.mu.Unlock()
 		}()
-		log := crlog.FromContext(r.deps.Ctx)
+		ctx := r.deps.Ctx
+		log := crlog.FromContext(ctx)
 		log.Info("resource group recount started", "gvr", r.gvr.String(), "namespace", r.namespace)
 		_ = r.Count()
-		ctx := r.deps.Ctx
-		if ctx == nil {
-			ctx = context.Background()
-		}
 		hasAny, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
 		if err != nil {
 			log.Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
@@ -500,9 +494,6 @@ func (r *ResourceGroupItem) nextPeekScheduleLocked() (context.Context, time.Dura
 	r.nextPeekScheduled = true
 	interval := r.peekInterval()
 	ctx := r.deps.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	return ctx, interval, true
 }
 

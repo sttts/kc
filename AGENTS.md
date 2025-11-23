@@ -53,6 +53,7 @@
 - Treat `Deps.Ctx` as the long-lived root context (e.g., for informers). For request-scoped or short-lived work, derive a child context from it and pass that down. Accessing `Deps.Ctx` directly should be the exception, not the default.
 - Never store `context.Context` on structs; pass it explicitly through call chains. The sole allowed long-lived context is `Deps.Ctx` for cluster/informer lifecycle management.
 - In Go tests, use `t.Context()` to derive request-scoped contexts instead of `context.Background()` or `context.TODO()`.
+- `context.Context` must never be nil; do not check for nil and do not create fallbacks. Always thread a real, non-nil context from the caller.
 - Every real client request (non-cache/informer) must log an INFO line before issuing the request (e.g., REST/dynamic/client-go List/Get/Delete/Watch), including GVR/namespace and key parameters, so DEBUG=1 traces outbound calls.
 
 ## Abstraction Guidelines
@@ -100,7 +101,7 @@
 See `TODO.md` for the active development plan and current tasks. Keep every TODO entry prefixed with `- [ ]` / `- [x]` and check off items as soon as they are completed.
 
 ### Git Hygiene
-- If `index.lock` exists or a commit fails due to a lock, do not delete the lock; simply retry the operation later. Avoid forceful lock removal.
+- If `index.lock` exists or a commit fails due to a lock, do not delete the lock; simply retry the operation later. Avoid forceful lock removal. Escalate the situation to the user instead of forcing the lock.
 
 ### Permission Issues
 - Do not override default Go/module cache locations; running with custom caches is too slow.

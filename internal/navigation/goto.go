@@ -29,9 +29,6 @@ func GoTo(ctx context.Context, nav *Navigator, steps []GoToStep) (GoToResult, er
 	if nav == nil {
 		return res, fmt.Errorf("navigation: nil navigator")
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	cur := nav.Current()
 	if cur == nil && len(steps) > 0 {
 		return res, fmt.Errorf("navigation: empty stack")

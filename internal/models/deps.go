@@ -40,9 +40,6 @@ func (d Deps) ForNamespace(namespace string) Deps {
 		return d
 	}
 	ctx := d.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	key := d.ClusterKey
 	key.Namespace = ns
 	cl, err := d.NamespaceFactory(ctx, key)

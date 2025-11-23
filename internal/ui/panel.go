@@ -253,9 +253,7 @@ func (p *Panel) ensureWidget(ctx context.Context, mode PanelViewMode) PanelWidge
 		return nil
 	}
 	p.widgets[mode] = widget
-	if ctx != nil {
-		widget.Resize(ctx, panelcontent.Size{Width: p.width, Height: p.height})
-	}
+	widget.Resize(ctx, panelcontent.Size{Width: p.width, Height: p.height})
 	return widget
 }
 
@@ -608,12 +606,6 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	if p.renderCacheMatches(width, height, focused) {
 		return p.renderCache
 	}
-	if ctx == nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), panelContextTimeout)
-		defer cancel()
-	}
-
 	contentWidth := max(1, width-2)
 	frameHeight := max(2, height)
 	contentHeight := max(1, frameHeight-2)
@@ -1107,9 +1099,7 @@ func (p *Panel) GetCurrentItem() *Item {
 // Items returns the current list items snapshot.
 func (p *Panel) Items(ctx context.Context) []Item {
 	if lw := p.listWidget(ctx); lw != nil {
-		if ctx != nil {
-			lw.RefreshFolder(ctx)
-		}
+		lw.RefreshFolder(ctx)
 		return lw.Items()
 	}
 	return nil

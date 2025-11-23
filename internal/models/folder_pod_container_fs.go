@@ -130,7 +130,7 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 		f.scheduleRefresh(fsHelperRetryInterval)
 		return f.containerProgressRows(status, detail), nil
 	}
-	sessionCtx, cancelSession := deriveContext(ctx, f.Deps.Ctx, fsSessionTimeout)
+	sessionCtx, cancelSession := context.WithTimeout(ctx, fsSessionTimeout)
 	defer cancelSession()
 	sess, err := f.session.Session(sessionCtx)
 	if err != nil {
@@ -149,7 +149,7 @@ func (f *PodContainerFSFolder) buildRows(ctx context.Context) ([]table.Row, erro
 		item.WithViewContent(errorViewContent("Pod filesystem", detail))
 		return []table.Row{item}, nil
 	}
-	listCtx, cancelList := deriveContext(ctx, f.Deps.Ctx, fsDefaultTimeout)
+	listCtx, cancelList := context.WithTimeout(ctx, fsDefaultTimeout)
 	defer cancelList()
 	entries, err := sess.List(listCtx, f.dir)
 	if err != nil && isTransientSessionError(err) {
@@ -223,7 +223,7 @@ func (f *PodContainerFSFolder) containerReady(ctx context.Context) (bool, string
 	if name == "" {
 		return true, "", ""
 	}
-	readyCtx, cancel := deriveContext(ctx, f.Deps.Ctx, fsContainerReadyTimeout)
+	readyCtx, cancel := context.WithTimeout(ctx, fsContainerReadyTimeout)
 	defer cancel()
 	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 	obj, err := f.Deps.Cl.GetByGVR(readyCtx, gvr, f.session.spec.Namespace, f.session.spec.Pod)
@@ -373,9 +373,6 @@ func (f *PodContainerFSFolder) scheduleRefresh(delay time.Duration) {
 		return
 	}
 	ctx := f.Deps.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	f.refreshTimer = time.AfterFunc(delay, func() {
 		select {
 		case <-ctx.Done():
@@ -468,9 +465,6 @@ func (h *containerSessionHandle) Session(ctx context.Context) (podfs.ExecSession
 	defer h.mu.Unlock()
 	if h.session != nil {
 		return h.session, nil
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	session, err := h.factory.NewSession(ctx, h.spec)
 	if err != nil {
@@ -584,13 +578,13 @@ func (f *PodContainerFSFolder) readFileContent(ctx context.Context, fsPath strin
 		return nil, fmt.Errorf("pod filesystem unavailable")
 	}
 	for attempt := 0; attempt < 2; attempt++ {
-		sessionCtx, cancelSession := deriveContext(ctx, f.Deps.Ctx, fsSessionTimeout)
+		sessionCtx, cancelSession := context.WithTimeout(ctx, fsSessionTimeout)
 		sess, err := f.session.Session(sessionCtx)
 		if err != nil {
 			cancelSession()
 			return nil, err
 		}
-		readCtx, cancelRead := deriveContext(ctx, f.Deps.Ctx, fsDefaultTimeout)
+		readCtx, cancelRead := context.WithTimeout(ctx, fsDefaultTimeout)
 		reader, err := sess.ReadFile(readCtx, fsPath, limit)
 		if err != nil {
 			cancelRead()
@@ -633,17 +627,4 @@ func isContextError(err error) bool {
 		return false
 	}
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
-}
-
-func deriveContext(ctx context.Context, fallback context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	if ctx == nil {
-		ctx = fallback
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if timeout <= 0 {
-		return ctx, func() {}
-	}
-	return context.WithTimeout(ctx, timeout)
 }

@@ -760,12 +760,10 @@ func (o *ObjectsFolder) scheduleAgeTimerLocked(interval time.Duration) {
 }
 
 func (o *ObjectsFolder) ageTick() {
-	if ctx := o.Deps.Ctx; ctx != nil {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
+	select {
+	case <-o.Deps.Ctx.Done():
+		return
+	default:
 	}
 	o.BaseFolder.markDirtyFromSource()
 	o.ageMu.Lock()
