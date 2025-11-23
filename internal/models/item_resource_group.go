@@ -11,6 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/wait"
 	toolscache "k8s.io/client-go/tools/cache"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,6 +46,7 @@ type ResourceGroupItem struct {
 	recounting          bool // true while an async count recomputation is in flight
 	watchOnce           sync.Once
 	nextPeekScheduled   bool
+	peekBackoff         wait.Backoff
 }
 
 func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, gvk schema.GroupVersionKind, namespace, id string, cells []string, path []string, detail string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
@@ -214,9 +216,8 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 		if ok, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace); err == nil {
 			hasAny = ok
 		} else {
-			crlog.FromContext(r.deps.Ctx).Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
+			r.recordPeekErrorLocked(err)
 			r.lastPeek = time.Now()
-			r.lastError = time.Now()
 			r.scheduleNextPeekLocked()
 			return 0, false
 		}
@@ -263,14 +264,15 @@ func (r *ResourceGroupItem) countViaClient(ctx context.Context) (int, bool) {
 }
 
 func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
-	ctx := r.deps.Ctx
+	ctx, cancel := context.WithTimeout(r.deps.Ctx, r.peekTimeout())
+	defer cancel()
 	// Prefer apiserver metrics when they definitively report zero.
 	// Metrics are keyed by resource name only (no group/version). A zero count means
 	// no objects of this resource name exist anywhere; any non-zero still requires
 	// peeks/informers to localize existence.
 	if cnt, ok := r.deps.Cl.StorageCount(ctx, r.gvr, r.peekInterval()); ok && cnt == 0 {
 		r.lastPeek = time.Now()
-		r.lastError = time.Time{}
+		r.recordPeekSuccessLocked()
 		r.emptyKnown = true
 		r.empty = true
 		r.count = 0
@@ -281,11 +283,12 @@ func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 	has, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
 	if err != nil {
 		r.lastPeek = time.Now()
-		r.lastError = time.Now()
+		r.recordPeekErrorLocked(err)
 		r.scheduleNextPeekLocked()
 		crlog.FromContext(r.deps.Ctx).Error(err, "peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
 		return false, false
 	}
+	r.recordPeekSuccessLocked()
 	return !has, true
 }
 
@@ -506,7 +509,7 @@ func (r *ResourceGroupItem) nextPeekScheduleLocked() (context.Context, time.Dura
 		return nil, 0, false
 	}
 	r.nextPeekScheduled = true
-	interval := r.peekInterval()
+	interval := r.nextPeekDelayLocked()
 	ctx := r.deps.Ctx
 	return ctx, interval, true
 }
@@ -522,20 +525,74 @@ func (r *ResourceGroupItem) runPeekTimer(ctx context.Context, delay time.Duratio
 }
 
 func (r *ResourceGroupItem) peekInterval() time.Duration {
+	base := r.peekBaseInterval()
+	interval := base
+	if jitterBase := interval / 5; jitterBase > 0 {
+		interval += time.Duration(rand.Int63n(int64(jitterBase)))
+	}
+	return interval
+}
+
+func (r *ResourceGroupItem) peekBaseInterval() time.Duration {
 	cfg := r.deps.AppConfig
 	interval := 10 * time.Second
 	if cfg != nil && cfg.Resources.PeekInterval.Duration > 0 {
 		interval = cfg.Resources.PeekInterval.Duration
 	}
 	if interval <= 0 {
-		interval = 10 * time.Second
-	}
-	if jitterBase := interval / 5; jitterBase > 0 {
-		interval += time.Duration(rand.Int63n(int64(jitterBase)))
-	}
-	// If the last attempt errored, stretch the interval to avoid hammering broken APIs.
-	if time.Since(r.lastError) < interval {
-		interval += interval
+		return 10 * time.Second
 	}
 	return interval
+}
+
+func (r *ResourceGroupItem) peekTimeout() time.Duration {
+	// Timeout requests before they stall; cap the timeout so throttling does not block the UI.
+	base := r.peekBaseInterval()
+	if base > 10*time.Second {
+		base = 10 * time.Second
+	}
+	timeout := base
+	if timeout > 15*time.Second {
+		timeout = 15 * time.Second
+	}
+	if timeout < 2*time.Second {
+		timeout = 2 * time.Second
+	}
+	return timeout
+}
+
+func (r *ResourceGroupItem) resetPeekBackoffLocked() {
+	base := r.peekBaseInterval()
+	cap := base * 16
+	if cap < 30*time.Second {
+		cap = 30 * time.Second
+	}
+	r.peekBackoff = wait.Backoff{
+		Duration: base,
+		Factor:   2.0,
+		Jitter:   0.2,
+		Steps:    8,
+		Cap:      cap,
+	}
+}
+
+func (r *ResourceGroupItem) ensurePeekBackoffLocked() {
+	if r.peekBackoff.Duration == 0 {
+		r.resetPeekBackoffLocked()
+	}
+}
+
+func (r *ResourceGroupItem) nextPeekDelayLocked() time.Duration {
+	r.ensurePeekBackoffLocked()
+	return r.peekBackoff.Step()
+}
+
+func (r *ResourceGroupItem) recordPeekErrorLocked(err error) {
+	r.lastError = time.Now()
+	crlog.FromContext(r.deps.Ctx).Info("peek backoff increased", "gvr", r.gvr.String(), "namespace", r.namespace, "delay", r.peekBackoff.Duration, "error", err)
+}
+
+func (r *ResourceGroupItem) recordPeekSuccessLocked() {
+	r.lastError = time.Time{}
+	r.resetPeekBackoffLocked()
 }
