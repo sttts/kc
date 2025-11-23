@@ -365,6 +365,24 @@ func (r *ResourceGroupItem) SetOnChange(fn func()) {
 	r.mu.Unlock()
 }
 
+// SetCount records a known count for non-watchable items and triggers change notifications.
+func (r *ResourceGroupItem) SetCount(value int) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.count = value
+	r.countKnown = true
+	r.empty = value == 0
+	r.emptyKnown = true
+	changed := r.recordPublishedLocked()
+	onChange := r.onChange
+	r.mu.Unlock()
+	if changed && onChange != nil {
+		onChange()
+	}
+}
+
 func (r *ResourceGroupItem) notifyIfChanged(onUpdate func()) {
 	r.mu.Lock()
 	changed := r.recordPublishedLocked()

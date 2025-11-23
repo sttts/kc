@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
+	toolscache "k8s.io/client-go/tools/cache"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
@@ -366,6 +367,49 @@ func (c *Cluster) GVKToGVR(gvk schema.GroupVersionKind) (schema.GroupVersionReso
 	return m.Resource, nil
 }
 
+func (c *Cluster) listFromInformer(ctx context.Context, gvr schema.GroupVersionResource, gvk schema.GroupVersionKind, namespace string) (*unstructured.UnstructuredList, error) {
+	cache := c.GetCache()
+	if cache == nil {
+		return nil, fmt.Errorf("cache unavailable")
+	}
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(gvk)
+	informer, err := cache.GetInformer(ctx, obj, crcache.BlockUntilSynced(true))
+	if err != nil || informer == nil {
+		return nil, err
+	}
+	type indexerInformer interface {
+		GetIndexer() toolscache.Indexer
+		HasSynced() bool
+	}
+	iinf, ok := informer.(indexerInformer)
+	if !ok {
+		return nil, fmt.Errorf("informer missing indexer for %s", gvr.String())
+	}
+	if !iinf.HasSynced() {
+		return nil, fmt.Errorf("informer not synced for %s", gvr.String())
+	}
+	items := iinf.GetIndexer().List()
+	if len(items) == 0 {
+		ul := &unstructured.UnstructuredList{}
+		ul.SetGroupVersionKind(schema.GroupVersionKind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind + "List"})
+		return ul, nil
+	}
+	out := &unstructured.UnstructuredList{}
+	out.SetGroupVersionKind(schema.GroupVersionKind{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind + "List"})
+	for _, raw := range items {
+		u, ok := raw.(*unstructured.Unstructured)
+		if !ok || u == nil {
+			continue
+		}
+		if namespace != "" && u.GetNamespace() != namespace {
+			continue
+		}
+		out.Items = append(out.Items, *u.DeepCopy())
+	}
+	return out, nil
+}
+
 // ListByGVR lists objects using the cache-backed client and returns an UnstructuredList.
 func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*unstructured.UnstructuredList, error) {
 	_ = c.ensureDiscovery()
@@ -375,18 +419,7 @@ func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource
 	if err != nil {
 		return nil, err
 	}
-	ul := &unstructured.UnstructuredList{}
-	ul.SetGroupVersionKind(schema.GroupVersionKind{Group: k.Group, Version: k.Version, Kind: k.Kind + "List"})
-	if namespace != "" {
-		if err := c.GetClient().List(ctx, ul, crclient.InNamespace(namespace)); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := c.GetClient().List(ctx, ul); err != nil {
-			return nil, err
-		}
-	}
-	return ul, nil
+	return c.listFromInformer(ctx, gvr, k, namespace)
 }
 
 // HasAnyByGVR performs a lightweight peek (limit=1) to determine if at least one object exists for the GVR.
