@@ -12,6 +12,7 @@ An experiment in building a two-panel Kubernetes TUI entirely with AI. Inspired 
 
 - **Kubectl-compatible startup intents:** `kc get ...` and `kc logs ...` parse familiar CLI syntax and launch directly into the matching folders, multi-selecting objects and opening manifest/log viewers when requested (`docs/designs/cli-intents.md`).
 - **Hierarchy-first navigation:** contexts → namespaces → resource groups → object folders → virtual subfolders (pod containers, ConfigMap/Secret keys, etc.). Every row is keyed by full `group/version/resource`.
+- **Child object hierarchies:** drill from parents into their children (e.g., Deployments → ReplicaSets → Pods, Services → EndpointSlices) via per-object child folders so related resources stay discoverable in the tree.
 - **Live data via informers:** controller-runtime caches back all folders; add/update/delete events keep selections and scroll offsets stable.
 - **Two synchronized panels:** each panel can render lists or manifest viewers, supports multi-selection, per-panel options (columns/order/modes), and an integrated function-key bar. A 2-line terminal lives underneath for quick kubectl work.
 - **Rich viewers:** YAML/text viewer with syntax highlighting, wrap toggle, search (`F7`), and next-match (`F3`). Logs viewer streams `kubectl logs` with follow mode, search, and End-to-follow shortcuts.
@@ -71,9 +72,9 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search (viewers/logs).                              |
 | `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
+| `F10`      | Quit (`Esc+0` alternative; `Ctrl+Q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
 | `Ctrl+O`   | Toggle the integrated terminal.                                                 |
-| `Ctrl+C`   | Quit.                                                                           |
 
 Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). Unimplemented slots (`F6/F9`) are hidden/disabled until their workflows land.
 
