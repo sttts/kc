@@ -44,6 +44,7 @@ type ResourceGroupItem struct {
 	publishedEmpty      bool
 	publishedEmptyKnown bool
 	recounting          bool // true while an async count recomputation is in flight
+	recountPending      bool // true when an event arrives during recounting; triggers another recount afterwards
 	watchOnce           sync.Once
 	nextPeekScheduled   bool
 	peekBackoff         wait.Backoff
@@ -456,10 +457,12 @@ func (r *ResourceGroupItem) onInformerEvent(obj interface{}) {
 func (r *ResourceGroupItem) scheduleRecount() {
 	r.mu.Lock()
 	if r.recounting {
+		r.recountPending = true
 		r.mu.Unlock()
 		return
 	}
 	r.recounting = true
+	r.recountPending = false
 	r.nextPeekScheduled = false
 	r.countKnown = false
 	r.emptyKnown = false
@@ -469,8 +472,14 @@ func (r *ResourceGroupItem) scheduleRecount() {
 	go func() {
 		defer func() {
 			r.mu.Lock()
+			pending := r.recountPending
 			r.recounting = false
+			r.recountPending = false
 			r.mu.Unlock()
+			if pending {
+				// Run another recount to process events that arrived while the previous one was in flight.
+				r.scheduleRecount()
+			}
 		}()
 		ctx := r.deps.Ctx
 		log := crlog.FromContext(ctx)
