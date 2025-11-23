@@ -47,7 +47,7 @@ brew install sttts/homebrew-kc/kc
 
 ## Releases
 
-Push a `v*` tag to trigger the Goreleaser workflow, which builds/signed binaries, publishes the GitHub Release, notarizes the macOS artifacts, and refreshes the Homebrew tap. See `docs/RELEASING.md` for the Apple signing credentials required for CI.
+Binaries are published by the maintainers via GitHub Releases and the Homebrew tap. The release process itself is documented for maintainers in `docs/RELEASING.md`.
 
 ### Kubectl-style shortcuts
 

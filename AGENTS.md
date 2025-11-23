@@ -75,6 +75,9 @@
   - README “Configuration” section
 - A unit test (`pkg/appconfig/defaults_test.go`) loads `config-default.yaml` and compares it with `Default()`. Update both when changing defaults; do not let them drift.
 
+## Documentation Scope
+- Treat `README.md` as purely user-facing; do not direct users to run releases. Release steps are maintainer-only and covered in `docs/RELEASING.md`.
+
 ## Testing Guidelines
 - Framework: standard `testing` with table-driven tests and `t.Run` subtests.
 - Location: `*_test.go` alongside sources (e.g., `pkg/handlers/handler_test.go`).
