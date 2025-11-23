@@ -436,7 +436,16 @@ func (c *Cluster) GetResourceInfos() ([]ResourceInfo, error) {
 	}
 	lists, err := dc.ServerPreferredResources()
 	if err != nil {
-		return nil, err
+		// Allow partial discovery results when some aggregated APIs fail (e.g., metrics.k8s.io).
+		if len(lists) == 0 {
+			return nil, err
+		}
+		if _, ok := err.(*discovery.ErrGroupDiscoveryFailed); !ok {
+			return nil, err
+		}
+		// For partial failures, continue with the successful lists and clear the error so callers
+		// can proceed (metrics server down should not block the UI).
+		err = nil
 	}
 	var out []ResourceInfo
 	for _, l := range lists {
