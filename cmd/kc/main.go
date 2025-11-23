@@ -31,14 +31,14 @@ var (
 )
 
 type cliFlags struct {
-	Version    bool        `help:"Show version information"`
-	Kubeconfig string      `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
-	Namespace  string      `help:"Namespace to open on startup" short:"n"`
-	PprofAddr  string      `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
-	Verbosity  int         `help:"klog verbosity level (same as --v)" name:"v"`
-	Root       rootCommand `cmd:"" hidden:"true" default:"1"`
-	Get        getCommand  `cmd:"get" help:"Mirror kubectl get"`
-	Logs       logsCommand `cmd:"logs" help:"Mirror kubectl logs"`
+	Kubeconfig string          `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
+	Namespace  string          `help:"Namespace to open on startup" short:"n"`
+	PprofAddr  string          `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
+	Verbosity  int             `help:"klog verbosity level (same as --v)" name:"v"`
+	Root       rootCommand     `cmd:"" hidden:"true" default:"1"`
+	Get        getCommand      `cmd:"get" help:"Mirror kubectl get"`
+	Logs       logsCommand     `cmd:"logs" help:"Mirror kubectl logs"`
+	Version    versionCommand  `cmd:"version" help:"Show version information"`
 }
 
 type rootCommand struct{}
@@ -53,6 +53,8 @@ type logsCommand struct {
 	Follow    bool   `help:"Stream logs (follow)" short:"f"`
 	Pod       string `arg:"" help:"Pod name"`
 }
+
+type versionCommand struct{}
 
 // cutoverWriter routes writes to stderr+file until cutover is called, after which
 // only the file is used. Shared across zap, klog, and stdlib log so all loggers
@@ -112,8 +114,11 @@ func main() {
 	switchToUILogger, debugLogPath := setupControllerRuntimeLogger(cli.Verbosity)
 	startPprofServer(strings.TrimSpace(cli.PprofAddr))
 
-	if cli.Version {
-		showVersionInfo()
+	if commandMatches(ctx.Command(), "kc version", "version") {
+		if err := runVersionCommand(context.Background()); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -314,9 +319,11 @@ func showHelp() {
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  kc [flags]")
+	fmt.Println("  kc version")
+	fmt.Println("  kc get <resource> [name] [flags]")
+	fmt.Println("  kc logs <pod> [flags]")
 	fmt.Println()
 	fmt.Println("Flags:")
-	fmt.Println("  -version           Show version information")
 	fmt.Println("  -help              Show this help message")
 	fmt.Println("  -kubeconfig <path> Use the provided kubeconfig file (overrides KUBECONFIG)")
 	fmt.Println("  -namespace <name>  Open the specified namespace on startup")
