@@ -105,8 +105,8 @@ See `TODO.md` for the active development plan and current tasks. Keep every TODO
 
 ### Permission Issues
 - Do not override default Go/module cache locations.
-- If a command fails due to permissions or sandboxing, stop and escalate before retrying. Use escalation rather than changing cache locations.
-- Apply the same rule to git permission/lock errors (e.g., `index.lock`): stop and escalate; do not retry until the user approves.
+- If a command fails due to permissions or sandboxing, immediately rerun it with `with_escalated_permissions: true` and a short justification (do not pause to ask first). Use escalation rather than changing cache locations.
+- Apply the same rule to git permission/lock errors (e.g., `index.lock`): rerun with escalation rather than waiting for additional approval.
 - Never use `git add -A`; stage only intended files.
 
 ### AI Disclosure
