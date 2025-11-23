@@ -32,6 +32,12 @@ Expose `/nodes/<node>/pods` so users can drill into the pods scheduled on a node
 - For the node pods view, the key would be `(kubeconfig, context, namespace="", selectorKey=pods|field:spec.nodeName=<node>)`.
 - Pool returns a distinct `Cluster` for that selector scope; TTL eviction continues to apply.
 
+### Pool Integration
+- Extend `cluster.Key` with `SelectorKey` (a deterministic signature of the selector plus target GVR).
+- Add a helper to build `SelectorKey` from `(gvr, selector)` to keep pooling consistent.
+- `Pool.Get(ctx, key)` remains the entrypoint; when `SelectorKey` is non-empty, it invokes `cluster.New` with `WithSelectorScope(...)` for the desired selectors (pods → nodeName field selector). When empty, behavior is unchanged.
+- Namespaced/cluster-scoped views keep `SelectorKey` empty; the node pods folder populates it to get a selector-scoped Cluster instance.
+
 ### Cluster Wiring for Selector Scope
 - Add a Cluster option (e.g., `WithSelectorScope(map[schema.GroupVersionResource]cache.ObjectSelector)`) that:
   - Configures the default cache with `SelectorsByObject` for the specified GVRs (pods only for this view).
