@@ -109,7 +109,7 @@ func main() {
 
 	// Configure logging. Default: silent. With -v>=1: log to stderr during startup,
 	// then to ~/.kc/debug.log only once the UI starts. With -v>=3: enable debug logs.
-	switchToUILogger := setupControllerRuntimeLogger(cli.Verbosity)
+	switchToUILogger, debugLogPath := setupControllerRuntimeLogger(cli.Verbosity)
 	startPprofServer(strings.TrimSpace(cli.PprofAddr))
 
 	if cli.Version {
@@ -132,6 +132,7 @@ func main() {
 	runCfg := ui.RunConfig{
 		Namespace:          ns,
 		StartupIntent:      intent,
+		DebugLogPath:       debugLogPath,
 		SwitchToFileLogger: switchToUILogger,
 	}
 	if err := ui.Run(context.Background(), runCfg); err != nil {
@@ -212,7 +213,7 @@ func selectNamespace(global, override string) string {
 // Default (verbosity 0): discard all logs. With verbosity >=1 logs are written to stderr
 // during startup and ~/.kc/debug.log; once the returned switch function is invoked, logs
 // are written to the file only. At verbosity >=3, debug logs are enabled.
-func setupControllerRuntimeLogger(verbosity int) func() {
+func setupControllerRuntimeLogger(verbosity int) (func(), string) {
 	// Register klog flags so we can set -v programmatically even though Kong owns CLI parsing.
 	klog.InitFlags(nil)
 
@@ -232,7 +233,7 @@ func setupControllerRuntimeLogger(verbosity int) func() {
 			klog.SetLogger(logr.Discard())
 			klog.SetOutput(io.Discard)
 			log.SetOutput(io.Discard)
-			return nil
+			return nil, ""
 		}
 
 		dir := filepath.Join(home, ".kc")
@@ -241,7 +242,7 @@ func setupControllerRuntimeLogger(verbosity int) func() {
 			klog.SetLogger(logr.Discard())
 			klog.SetOutput(io.Discard)
 			log.SetOutput(io.Discard)
-			return nil
+			return nil, ""
 		}
 
 		fpath := filepath.Join(dir, "debug.log")
@@ -252,7 +253,7 @@ func setupControllerRuntimeLogger(verbosity int) func() {
 			klog.SetLogger(logr.Discard())
 			klog.SetOutput(io.Discard)
 			log.SetOutput(io.Discard)
-			return nil
+			return nil, ""
 		}
 
 		writer := newCutoverWriter(f, os.Stderr)
@@ -279,14 +280,14 @@ func setupControllerRuntimeLogger(verbosity int) func() {
 			log.SetFlags(0)
 			klog.SetOutput(writer)
 			klog.SetLogger(ctrllog.Log)
-		}
+		}, fpath
 	}
 
 	ctrllog.SetLogger(logr.Discard())
 	klog.SetLogger(logr.Discard())
 	klog.SetOutput(io.Discard)
 	log.SetOutput(io.Discard)
-	return nil
+	return nil, ""
 }
 
 func startPprofServer(addr string) {

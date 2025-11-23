@@ -4023,6 +4023,8 @@ func (a *App) fetchLogsSnapshot(ctx context.Context, spec models.LogsSpec) (io.R
 type RunConfig struct {
 	Namespace     string
 	StartupIntent StartupIntent
+	// DebugLogPath, when non-empty, points to the UI log file (e.g., ~/.kc/debug.log).
+	DebugLogPath string
 	// SwitchToFileLogger is called right before the UI program starts. Allows callers
 	// to stop logging to stderr once bubbletea takes over the terminal.
 	SwitchToFileLogger func()
@@ -4042,7 +4044,11 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		log.Error(err, "initialization warning")
 		fmt.Printf("Data init warning: %v\n", err)
 	}
-	log.Info("initialization complete, launching UI")
+	if cfg.DebugLogPath != "" {
+		log.Info("initialization complete, launching UI; check debug.log for further log output while the UI is running", "debugLogPath", cfg.DebugLogPath)
+	} else {
+		log.Info("initialization complete, launching UI")
+	}
 
 	// Create program with proper options
 	p := tea.NewProgram(
