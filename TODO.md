@@ -36,7 +36,7 @@ Current tasks
 - [ ] API group hierarchy mode under `/groups/...`. *(Later)*
 - [ ] Metrics integration for Top and consumption sorts; graceful degradation. *(Later)*
 - [ ] Extensible actions system: per-resource action registry and external tool integration with context/env passing. *(Later)*
-- [ ] Replace direct namespace list checks with informer-backed existence checks to avoid raw client list calls during navigation. *(Next)*
+- [x] Replace direct namespace list checks with a cheap lookup (no raw list) to avoid raw client calls during navigation. *(Next)*
 
 Tracking
 - Non-trivial logic MUST be unit-tested (see AGENTS.md).

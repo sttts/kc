@@ -4392,33 +4392,18 @@ func (a *App) forceNamespaceNavigation(ns string, depsLeft, depsRight models.Dep
 	rightResources := models.NewNamespacedResourcesFolder(depsRight, ns, nsPath)
 
 	log.Info("pushing namespace folders to navigators")
-	preload := func(label string, folder models.Folder) {
-		if folder == nil {
-			return
-		}
-		a.enqueueCmd(a.withBusy(label, 800*time.Millisecond, func() tea.Msg {
-			ctxBusy, cancelBusy := context.WithTimeout(a.ctx, panelContextTimeout)
-			defer cancelBusy()
-			_ = folder.Len(ctxBusy)
-			return nil
-		}))
-	}
 
 	a.leftNav.SetSelectionID("namespaces")
 	a.leftNav.Push(leftList)
 	a.leftNav.SetSelectionID(ns)
 	a.leftNav.Push(leftResources)
 	log.Info("left navigator updated", "stackDepth", a.navigatorDepth(a.leftNav))
-	preload("Namespaces", leftList)
-	preload("Resources", leftResources)
 
 	a.rightNav.SetSelectionID("namespaces")
 	a.rightNav.Push(rightList)
 	a.rightNav.SetSelectionID(ns)
 	a.rightNav.Push(rightResources)
 	log.Info("right navigator updated", "stackDepth", a.navigatorDepth(a.rightNav))
-	preload("Namespaces", rightList)
-	preload("Resources", rightResources)
 
 	return true
 }
@@ -4583,16 +4568,10 @@ func (a *App) namespaceExists(ns string) bool {
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, requestTimeout)
 	defer cancel()
-	lst, err := a.cl.ListByGVR(ctx, gvr, "")
-	if err != nil {
+	if _, err := a.cl.GetByGVR(ctx, gvr, "", ns); err != nil {
 		return false
 	}
-	for i := range lst.Items {
-		if lst.Items[i].GetName() == ns {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
 func (a *App) namespaceReady(ns string) (ready bool, terminal bool, err error) {
