@@ -4062,6 +4062,13 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	if cfg.SwitchToFileLogger != nil {
 		cfg.SwitchToFileLogger()
+		// Refresh contexts so logs use the file-only, unnamed logger (no lingering "startup" name).
+		baseLog := ctrllog.Log
+		ctx = ctrllog.IntoContext(ctx, baseLog)
+		if app.ctx != nil {
+			app.ctx = ctrllog.IntoContext(app.ctx, baseLog)
+		}
+		log = ctrllog.FromContext(ctx)
 	}
 
 	// Ensure terminal is reset on exit
