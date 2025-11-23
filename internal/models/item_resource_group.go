@@ -33,6 +33,7 @@ type ResourceGroupItem struct {
 	emptyKnown bool
 	countOnce  sync.Once
 	lastPeek   time.Time
+	lastError  time.Time
 	onChange   func()
 
 	publishedCount      int
@@ -120,6 +121,11 @@ func (r *ResourceGroupItem) emptyWithin(interval time.Duration) bool {
 		r.mu.Unlock()
 		return val
 	}
+	if time.Since(r.lastError) < interval {
+		// Back off when the last peek errored; skip hitting the API until interval elapses.
+		r.mu.Unlock()
+		return r.empty
+	}
 	crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
 	empty, ok := r.peekEmptyLocked()
 	prevEmpty := r.emptyKnown && r.empty
@@ -168,16 +174,6 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	hasAny := true
-	if ok, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace); err == nil {
-		hasAny = ok
-	} else {
-		crlog.FromContext(r.deps.Ctx).Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
-	}
-	if !hasAny {
-		r.scheduleNextPeekLocked()
-		return 0, true
-	}
 	gvk, err := r.deps.Cl.RESTMapper().KindFor(r.gvr)
 	if err != nil {
 		return 0, false
@@ -207,6 +203,21 @@ func (r *ResourceGroupItem) countFromInformerLocked() (int, bool) {
 		items := informer.(indexerInformer).GetIndexer().List()
 		return r.countObjects(items), true
 	default:
+		// Fallback to a lightweight client peek if informer/store not available.
+		hasAny := true
+		if ok, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace); err == nil {
+			hasAny = ok
+		} else {
+			crlog.FromContext(r.deps.Ctx).Error(err, "hasAny peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
+			r.lastPeek = time.Now()
+			r.lastError = time.Now()
+			r.scheduleNextPeekLocked()
+			return 0, false
+		}
+		if !hasAny {
+			r.scheduleNextPeekLocked()
+			return 0, true
+		}
 		return r.countViaClient(ctx)
 	}
 }
@@ -249,6 +260,10 @@ func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 	ctx := r.deps.Ctx
 	has, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
 	if err != nil {
+		r.lastPeek = time.Now()
+		r.lastError = time.Now()
+		r.scheduleNextPeekLocked()
+		crlog.FromContext(r.deps.Ctx).Error(err, "peek failed", "gvr", r.gvr.String(), "namespace", r.namespace)
 		return false, false
 	}
 	return !has, true
@@ -497,6 +512,10 @@ func (r *ResourceGroupItem) peekInterval() time.Duration {
 	}
 	if jitterBase := interval / 5; jitterBase > 0 {
 		interval += time.Duration(rand.Int63n(int64(jitterBase)))
+	}
+	// If the last attempt errored, stretch the interval to avoid hammering broken APIs.
+	if time.Since(r.lastError) < interval {
+		interval += interval
 	}
 	return interval
 }
