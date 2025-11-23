@@ -51,6 +51,7 @@ func init() {
 			ns, name,
 			[]schema.GroupVersionResource{
 				{Group: "apps", Version: "v1", Resource: "replicasets"},
+				{Group: "", Version: "v1", Resource: "replicationcontrollers"},
 			},
 			basePath,
 		)
@@ -75,6 +76,16 @@ func init() {
 			basePath,
 		)
 	})
+	RegisterChild(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}, func(deps Deps, ns, name string, basePath []string) Folder {
+		return NewChildResourceTypesFolder(deps,
+			schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"},
+			ns, name,
+			[]schema.GroupVersionResource{
+				{Group: "", Version: "v1", Resource: "pods"},
+			},
+			basePath,
+		)
+	})
 
 	// batch/v1
 	RegisterChild(schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, func(deps Deps, ns, name string, basePath []string) Folder {
@@ -83,6 +94,38 @@ func init() {
 			ns, name,
 			[]schema.GroupVersionResource{
 				{Group: "", Version: "v1", Resource: "pods"},
+			},
+			basePath,
+		)
+	})
+	RegisterChild(schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}, func(deps Deps, ns, name string, basePath []string) Folder {
+		return NewChildResourceTypesFolder(deps,
+			schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"},
+			ns, name,
+			[]schema.GroupVersionResource{
+				{Group: "batch", Version: "v1", Resource: "jobs"},
+			},
+			basePath,
+		)
+	})
+
+	// core/v1
+	RegisterChild(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "replicationcontrollers"}, func(deps Deps, ns, name string, basePath []string) Folder {
+		return NewChildResourceTypesFolder(deps,
+			schema.GroupVersionResource{Group: "", Version: "v1", Resource: "replicationcontrollers"},
+			ns, name,
+			[]schema.GroupVersionResource{
+				{Group: "", Version: "v1", Resource: "pods"},
+			},
+			basePath,
+		)
+	})
+	RegisterChild(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "services"}, func(deps Deps, ns, name string, basePath []string) Folder {
+		return NewChildResourceTypesFolder(deps,
+			schema.GroupVersionResource{Group: "", Version: "v1", Resource: "services"},
+			ns, name,
+			[]schema.GroupVersionResource{
+				{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"},
 			},
 			basePath,
 		)
