@@ -156,7 +156,7 @@ func (c *Cluster) ensureDiscovery() error {
 	}
 	cached := memory.NewMemCacheClient(dc)
 	base := restmapper.NewDeferredDiscoveryRESTMapper(cached)
-	expander := restmapper.NewShortcutExpander(base, dc, func(string) {})
+	expander := restmapper.NewShortcutExpander(base, cached, func(string) {})
 	dyn, err := dynamic.NewForConfig(c.GetConfig())
 	if err != nil {
 		return err
