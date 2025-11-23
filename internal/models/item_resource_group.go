@@ -441,11 +441,10 @@ func (r *ResourceGroupItem) ensureInformerHandler(informer crcache.Informer) {
 }
 
 func (r *ResourceGroupItem) onInformerEvent(obj interface{}) {
-	log := crlog.FromContext(r.deps.Ctx)
-	log.Info("resource group informer event", "gvr", r.gvr.String(), "namespace", r.namespace)
 	if r.namespace != "" {
 		if acc, ok := accessorForEvent(obj); ok && acc != nil {
 			if acc.GetNamespace() != r.namespace {
+				log := crlog.FromContext(r.deps.Ctx)
 				log.Info("resource group event ignored due to namespace mismatch", "eventNamespace", acc.GetNamespace())
 				return
 			}

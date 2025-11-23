@@ -50,6 +50,9 @@ type Cluster struct {
 	storageCounts  map[schema.GroupResource]int
 	storageFetched time.Time
 
+	gvrKindsMu sync.Mutex
+	gvrKinds   map[schema.GroupVersionResource]schema.GroupVersionKind
+
 	cancel  context.CancelFunc
 	refresh time.Duration
 
@@ -113,7 +116,13 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Cluster{Cluster: cl, cancel: cancel, refresh: o.refresh}
+	c := &Cluster{
+		Cluster:   cl,
+		cancel:    cancel,
+		refresh:   o.refresh,
+		gvrKinds:  make(map[schema.GroupVersionResource]schema.GroupVersionKind),
+		storageMu: sync.RWMutex{},
+	}
 	// Pre-initialize discovery/mapper/dynamic client lazily so methods can be used early.
 	_ = c.ensureDiscovery()
 
@@ -367,6 +376,27 @@ func (c *Cluster) GVKToGVR(gvk schema.GroupVersionKind) (schema.GroupVersionReso
 	return m.Resource, nil
 }
 
+func (c *Cluster) gvkForGVR(gvr schema.GroupVersionResource) (schema.GroupVersionKind, error) {
+	c.gvrKindsMu.Lock()
+	if gvk, ok := c.gvrKinds[gvr]; ok && !gvk.Empty() {
+		c.gvrKindsMu.Unlock()
+		return gvk, nil
+	}
+	c.gvrKindsMu.Unlock()
+	mapper := c.RESTMapper()
+	if mapper == nil {
+		return schema.GroupVersionKind{}, fmt.Errorf("rest mapper unavailable")
+	}
+	gvk, err := mapper.KindFor(gvr)
+	if err != nil {
+		return schema.GroupVersionKind{}, err
+	}
+	c.gvrKindsMu.Lock()
+	c.gvrKinds[gvr] = gvk
+	c.gvrKindsMu.Unlock()
+	return gvk, nil
+}
+
 func (c *Cluster) listFromInformer(ctx context.Context, gvr schema.GroupVersionResource, gvk schema.GroupVersionKind, namespace string) (*unstructured.UnstructuredList, error) {
 	cache := c.GetCache()
 	if cache == nil {
@@ -413,9 +443,7 @@ func (c *Cluster) listFromInformer(ctx context.Context, gvr schema.GroupVersionR
 // ListByGVR lists objects using the cache-backed client and returns an UnstructuredList.
 func (c *Cluster) ListByGVR(ctx context.Context, gvr schema.GroupVersionResource, namespace string) (*unstructured.UnstructuredList, error) {
 	_ = c.ensureDiscovery()
-	log := ctrllog.FromContext(ctx).WithName("cluster")
-	log.Info("client list", "gvr", gvr.String(), "namespace", namespace)
-	k, err := c.RESTMapper().KindFor(gvr)
+	k, err := c.gvkForGVR(gvr)
 	if err != nil {
 		return nil, err
 	}

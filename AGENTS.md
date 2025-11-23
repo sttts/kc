@@ -59,6 +59,7 @@
 ## Abstraction Guidelines
 - Prefer composition over wrapping: do not re-invent controller-runtime/client-go abstractions. Embed or compose original types instead of creating near-duplicates.
 - Use Kubernetes/client-go types and `controller-runtime` primitives directly (clients, caches, informers, RESTMapper). Add small adapters only where strictly needed.
+- Use the controller-runtime shared cache/informers from the Cluster pool; do not start ad-hoc dynamic watches or bespoke informers. All watch/list refreshes must go through the shared cache.
 
 ### Identity & Keys (Kubernetes)
 - Always use the full GroupVersionResource (GVR) when constructing keys/IDs for folders, items, history, or selection state. The resource name alone is NOT unique across groups and versions.

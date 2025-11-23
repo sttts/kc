@@ -14,11 +14,9 @@ import (
 	meta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/watch"
-	dynamic "k8s.io/client-go/dynamic"
 	toolscache "k8s.io/client-go/tools/cache"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -590,106 +588,70 @@ func startInformerForResource(deps Deps, gvr schema.GroupVersionResource, namesp
 	if deps.Cl == nil {
 		return nil, nil
 	}
-	baseCtx := deps.Ctx
-	if baseCtx == nil {
-		baseCtx = context.Background()
+	ctx := deps.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	log := ctrllog.FromContext(baseCtx).WithName("resourceWatch").WithValues("gvr", gvr.String(), "namespace", namespace, "name", name)
-	dyn := deps.Cl.Dynamic()
-	if dyn == nil {
-		return nil, fmt.Errorf("dynamic client unavailable")
+	log := ctrllog.FromContext(ctx).WithName("resourceWatch").WithValues("gvr", gvr.String(), "namespace", namespace, "name", name)
+	mapper := deps.Cl.RESTMapper()
+	if mapper == nil {
+		return nil, fmt.Errorf("rest mapper unavailable")
 	}
-	nsResource := dyn.Resource(gvr)
-	var resource dynamic.ResourceInterface = nsResource
-	if namespace != "" {
-		resource = nsResource.Namespace(namespace)
+	gvk, err := mapper.KindFor(gvr)
+	if err != nil {
+		return nil, err
 	}
-	fieldSelector := ""
-	if name != "" {
-		fieldSelector = fields.OneTermEqualSelector("metadata.name", name).String()
+	obj := &unstructured.Unstructured{}
+	obj.SetGroupVersionKind(gvk)
+	informer, err := deps.Cl.GetCache().GetInformer(ctx, obj, crcache.BlockUntilSynced(true))
+	if err != nil || informer == nil {
+		return nil, err
 	}
-	watchCtx, cancel := context.WithCancel(baseCtx)
-	go func() {
-		defer func() {
-			if onStop != nil {
-				onStop()
-			}
-		}()
-		backoff := time.Second
-		for {
-			if watchCtx.Err() != nil {
+	type handlerReg interface {
+		Remove() error
+	}
+	reg, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if !matchesTarget(obj, namespace, name) {
 				return
-			}
-			listOpts := metav1.ListOptions{FieldSelector: fieldSelector}
-			list, err := resource.List(watchCtx, listOpts)
-			if err != nil {
-				if watchCtx.Err() != nil {
-					return
-				}
-				log.Error(err, "list before watch failed")
-				select {
-				case <-time.After(backoff):
-				case <-watchCtx.Done():
-					return
-				}
-				if backoff < 8*time.Second {
-					backoff *= 2
-				}
-				continue
 			}
 			if onEvent != nil {
 				onEvent()
 			}
-			opts := metav1.ListOptions{
-				FieldSelector:       fieldSelector,
-				ResourceVersion:     list.GetResourceVersion(),
-				AllowWatchBookmarks: true,
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if !matchesTarget(newObj, namespace, name) {
+				return
 			}
-			watcher, err := resource.Watch(watchCtx, opts)
-			if err != nil {
-				if watchCtx.Err() != nil {
-					return
-				}
-				log.Error(err, "watch start failed")
-				select {
-				case <-time.After(backoff):
-				case <-watchCtx.Done():
-					return
-				}
-				if backoff < 8*time.Second {
-					backoff *= 2
-				}
-				continue
+			if onEvent != nil {
+				onEvent()
 			}
-			backoff = time.Second
-		watchLoop:
-			for {
-				select {
-				case <-watchCtx.Done():
-					watcher.Stop()
-					return
-				case evt, ok := <-watcher.ResultChan():
-					if !ok {
-						watcher.Stop()
-						if watchCtx.Err() != nil {
-							return
-						}
-						time.Sleep(200 * time.Millisecond)
-						break watchLoop
-					}
-					if evt.Type == watch.Bookmark {
-						continue
-					}
-					if onEvent != nil {
-						onEvent()
-					}
-				}
+		},
+		DeleteFunc: func(obj interface{}) {
+			if !matchesTarget(obj, namespace, name) {
+				return
 			}
+			if onEvent != nil {
+				onEvent()
+			}
+		},
+	})
+	if err != nil {
+		log.Error(err, "failed to add informer handler")
+		return nil, err
+	}
+	if informer.HasSynced() && onEvent != nil {
+		onEvent()
+	}
+	cancel := func() {
+		if h, ok := reg.(handlerReg); ok {
+			_ = h.Remove()
 		}
-	}()
-	return func() {
-		cancel()
-	}, nil
+		if onStop != nil {
+			onStop()
+		}
+	}
+	return cancel, nil
 }
 
 func watchDuration(deps Deps) time.Duration {
@@ -712,6 +674,20 @@ func accessorForEvent(obj interface{}) (metav1.Object, bool) {
 		}
 		return accessor, true
 	}
+}
+
+func matchesTarget(obj interface{}, namespace, name string) bool {
+	accessor, ok := accessorForEvent(obj)
+	if !ok || accessor == nil {
+		return false
+	}
+	if namespace != "" && accessor.GetNamespace() != namespace {
+		return false
+	}
+	if name != "" && accessor.GetName() != name {
+		return false
+	}
+	return true
 }
 
 func (o *ObjectsFolder) installAgeHooks(hooks []*ageCellHook) {
