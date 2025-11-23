@@ -4251,6 +4251,10 @@ func (a *App) goToNamespaceWithRetry(ns string, reset bool) {
 	a.syncPanelConfig(a.leftPanel)
 	a.syncPanelConfig(a.rightPanel)
 	key := a.currentClusterKey()
+	if a.clPool != nil {
+		// Keep at most the cluster-scoped cache plus the current namespace cache.
+		a.clPool.PruneNamespaces(ns)
+	}
 	depsLeft := a.makeDeps(a.cl, leftCfg, key)
 	depsRight := a.makeDeps(a.cl, rightCfg, key)
 	enterLeft := a.makeEnterContextFunc(leftCfg)

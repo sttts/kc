@@ -40,7 +40,6 @@ type ObjectsFolder struct {
 
 // NewObjectsFolder constructs an object-list folder with the provided metadata.
 func NewObjectsFolder(deps Deps, gvr schema.GroupVersionResource, namespace string, path []string, verbs []string) *ObjectsFolder {
-	deps = deps.ForNamespace(namespace)
 	base := NewBaseFolder(deps, nil, path)
 	base.SetColumns([]table.Column{{Title: " Name"}})
 	folder := &ObjectsFolder{

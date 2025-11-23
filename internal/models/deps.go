@@ -36,6 +36,7 @@ type Deps struct {
 func (d Deps) ForNamespace(namespace string) Deps {
 	ns := strings.TrimSpace(namespace)
 	if ns == "" || d.NamespaceFactory == nil {
+		d.ClusterKey.Namespace = ns
 		return d
 	}
 	ctx := d.Ctx

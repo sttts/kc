@@ -129,3 +129,21 @@ func (p *Pool) evictIdle() {
 		}
 	}
 }
+
+// PruneNamespaces keeps cluster-scoped entries and entries for the provided namespace,
+// cancelling and removing all other namespace-scoped clusters. An empty namespace prunes
+// all namespace-scoped entries.
+func (p *Pool) PruneNamespaces(namespace string) {
+	ns := strings.TrimSpace(namespace)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for k, e := range p.items {
+		if k.Namespace == "" {
+			continue
+		}
+		if ns == "" || k.Namespace != ns {
+			e.cancel()
+			delete(p.items, k)
+		}
+	}
+}
