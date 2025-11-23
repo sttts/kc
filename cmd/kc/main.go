@@ -88,11 +88,9 @@ func main() {
 
 	// Run the application
 	runCfg := ui.RunConfig{
-		Namespace:     ns,
-		StartupIntent: intent,
-	}
-	if switchToUILogger != nil {
-		switchToUILogger()
+		Namespace:          ns,
+		StartupIntent:      intent,
+		SwitchToFileLogger: switchToUILogger,
 	}
 	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)

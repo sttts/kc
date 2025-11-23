@@ -4023,6 +4023,9 @@ func (a *App) fetchLogsSnapshot(ctx context.Context, spec models.LogsSpec) (io.R
 type RunConfig struct {
 	Namespace     string
 	StartupIntent StartupIntent
+	// SwitchToFileLogger is called right before the UI program starts. Allows callers
+	// to stop logging to stderr once bubbletea takes over the terminal.
+	SwitchToFileLogger func()
 }
 
 // Run starts the application
@@ -4056,6 +4059,10 @@ func Run(ctx context.Context, cfg RunConfig) error {
 		// Send quit message to the program
 		p.Quit()
 	}()
+
+	if cfg.SwitchToFileLogger != nil {
+		cfg.SwitchToFileLogger()
+	}
 
 	// Ensure terminal is reset on exit
 	defer func() {
