@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -10,11 +11,13 @@ import (
 	pprof "net/http/pprof"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/alecthomas/kong"
 	"github.com/go-logr/logr"
 	"github.com/sttts/kc/internal/ui"
+	"go.uber.org/zap/zapcore"
 	klog "k8s.io/klog/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -31,6 +34,7 @@ type cliFlags struct {
 	Kubeconfig string      `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
 	Namespace  string      `help:"Namespace to open on startup" short:"n"`
 	PprofAddr  string      `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
+	Verbosity  int         `help:"klog verbosity level (same as --v)" name:"v"`
 	Root       rootCommand `cmd:"" hidden:"true" default:"1"`
 	Get        getCommand  `cmd:"get" help:"Mirror kubectl get"`
 	Logs       logsCommand `cmd:"logs" help:"Mirror kubectl logs"`
@@ -61,9 +65,9 @@ func main() {
 		_ = os.Setenv("KUBECONFIG", kcPath)
 	}
 
-	// Set up controller-runtime logging. By default discard logs entirely.
-	// If DEBUG=1, write logs to stderr during startup, then switch to ~/.kc/debug.log when the UI starts.
-	switchToUILogger := setupControllerRuntimeLogger()
+	// Configure logging. Default: silent. With -v>=1: log to stderr during startup,
+	// then to ~/.kc/debug.log only once the UI starts. With -v>=3: enable debug logs.
+	switchToUILogger := setupControllerRuntimeLogger(cli.Verbosity)
 	startPprofServer(strings.TrimSpace(cli.PprofAddr))
 
 	if cli.Version {
@@ -164,39 +168,79 @@ func selectNamespace(global, override string) string {
 	return strings.TrimSpace(global)
 }
 
-// setupControllerRuntimeLogger configures controller-runtime's global logger.
-// Default: drop logs. If DEBUG=1, write to stderr during startup, then switch
-// to ~/.kc/debug.log (dev-friendly format) when the returned switch function is called.
-func setupControllerRuntimeLogger() func() {
-	if os.Getenv("DEBUG") == "1" {
-		if home, err := os.UserHomeDir(); err == nil {
-			dir := filepath.Join(home, ".kc")
-			if err := os.MkdirAll(dir, 0o700); err == nil {
-				fpath := filepath.Join(dir, "debug.log")
-				_ = os.Remove(fpath)
-				f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-				if err == nil {
-					// Startup: tee to stderr so logs are visible before the UI takes over.
-					startupWriter := io.MultiWriter(os.Stderr, f)
-					startupLogger := crzap.New(crzap.UseDevMode(true), crzap.WriteTo(startupWriter))
-					ctrllog.SetLogger(startupLogger)
-					log.SetOutput(startupWriter)
-					log.SetFlags(0)
-					klog.SetOutput(startupWriter)
-					klog.SetLogger(ctrllog.Log)
-					// Return switcher to redirect logs to file only once the UI starts.
-					return func() {
-						fileLogger := crzap.New(crzap.UseDevMode(true), crzap.WriteTo(f))
-						ctrllog.SetLogger(fileLogger)
-						log.SetOutput(f)
-						log.SetFlags(0)
-						klog.SetOutput(f)
-						klog.SetLogger(ctrllog.Log)
-					}
-				}
-			}
+// setupControllerRuntimeLogger configures controller-runtime and klog logging.
+// Default (verbosity 0): discard all logs. With verbosity >=1 logs are written to stderr
+// during startup and ~/.kc/debug.log; once the returned switch function is invoked, logs
+// are written to the file only. At verbosity >=3, debug logs are enabled.
+func setupControllerRuntimeLogger(verbosity int) func() {
+	// Register klog flags so we can set -v programmatically even though Kong owns CLI parsing.
+	klog.InitFlags(nil)
+
+	level := zapcore.InfoLevel
+	if verbosity >= 3 {
+		level = zapcore.DebugLevel
+	}
+
+	if verbosity >= 1 {
+		_ = flag.Set("v", strconv.Itoa(verbosity))
+		_ = flag.Set("logtostderr", "false")
+		_ = flag.Set("alsologtostderr", "false")
+
+		home, err := os.UserHomeDir()
+		if err != nil {
+			ctrllog.SetLogger(logr.Discard())
+			klog.SetLogger(logr.Discard())
+			klog.SetOutput(io.Discard)
+			log.SetOutput(io.Discard)
+			return nil
+		}
+
+		dir := filepath.Join(home, ".kc")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			ctrllog.SetLogger(logr.Discard())
+			klog.SetLogger(logr.Discard())
+			klog.SetOutput(io.Discard)
+			log.SetOutput(io.Discard)
+			return nil
+		}
+
+		fpath := filepath.Join(dir, "debug.log")
+		_ = os.Remove(fpath)
+		f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if err != nil {
+			ctrllog.SetLogger(logr.Discard())
+			klog.SetLogger(logr.Discard())
+			klog.SetOutput(io.Discard)
+			log.SetOutput(io.Discard)
+			return nil
+		}
+
+		startupWriter := io.MultiWriter(os.Stderr, f)
+		startupLogger := crzap.New(
+			crzap.UseDevMode(true),
+			crzap.WriteTo(startupWriter),
+			crzap.Level(level),
+		)
+		ctrllog.SetLogger(startupLogger)
+		log.SetOutput(startupWriter)
+		log.SetFlags(0)
+		klog.SetOutput(startupWriter)
+		klog.SetLogger(ctrllog.Log)
+
+		return func() {
+			fileLogger := crzap.New(
+				crzap.UseDevMode(true),
+				crzap.WriteTo(f),
+				crzap.Level(level),
+			)
+			ctrllog.SetLogger(fileLogger)
+			log.SetOutput(f)
+			log.SetFlags(0)
+			klog.SetOutput(f)
+			klog.SetLogger(ctrllog.Log)
 		}
 	}
+
 	ctrllog.SetLogger(logr.Discard())
 	klog.SetLogger(logr.Discard())
 	klog.SetOutput(io.Discard)
