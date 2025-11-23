@@ -25,6 +25,7 @@ import (
 	toolscache "k8s.io/client-go/tools/cache"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	crcluster "sigs.k8s.io/controller-runtime/pkg/cluster"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -59,6 +60,8 @@ type Cluster struct {
 	discoMu        sync.RWMutex
 	discoListeners map[int]func()
 	discoSeq       int
+
+	selectorScope map[schema.GroupVersionResource]crcache.ByObject
 }
 
 // Option configures Cluster.
@@ -67,6 +70,7 @@ type options struct {
 	scheme    *runtime.Scheme
 	refresh   time.Duration
 	namespace string
+	selectors map[schema.GroupVersionResource]crcache.ByObject
 }
 
 // WithScheme sets the runtime.Scheme used by the controller-runtime cluster.
@@ -79,6 +83,13 @@ func WithRefreshInterval(d time.Duration) Option { return func(o *options) { o.r
 func WithNamespaceScope(ns string) Option {
 	return func(o *options) {
 		o.namespace = strings.TrimSpace(ns)
+	}
+}
+
+// WithSelectorScope scopes the cluster/cache to the provided selectors per GVR.
+func WithSelectorScope(selectors map[schema.GroupVersionResource]crcache.ByObject) Option {
+	return func(o *options) {
+		o.selectors = copySelectorScope(selectors)
 	}
 }
 
@@ -105,10 +116,18 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 		return nil, err
 	}
 
+	selectorObjs, err := selectorObjects(cfg, cacheHTTPClient, o.selectors)
+	if err != nil {
+		return nil, err
+	}
+
 	cl, err := crcluster.New(cfg, func(co *crcluster.Options) {
 		co.Scheme = o.scheme
 		if cacheHTTPClient != nil {
 			co.Cache.HTTPClient = cacheHTTPClient
+		}
+		if len(selectorObjs) > 0 {
+			co.Cache.ByObject = selectorObjs
 		}
 	})
 	if err != nil {
@@ -117,11 +136,12 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Cluster{
-		Cluster:   cl,
-		cancel:    cancel,
-		refresh:   o.refresh,
-		gvrKinds:  make(map[schema.GroupVersionResource]schema.GroupVersionKind),
-		storageMu: sync.RWMutex{},
+		Cluster:       cl,
+		cancel:        cancel,
+		refresh:       o.refresh,
+		gvrKinds:      make(map[schema.GroupVersionResource]schema.GroupVersionKind),
+		storageMu:     sync.RWMutex{},
+		selectorScope: copySelectorScope(o.selectors),
 	}
 	// Pre-initialize discovery/mapper/dynamic client lazily so methods can be used early.
 	_ = c.ensureDiscovery()
@@ -132,6 +152,9 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 	tableCacheOpts := crcache.Options{Scheme: o.scheme}
 	if cacheHTTPClient != nil {
 		tableCacheOpts.HTTPClient = cacheHTTPClient
+	}
+	if len(selectorObjs) > 0 {
+		tableCacheOpts.ByObject = selectorObjs
 	}
 	tcache, err := tablecache.NewFromOptions(cfg, tableCacheOpts)
 	if err != nil {
@@ -321,6 +344,35 @@ func namespaceHTTPClient(cfg *rest.Config, namespace string) (*http.Client, erro
 	}, nil
 }
 
+func selectorObjects(cfg *rest.Config, httpClient *http.Client, selectors map[schema.GroupVersionResource]crcache.ByObject) (map[crclient.Object]crcache.ByObject, error) {
+	if len(selectors) == 0 {
+		return nil, nil
+	}
+	client := httpClient
+	if client == nil {
+		var err error
+		client, err = rest.HTTPClientFor(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	mapper, err := apiutil.NewDynamicRESTMapper(cfg, client)
+	if err != nil {
+		return nil, fmt.Errorf("selector scope rest mapper: %w", err)
+	}
+	out := make(map[crclient.Object]crcache.ByObject, len(selectors))
+	for gvr, sel := range selectors {
+		gvk, err := mapper.KindFor(gvr)
+		if err != nil {
+			return nil, err
+		}
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(gvk)
+		out[obj] = sel
+	}
+	return out, nil
+}
+
 // -----------------------------------------------------------------------------
 // Table-aware helpers using the tablecache-backed cache
 
@@ -336,14 +388,15 @@ func (c *Cluster) ListRowsByGVR(ctx context.Context, gvr schema.GroupVersionReso
 		return nil, err
 	}
 	rows := tablecache.NewRowList(gvk)
+	var opts []crclient.ListOption
+	if sel, ok := c.selectorScope[gvr]; ok {
+		opts = append(opts, selectorListOptions(sel)...)
+	}
 	if namespace != "" {
-		if err := c.tableCache.List(ctx, rows, crclient.InNamespace(namespace)); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := c.tableCache.List(ctx, rows); err != nil {
-			return nil, err
-		}
+		opts = append(opts, crclient.InNamespace(namespace))
+	}
+	if err := c.tableCache.List(ctx, rows, opts...); err != nil {
+		return nil, err
 	}
 	return rows, nil
 }

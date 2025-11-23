@@ -43,6 +43,7 @@ import (
 	"k8s.io/client-go/rest"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -735,9 +736,12 @@ func (a *App) currentClusterKey() kccluster.Key {
 }
 
 func (a *App) namespaceClusterFactory() models.NamespaceClusterFactory {
-	return func(ctx context.Context, key kccluster.Key) (*kccluster.Cluster, error) {
+	return func(ctx context.Context, key kccluster.Key, selectors map[schema.GroupVersionResource]crcache.ByObject) (*kccluster.Cluster, error) {
 		if a.clPool == nil {
 			return nil, fmt.Errorf("cluster pool unavailable")
+		}
+		if len(selectors) > 0 {
+			return a.clPool.GetWithSelectors(ctx, key, selectors)
 		}
 		return a.clPool.Get(ctx, key)
 	}

@@ -130,4 +130,7 @@ func init() {
 			basePath,
 		)
 	})
+	RegisterChild(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}, func(deps Deps, _ string, name string, basePath []string) Folder {
+		return NewNodeChildFolder(deps, name, basePath)
+	})
 }

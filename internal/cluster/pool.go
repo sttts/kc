@@ -7,7 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 )
 
 // Key identifies a controller-runtime Cluster by kubeconfig path and context name.
@@ -15,6 +17,7 @@ type Key struct {
 	KubeconfigPath string
 	ContextName    string
 	Namespace      string
+	SelectorKey    string
 }
 
 type entry struct {
@@ -63,6 +66,19 @@ func (p *Pool) Stop() {
 
 // Get returns a running controller-runtime Cluster for the key, starting it if needed.
 func (p *Pool) Get(ctx context.Context, k Key) (*Cluster, error) {
+	return p.get(ctx, k, nil)
+}
+
+// GetWithSelectors returns a running Cluster configured with selector-scoped cache/table behavior.
+// The selectors map may be nil; when provided, it is applied during Cluster construction.
+func (p *Pool) GetWithSelectors(ctx context.Context, k Key, selectors map[schema.GroupVersionResource]cache.ByObject) (*Cluster, error) {
+	return p.get(ctx, k, selectors)
+}
+
+func (p *Pool) get(ctx context.Context, k Key, selectors map[schema.GroupVersionResource]cache.ByObject) (*Cluster, error) {
+	if len(selectors) > 0 && strings.TrimSpace(k.SelectorKey) == "" {
+		k.SelectorKey = SelectorKeyForScopes(selectors)
+	}
 	p.mu.Lock()
 	if e, ok := p.items[k]; ok {
 		e.lastUsed = time.Now()
@@ -83,6 +99,9 @@ func (p *Pool) Get(ctx context.Context, k Key) (*Cluster, error) {
 	}
 	if ns := strings.TrimSpace(k.Namespace); ns != "" {
 		opts = append(opts, WithNamespaceScope(ns))
+	}
+	if len(selectors) > 0 {
+		opts = append(opts, WithSelectorScope(selectors))
 	}
 	cl, err := New(cfg, opts...)
 	if err != nil {
