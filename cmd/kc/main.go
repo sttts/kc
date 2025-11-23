@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/alecthomas/kong"
 	"github.com/go-logr/logr"
@@ -51,6 +52,47 @@ type logsCommand struct {
 	Container string `help:"Container name" short:"c"`
 	Follow    bool   `help:"Stream logs (follow)" short:"f"`
 	Pod       string `arg:"" help:"Pod name"`
+}
+
+// cutoverWriter routes writes to stderr+file until cutover is called, after which
+// only the file is used. Shared across zap, klog, and stdlib log so all loggers
+// flip at the same time.
+type cutoverWriter struct {
+	file      io.Writer
+	stderr    io.Writer
+	useStderr atomic.Bool
+}
+
+func newCutoverWriter(file io.Writer, stderr io.Writer) *cutoverWriter {
+	w := &cutoverWriter{file: file, stderr: stderr}
+	w.useStderr.Store(true)
+	return w
+}
+
+func (w *cutoverWriter) Write(p []byte) (int, error) {
+	if w == nil || w.file == nil {
+		return len(p), nil
+	}
+	if w.useStderr.Load() && w.stderr != nil {
+		return io.MultiWriter(w.stderr, w.file).Write(p)
+	}
+	return w.file.Write(p)
+}
+
+func (w *cutoverWriter) Sync() error {
+	if w == nil {
+		return nil
+	}
+	// Best-effort sync; ignore errors to avoid noisy logs during shutdown.
+	if ws, ok := w.file.(zapcore.WriteSyncer); ok {
+		_ = ws.Sync()
+	}
+	if w.useStderr.Load() {
+		if ws, ok := w.stderr.(zapcore.WriteSyncer); ok {
+			_ = ws.Sync()
+		}
+	}
+	return nil
 }
 
 func main() {
@@ -213,28 +255,29 @@ func setupControllerRuntimeLogger(verbosity int) func() {
 			return nil
 		}
 
-		startupWriter := io.MultiWriter(os.Stderr, f)
+		writer := newCutoverWriter(f, os.Stderr)
 		startupLogger := crzap.New(
 			crzap.UseDevMode(true),
-			crzap.WriteTo(startupWriter),
+			crzap.WriteTo(writer),
 			crzap.Level(level),
 		)
 		ctrllog.SetLogger(startupLogger)
-		log.SetOutput(startupWriter)
+		log.SetOutput(writer)
 		log.SetFlags(0)
-		klog.SetOutput(startupWriter)
+		klog.SetOutput(writer)
 		klog.SetLogger(ctrllog.Log)
 
 		return func() {
 			fileLogger := crzap.New(
 				crzap.UseDevMode(true),
-				crzap.WriteTo(f),
+				crzap.WriteTo(writer),
 				crzap.Level(level),
 			)
+			writer.useStderr.Store(false)
 			ctrllog.SetLogger(fileLogger)
-			log.SetOutput(f)
+			log.SetOutput(writer)
 			log.SetFlags(0)
-			klog.SetOutput(f)
+			klog.SetOutput(writer)
 			klog.SetLogger(ctrllog.Log)
 		}
 	}
