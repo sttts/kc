@@ -18,6 +18,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/go-logr/logr"
 	"github.com/sttts/kc/internal/ui"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	klog "k8s.io/klog/v2"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -217,82 +218,106 @@ func selectNamespace(global, override string) string {
 // setupControllerRuntimeLogger configures controller-runtime and klog logging.
 // Default (verbosity 0): discard all logs. With verbosity >=1 logs are written to stderr
 // during startup and ~/.kc/debug.log; once the returned switch function is invoked, logs
-// are written to the file only. At verbosity >=3, debug logs are enabled.
+// are written to the file only. The zap logger level is derived from the provided
+// verbosity so klog -v and controller-runtime logr stay aligned.
 func setupControllerRuntimeLogger(verbosity int) (func(), string) {
 	// Register klog flags so we can set -v programmatically even though Kong owns CLI parsing.
 	klog.InitFlags(nil)
 
-	level := zapcore.InfoLevel
-	if verbosity >= 3 {
-		level = zapcore.DebugLevel
+	if verbosity < 1 {
+		ctrllog.SetLogger(logr.Discard())
+		klog.SetLogger(logr.Discard())
+		klog.SetOutput(io.Discard)
+		log.SetOutput(io.Discard)
+		return nil, ""
 	}
 
-	if verbosity >= 1 {
-		_ = flag.Set("v", strconv.Itoa(verbosity))
-		_ = flag.Set("logtostderr", "false")
-		_ = flag.Set("alsologtostderr", "false")
+	zapLevel := zapLevelForVerbosity(verbosity)
+	_ = flag.Set("v", strconv.Itoa(verbosity))
+	_ = flag.Set("logtostderr", "false")
+	_ = flag.Set("alsologtostderr", "false")
 
-		home, err := os.UserHomeDir()
-		if err != nil {
-			ctrllog.SetLogger(logr.Discard())
-			klog.SetLogger(logr.Discard())
-			klog.SetOutput(io.Discard)
-			log.SetOutput(io.Discard)
-			return nil, ""
-		}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		ctrllog.SetLogger(logr.Discard())
+		klog.SetLogger(logr.Discard())
+		klog.SetOutput(io.Discard)
+		log.SetOutput(io.Discard)
+		return nil, ""
+	}
 
-		dir := filepath.Join(home, ".kc")
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			ctrllog.SetLogger(logr.Discard())
-			klog.SetLogger(logr.Discard())
-			klog.SetOutput(io.Discard)
-			log.SetOutput(io.Discard)
-			return nil, ""
-		}
+	dir := filepath.Join(home, ".kc")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		ctrllog.SetLogger(logr.Discard())
+		klog.SetLogger(logr.Discard())
+		klog.SetOutput(io.Discard)
+		log.SetOutput(io.Discard)
+		return nil, ""
+	}
 
-		fpath := filepath.Join(dir, "debug.log")
-		_ = os.Remove(fpath)
-		f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-		if err != nil {
-			ctrllog.SetLogger(logr.Discard())
-			klog.SetLogger(logr.Discard())
-			klog.SetOutput(io.Discard)
-			log.SetOutput(io.Discard)
-			return nil, ""
-		}
+	fpath := filepath.Join(dir, "debug.log")
+	_ = os.Remove(fpath)
+	f, err := os.OpenFile(fpath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		ctrllog.SetLogger(logr.Discard())
+		klog.SetLogger(logr.Discard())
+		klog.SetOutput(io.Discard)
+		log.SetOutput(io.Discard)
+		return nil, ""
+	}
 
-		writer := newCutoverWriter(f, os.Stderr)
-		startupLogger := crzap.New(
+	writer := newCutoverWriter(f, os.Stderr)
+	startupLogger := crzap.New(
+		crzap.UseDevMode(true),
+		crzap.WriteTo(writer),
+		crzap.Level(zapLevel),
+		crzap.Encoder(newLevelAwareEncoder()),
+		crzap.RawZapOpts(zap.AddCaller()),
+	)
+	ctrllog.SetLogger(startupLogger)
+	log.SetOutput(writer)
+	log.SetFlags(0)
+	klog.SetOutput(writer)
+	klog.SetLogger(ctrllog.Log)
+
+	return func() {
+		fileLogger := crzap.New(
 			crzap.UseDevMode(true),
 			crzap.WriteTo(writer),
-			crzap.Level(level),
+			crzap.Level(zapLevel),
+			crzap.Encoder(newLevelAwareEncoder()),
+			crzap.RawZapOpts(zap.AddCaller()),
 		)
-		ctrllog.SetLogger(startupLogger)
+		writer.useStderr.Store(false)
+		ctrllog.SetLogger(fileLogger)
 		log.SetOutput(writer)
 		log.SetFlags(0)
 		klog.SetOutput(writer)
 		klog.SetLogger(ctrllog.Log)
+	}, fpath
+}
 
-		return func() {
-			fileLogger := crzap.New(
-				crzap.UseDevMode(true),
-				crzap.WriteTo(writer),
-				crzap.Level(level),
-			)
-			writer.useStderr.Store(false)
-			ctrllog.SetLogger(fileLogger)
-			log.SetOutput(writer)
-			log.SetFlags(0)
-			klog.SetOutput(writer)
-			klog.SetLogger(ctrllog.Log)
-		}, fpath
+func zapLevelForVerbosity(verbosity int) zapcore.Level {
+	if verbosity > 127 {
+		verbosity = 127
 	}
+	if verbosity < 0 {
+		return zapcore.InfoLevel
+	}
+	return zapcore.Level(-verbosity)
+}
 
-	ctrllog.SetLogger(logr.Discard())
-	klog.SetLogger(logr.Discard())
-	klog.SetOutput(io.Discard)
-	log.SetOutput(io.Discard)
-	return nil, ""
+func newLevelAwareEncoder() zapcore.Encoder {
+	ecfg := zap.NewDevelopmentEncoderConfig()
+	ecfg.EncodeLevel = func(level zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+		if level < zapcore.DebugLevel {
+			enc.AppendString(fmt.Sprintf("V%d", -int(level)))
+			return
+		}
+		zapcore.CapitalLevelEncoder(level, enc)
+	}
+	ecfg.EncodeTime = zapcore.RFC3339TimeEncoder
+	return zapcore.NewConsoleEncoder(ecfg)
 }
 
 func startPprofServer(addr string) {
