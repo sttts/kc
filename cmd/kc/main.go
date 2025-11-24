@@ -31,14 +31,14 @@ var (
 )
 
 type cliFlags struct {
-	Kubeconfig string          `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
-	Namespace  string          `help:"Namespace to open on startup" short:"n"`
-	PprofAddr  string          `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
-	Verbosity  int             `help:"klog verbosity level (same as --v)" name:"v"`
-	Root       rootCommand     `cmd:"" hidden:"true" default:"1"`
-	Get        getCommand      `cmd:"get" help:"Mirror kubectl get"`
-	Logs       logsCommand     `cmd:"logs" help:"Mirror kubectl logs"`
-	Version    versionCommand  `cmd:"version" help:"Show version information"`
+	Kubeconfig string         `help:"Path to kubeconfig file (overrides KUBECONFIG)"`
+	Namespace  string         `help:"Namespace to open on startup" short:"n"`
+	PprofAddr  string         `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
+	Verbosity  int            `help:"klog verbosity level (same as --v)" name:"v"`
+	Root       rootCommand    `cmd:"" hidden:"true" default:"1"`
+	Get        getCommand     `cmd:"get" help:"Mirror kubectl get"`
+	Logs       logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
+	Version    versionCommand `cmd:"version" help:"Show version information"`
 }
 
 type rootCommand struct{}
@@ -351,10 +351,4 @@ func showHelp() {
 	fmt.Println("  A           Select all")
 	fmt.Println("  U           Unselect all")
 	fmt.Println("  I           Invert selection")
-}
-
-func showVersionInfo() {
-	fmt.Printf("Kubernetes Commander (kc) version %s\n", version)
-	fmt.Printf("Commit: %s\n", commit)
-	fmt.Printf("Date: %s\n", date)
 }

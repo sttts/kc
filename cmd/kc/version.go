@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/sttts/kc"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
-	componentversion "k8s.io/component-base/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -18,16 +18,19 @@ type serverVersionGetter interface {
 }
 
 type versionInfo struct {
-	kcVersion      string
-	commit         string
-	date           string
-	clientGo       string
-	serverVersion  *apimachineryversion.Info
+	kcVersion     string
+	commit        string
+	date          string
+	clientGo      string
+	serverVersion *apimachineryversion.Info
 }
 
 func runVersionCommand(ctx context.Context) error {
 	discoveryClient, err := buildDiscoveryClient(ctx)
 	info, serverErr := collectVersionInfo(ctx, discoveryClient)
+	if err != nil {
+		serverErr = err
+	}
 	printVersionInfo(os.Stdout, info)
 	if serverErr != nil {
 		fmt.Fprintf(os.Stderr, "Error fetching server version: %v\n", serverErr)
@@ -63,7 +66,7 @@ func collectVersionInfo(ctx context.Context, discoveryClient serverVersionGetter
 		kcVersion: version,
 		commit:    commit,
 		date:      date,
-		clientGo:  componentversion.Get().GitVersion,
+		clientGo:  kc.ClientGoVersion(),
 	}
 
 	if discoveryClient == nil {
