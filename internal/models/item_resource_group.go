@@ -48,6 +48,9 @@ type ResourceGroupItem struct {
 	watchOnce           sync.Once
 	nextPeekScheduled   bool
 	peekBackoff         wait.Backoff
+	peekBlocked         bool
+	peekForbiddenLogged bool
+	hasAny              func(context.Context, schema.GroupVersionResource, string) (bool, error)
 }
 
 func NewResourceGroupItem(deps Deps, gvr schema.GroupVersionResource, gvk schema.GroupVersionKind, namespace, id string, cells []string, path []string, detail string, style *lipgloss.Style, watchable bool, enter func() (Folder, error)) *ResourceGroupItem {
@@ -271,18 +274,31 @@ func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 	// Metrics are keyed by resource name only (no group/version). A zero count means
 	// no objects of this resource name exist anywhere; any non-zero still requires
 	// peeks/informers to localize existence.
-	if cnt, ok := r.deps.Cl.StorageCount(ctx, r.gvr, r.peekInterval()); ok && cnt == 0 {
-		r.lastPeek = time.Now()
-		r.recordPeekSuccessLocked()
-		r.emptyKnown = true
-		r.empty = true
-		r.count = 0
-		r.countKnown = true
-		return true, true
+	if r.deps.Cl != nil {
+		if cnt, ok := r.deps.Cl.StorageCount(ctx, r.gvr, r.peekInterval()); ok && cnt == 0 {
+			r.lastPeek = time.Now()
+			r.recordPeekSuccessLocked()
+			r.emptyKnown = true
+			r.empty = true
+			r.count = 0
+			r.countKnown = true
+			return true, true
+		}
 	}
 	crlog.FromContext(r.deps.Ctx).Info("peeking resource emptiness", "gvr", r.gvr.String(), "namespace", r.namespace)
-	has, err := r.deps.Cl.HasAnyByGVR(ctx, r.gvr, r.namespace)
+	hasAny := r.hasAny
+	if hasAny == nil && r.deps.Cl != nil {
+		hasAny = r.deps.Cl.HasAnyByGVR
+	}
+	if hasAny == nil {
+		return false, false
+	}
+	has, err := hasAny(ctx, r.gvr, r.namespace)
 	if err != nil {
+		if apierrors.IsForbidden(err) {
+			r.blockPeeksLocked(err)
+			return false, true
+		}
 		r.lastPeek = time.Now()
 		r.recordPeekErrorLocked(err)
 		r.scheduleNextPeekLocked()
@@ -531,7 +547,7 @@ func (r *ResourceGroupItem) scheduleNextPeekLocked() {
 }
 
 func (r *ResourceGroupItem) nextPeekScheduleLocked() (context.Context, time.Duration, bool) {
-	if r.nextPeekScheduled {
+	if r.nextPeekScheduled || r.peekBlocked {
 		return nil, 0, false
 	}
 	r.nextPeekScheduled = true
@@ -621,4 +637,39 @@ func (r *ResourceGroupItem) recordPeekErrorLocked(err error) {
 func (r *ResourceGroupItem) recordPeekSuccessLocked() {
 	r.lastError = time.Time{}
 	r.resetPeekBackoffLocked()
+}
+
+func (r *ResourceGroupItem) blockPeeksLocked(err error) {
+	if r.peekBlocked {
+		return
+	}
+	r.peekBlocked = true
+	r.nextPeekScheduled = true
+	r.empty = true
+	r.emptyKnown = true
+	r.count = 0
+	r.countKnown = true
+	r.lastError = time.Time{}
+	r.lastPeek = time.Now()
+	r.logPeekForbiddenLocked(err)
+}
+
+func (r *ResourceGroupItem) logPeekForbiddenLocked(err error) {
+	if r.peekForbiddenLogged {
+		return
+	}
+	log := crlog.FromContext(r.deps.Ctx).WithValues("gvr", r.gvr.String(), "namespace", r.namespace)
+	if err != nil {
+		log.Info("suppressing peeks after forbidden", "error", err.Error())
+	} else {
+		log.Info("suppressing peeks after forbidden")
+	}
+	r.peekForbiddenLogged = true
+}
+
+// Forbidden reports whether peeks are suppressed due to a forbidden response.
+func (r *ResourceGroupItem) Forbidden() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.peekBlocked
 }
