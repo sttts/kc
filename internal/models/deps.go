@@ -23,6 +23,8 @@ type NamespaceClusterFactory func(ctx context.Context, key kccluster.Key, select
 //   - CtxName is the human-facing context label (may be empty for cluster-scoped views).
 //   - KubeConfig always contains the discovered contexts (never nil maps).
 //   - AppConfig is non-nil and already validated by appconfig loading.
+//
+// Callers must uphold these invariants; downstream code does not nil-check these fields.
 type Deps struct {
 	Cl               *kccluster.Cluster
 	Ctx              context.Context

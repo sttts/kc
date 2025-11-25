@@ -169,6 +169,7 @@ func newPodSectionRowSource(deps Deps, namespace, pod string, populate func(cont
 	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
 		return startInformerForResource(deps, gvr, namespace, pod, onEvent, onStop)
 	})
+	lor.setTarget(liveSourceTarget{gvr: gvr, namespace: namespace, name: pod})
 	lor.watchTTL = watchDuration(deps)
 	return lor
 }
@@ -178,6 +179,7 @@ func newPodContainerRowSource(deps Deps, namespace, pod string, kind containerKi
 	lor := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
 		return startInformerForResource(deps, gvr, namespace, pod, onEvent, onStop)
 	})
+	lor.setTarget(liveSourceTarget{gvr: gvr, namespace: namespace, name: pod})
 	lor.watchTTL = watchDuration(deps)
 	return lor
 }

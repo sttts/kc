@@ -129,7 +129,10 @@ func (f *ResourcesFolder) finalize(ctx context.Context, specs []resourceGroupSpe
 		item.SetOnChange(handler)
 		item.ComputeCountAsync(handler)
 		visible := true
-		if showNonEmpty && item.Empty() {
+		empty := item.Empty()
+		if item.Forbidden() {
+			visible = false
+		} else if showNonEmpty && empty {
 			visible = false
 		}
 		sig := makeResourceGroupSignature(spec, visible, idx)

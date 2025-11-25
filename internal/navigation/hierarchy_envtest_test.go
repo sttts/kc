@@ -229,7 +229,7 @@ func TestHierarchyEnvtest(t *testing.T) {
 	foundN1 := false
 	for _, r := range rows {
 		_, cells, _, _ := r.Columns()
-		if len(cells) > 0 && cells[0] == "n1" {
+		if len(cells) > 0 && cells[0] == "/n1" {
 			foundN1 = true
 			break
 		}

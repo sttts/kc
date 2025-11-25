@@ -11,6 +11,7 @@ import (
 	table "github.com/sttts/kc/internal/table"
 	"github.com/sttts/kc/internal/tablecache"
 	"github.com/sttts/kc/pkg/appconfig"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -61,6 +62,8 @@ func (o *ObjectsFolder) populateRows(ctx context.Context) ([]table.Row, error) {
 	}
 	if rl, err := o.Deps.Cl.ListRowsByGVR(ctx, o.gvr, o.namespace); err == nil && rl != nil && len(rl.Items) > 0 {
 		return o.rowsFromRowList(rl, columnsMode, order), nil
+	} else if err != nil && apierrors.IsForbidden(err) {
+		return nil, err
 	}
 	list, err := o.Deps.Cl.ListByGVR(ctx, o.gvr, o.namespace)
 	if err != nil {
@@ -158,7 +161,7 @@ func (o *ObjectsFolder) rowsFromList(list *unstructured.UnstructuredList, order 
 		basePath := append(append([]string{}, o.Path()...), name)
 		title := name
 		if hasChild {
-			title = "/" + name
+			title = "/" + strings.TrimPrefix(name, "/")
 		}
 		meta := metav1.ObjectMeta{
 			Name:              name,
@@ -293,7 +296,8 @@ func buildCells(cells []interface{}, vis []int, hasChild bool) []string {
 		}
 	}
 	if len(out) > 0 && hasChild {
-		out[0] = "/" + strings.TrimPrefix(out[0], "/")
+		name := strings.TrimPrefix(out[0], "/")
+		out[0] = "/" + name
 	}
 	return out
 }
@@ -331,21 +335,31 @@ func ageColumnIndices(cols []table.Column) []int {
 	return idx
 }
 
+type liveSourceTarget struct {
+	gvr       schema.GroupVersionResource
+	namespace string
+	name      string
+}
+
 // liveObjectRowSource adapts an ObjectsFolder to the rowSource interface while
 // keeping rows synced with informer events for the target GVR.
 type liveObjectRowSource struct {
-	populate      func(context.Context) ([]table.Row, error)
-	onFolderDirty func()
-	mu            sync.Mutex
-	rows          []table.Row
-	index         map[string]int
-	items         map[string]Item
-	dirty         bool
-	once          sync.Once
-	watchFactory  func(func(), func()) (func(), error)
-	watchCancel   func()
-	watchTimer    *time.Timer
-	watchTTL      time.Duration
+	populate        func(context.Context) ([]table.Row, error)
+	onFolderDirty   func()
+	mu              sync.Mutex
+	rows            []table.Row
+	index           map[string]int
+	items           map[string]Item
+	dirty           bool
+	once            sync.Once
+	watchFactory    func(func(), func()) (func(), error)
+	watchCancel     func()
+	watchTimer      *time.Timer
+	watchTTL        time.Duration
+	listBlocked     bool
+	watchBlocked    bool
+	forbiddenLogged bool
+	target          liveSourceTarget
 }
 
 func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
@@ -356,6 +370,7 @@ func newLiveObjectRowSource(owner *ObjectsFolder) *liveObjectRowSource {
 			return startInformerForObjectsFolder(owner, onEvent, onStop)
 		},
 	)
+	rows.setTarget(liveSourceTarget{gvr: owner.gvr, namespace: owner.namespace})
 	rows.watchTTL = watchDuration(owner.Deps)
 	return rows
 }
@@ -374,6 +389,12 @@ func newLiveObjectRowSourceWithHooks(
 	return src
 }
 
+func (s *liveObjectRowSource) setTarget(target liveSourceTarget) {
+	s.mu.Lock()
+	s.target = target
+	s.mu.Unlock()
+}
+
 func startInformerForObjectsFolder(owner *ObjectsFolder, onEvent func(), onStop func()) (func(), error) {
 	if owner == nil {
 		return nil, nil
@@ -381,8 +402,52 @@ func startInformerForObjectsFolder(owner *ObjectsFolder, onEvent func(), onStop 
 	return startInformerForResource(owner.Deps, owner.gvr, owner.namespace, "", onEvent, onStop)
 }
 
-func (s *liveObjectRowSource) ensureWatcherLocked() {
-	if s.watchFactory == nil || s.watchCancel != nil {
+func (s *liveObjectRowSource) logForbiddenLocked(ctx context.Context, stage string, err error) {
+	if s.forbiddenLogged {
+		return
+	}
+	log := ctrllog.FromContext(ctx).WithName("liveObjectRowSource")
+	if !s.target.gvr.Empty() {
+		log = log.WithValues(
+			"gvr", s.target.gvr.String(),
+			"namespace", s.target.namespace,
+			"name", s.target.name,
+		)
+	}
+	if err != nil {
+		log.Info("suppressing list/watch retries after forbidden", "stage", stage, "error", err.Error())
+	} else {
+		log.Info("suppressing list/watch retries after forbidden", "stage", stage)
+	}
+	s.forbiddenLogged = true
+}
+
+func (s *liveObjectRowSource) blockWatchLocked(ctx context.Context, stage string, err error) {
+	if s.watchBlocked {
+		return
+	}
+	if s.watchTimer != nil {
+		s.watchTimer.Stop()
+		s.watchTimer = nil
+	}
+	s.watchCancel = nil
+	s.watchFactory = nil
+	s.watchBlocked = true
+	s.logForbiddenLocked(ctx, stage, err)
+}
+
+func (s *liveObjectRowSource) blockListLocked(ctx context.Context, err error) {
+	if s.listBlocked {
+		return
+	}
+	s.listBlocked = true
+	s.dirty = false
+	s.logForbiddenLocked(ctx, "list", err)
+	s.blockWatchLocked(ctx, "list", nil)
+}
+
+func (s *liveObjectRowSource) ensureWatcherLocked(ctx context.Context) {
+	if s.watchFactory == nil || s.watchCancel != nil || s.watchBlocked {
 		return
 	}
 	factory := s.watchFactory
@@ -390,7 +455,11 @@ func (s *liveObjectRowSource) ensureWatcherLocked() {
 	cancel, err := factory(s.MarkDirty, s.watchStopped)
 	s.mu.Lock()
 	if err != nil {
-		ctrllog.Log.WithName("liveObjectRowSource").Error(err, "failed to start resource watch")
+		if apierrors.IsForbidden(err) {
+			s.blockWatchLocked(ctx, "watch", err)
+			return
+		}
+		ctrllog.FromContext(ctx).WithName("liveObjectRowSource").Error(err, "failed to start resource watch")
 		return
 	}
 	if cancel != nil {
@@ -400,7 +469,7 @@ func (s *liveObjectRowSource) ensureWatcherLocked() {
 }
 
 func (s *liveObjectRowSource) touchWatchLocked() {
-	if s.watchTTL <= 0 || s.watchCancel == nil {
+	if s.watchTTL <= 0 || s.watchCancel == nil || s.watchBlocked {
 		return
 	}
 	s.scheduleWatchTimeoutLocked()
@@ -435,13 +504,20 @@ func (s *liveObjectRowSource) watchStopped() {
 
 func (s *liveObjectRowSource) ensureLocked(ctx context.Context) {
 	s.once.Do(func() { s.dirty = true })
-	s.ensureWatcherLocked()
+	if s.listBlocked {
+		return
+	}
+	s.ensureWatcherLocked(ctx)
 	s.touchWatchLocked()
 	if !s.dirty {
 		return
 	}
 	rows, err := s.populate(ctx)
 	if err != nil {
+		if apierrors.IsForbidden(err) {
+			s.blockListLocked(ctx, err)
+			return
+		}
 		// keep dirty so we retry next time
 		s.dirty = true
 		return
@@ -569,6 +645,10 @@ func (s *liveObjectRowSource) ItemByID(ctx context.Context, id string) (Item, bo
 
 func (s *liveObjectRowSource) MarkDirty() {
 	s.mu.Lock()
+	if s.listBlocked {
+		s.mu.Unlock()
+		return
+	}
 	s.dirty = true
 	s.mu.Unlock()
 	if s.onFolderDirty != nil {
@@ -580,6 +660,7 @@ func newLiveKeyRowSource(deps Deps, gvr schema.GroupVersionResource, namespace, 
 	rows := newLiveObjectRowSourceWithHooks(populate, onDirty, func(onEvent func(), onStop func()) (func(), error) {
 		return startInformerForResource(deps, gvr, namespace, name, onEvent, onStop)
 	})
+	rows.setTarget(liveSourceTarget{gvr: gvr, namespace: namespace, name: name})
 	rows.watchTTL = watchDuration(deps)
 	return rows
 }

@@ -188,6 +188,52 @@ func TestResourcesFolderMarksDirtyOnOrderChange(t *testing.T) {
 	}
 }
 
+func TestResourcesFolderHidesForbiddenResources(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+
+	cfg := appconfig.Default()
+	cfg.Resources.ShowNonEmptyOnly = false
+
+	deps := Deps{
+		AppConfig: cfg,
+		Ctx:       ctx,
+	}
+
+	base := NewBaseFolder(deps, nil, nil)
+	folder := NewResourcesFolder(base)
+
+	spec := resourceGroupSpec{
+		id:        "g/v/res",
+		cells:     []string{"res", "g/v", ""},
+		path:      []string{"res"},
+		detail:    "res (g/v)",
+		gvr:       schema.GroupVersionResource{Group: "g", Version: "v", Resource: "res"},
+		namespace: "",
+		watchable: false,
+	}
+
+	// First pass to initialize the item.
+	rows := folder.finalize(ctx, []resourceGroupSpec{spec})
+	if len(rows) != 1 {
+		t.Fatalf("expected resource to be visible initially, got %d rows", len(rows))
+	}
+
+	item := folder.items[spec.id]
+	if item == nil {
+		t.Fatalf("expected resource item to be tracked")
+	}
+	item.mu.Lock()
+	item.peekBlocked = true
+	item.mu.Unlock()
+
+	rows = folder.finalize(ctx, []resourceGroupSpec{spec})
+	if len(rows) != 0 {
+		t.Fatalf("expected forbidden resource to be hidden, got %d rows", len(rows))
+	}
+}
+
 func TestSortResourceEntriesOrders(t *testing.T) {
 	t.Parallel()
 

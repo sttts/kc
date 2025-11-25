@@ -2,9 +2,11 @@ package models
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	table "github.com/sttts/kc/internal/table"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -104,4 +106,70 @@ func TestPodRowSourcesRefresh(t *testing.T) {
 		t.Fatalf("list rows did not refresh")
 	}
 
+}
+
+func TestLiveObjectRowSourceStopsListingAfterForbidden(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
+	var populateCalls int
+	src := newLiveObjectRowSourceWithHooks(
+		func(context.Context) ([]table.Row, error) {
+			populateCalls++
+			return nil, apierrors.NewForbidden(schema.GroupResource{Group: gvr.Group, Resource: gvr.Resource}, "", errors.New("denied"))
+		},
+		func() {},
+		nil,
+	)
+	src.setTarget(liveSourceTarget{gvr: gvr, namespace: "default"})
+
+	ctx := t.Context()
+	if rows := src.Lines(ctx, 0, 5); rows != nil {
+		t.Fatalf("expected no rows on forbidden list, got %d", len(rows))
+	}
+	if populateCalls != 1 {
+		t.Fatalf("expected one populate attempt, got %d", populateCalls)
+	}
+
+	src.MarkDirty()
+	if rows := src.Lines(ctx, 0, 5); rows != nil {
+		t.Fatalf("expected no rows after forbidden list retry, got %d", len(rows))
+	}
+	if populateCalls != 1 {
+		t.Fatalf("expected forbidden list to suppress retries, got %d calls", populateCalls)
+	}
+}
+
+func TestLiveObjectRowSourceStopsWatchRetriesAfterForbidden(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
+	var populateCalls int
+	var watchCalls int
+	src := newLiveObjectRowSourceWithHooks(
+		func(context.Context) ([]table.Row, error) {
+			populateCalls++
+			return []table.Row{}, nil
+		},
+		func() {},
+		func(func(), func()) (func(), error) {
+			watchCalls++
+			return nil, apierrors.NewForbidden(schema.GroupResource{Group: gvr.Group, Resource: gvr.Resource}, "", errors.New("no watch"))
+		},
+	)
+	src.setTarget(liveSourceTarget{gvr: gvr, namespace: "default"})
+
+	ctx := t.Context()
+	_ = src.Lines(ctx, 0, 5)
+	if watchCalls != 1 {
+		t.Fatalf("expected one watch attempt, got %d", watchCalls)
+	}
+	if populateCalls != 1 {
+		t.Fatalf("expected populate to proceed once despite watch forbidden, got %d", populateCalls)
+	}
+
+	src.MarkDirty()
+	_ = src.Lines(ctx, 0, 5)
+	if watchCalls != 1 {
+		t.Fatalf("expected watch retries to be suppressed, got %d attempts", watchCalls)
+	}
+	if populateCalls != 2 {
+		t.Fatalf("expected refresh to skip watch and repopulate, got %d populate calls", populateCalls)
+	}
 }
