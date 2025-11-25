@@ -34,10 +34,21 @@ type Manager struct {
 	copyPath string
 	lastHash string
 	template *clientcmdapi.Config
+	imp      Impersonation
+}
+
+type Impersonation struct {
+	User   string
+	UID    string
+	Groups []string
+}
+
+func (i Impersonation) empty() bool {
+	return strings.TrimSpace(i.User) == "" && strings.TrimSpace(i.UID) == "" && len(i.Groups) == 0
 }
 
 // NewManager creates a manager under a per-user temp root and cleans stale dirs.
-func NewManager(basePath string, template *clientcmdapi.Config, mode Mode) (*Manager, error) {
+func NewManager(basePath string, template *clientcmdapi.Config, mode Mode, imp Impersonation) (*Manager, error) {
 	root := filepath.Join(os.TempDir(), fmt.Sprintf("kc-%d", os.Getuid()))
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
@@ -78,6 +89,7 @@ func NewManager(basePath string, template *clientcmdapi.Config, mode Mode) (*Man
 	if template != nil {
 		m.template = template.DeepCopy()
 	}
+	m.imp = imp
 	return m, nil
 }
 
@@ -107,7 +119,7 @@ func (m *Manager) updateOverlay(ctxName, namespace string) error {
 		cluster = ctx.Cluster
 		user = ctx.AuthInfo
 	}
-	body := renderOverlay(ctxName, namespace, cluster, user)
+	body := renderOverlay(ctxName, namespace, cluster, user, m.imp)
 	h := sha256.Sum256([]byte(body))
 	hashLine := fmt.Sprintf("%s %s\n", hashPrefix, hex.EncodeToString(h[:]))
 	contents := hashLine + body
@@ -137,6 +149,9 @@ func (m *Manager) updateCopy(ctxName, namespace string) error {
 		cfg.Contexts[ctxName] = ctx
 	}
 	ctx.Namespace = namespace
+	if err := applyImpersonation(cfg, ctxName, m.imp); err != nil {
+		return err
+	}
 	return clientcmd.WriteToFile(*cfg, m.copyPath)
 }
 
@@ -198,11 +213,12 @@ func (m *Manager) Close() error {
 	return os.RemoveAll(m.dir)
 }
 
-func renderOverlay(ctxName, namespace, cluster, user string) string {
+func renderOverlay(ctxName, namespace, cluster, user string, imp Impersonation) string {
+	var b strings.Builder
 	if namespace == "" {
-		return fmt.Sprintf("apiVersion: v1\nkind: Config\ncurrent-context: %s\n", ctxName)
-	}
-	return fmt.Sprintf(`apiVersion: v1
+		fmt.Fprintf(&b, "apiVersion: v1\nkind: Config\ncurrent-context: %s\n", ctxName)
+	} else {
+		fmt.Fprintf(&b, `apiVersion: v1
 kind: Config
 contexts:
 - name: %[1]s
@@ -212,6 +228,28 @@ contexts:
     namespace: %[2]s
 current-context: %[1]s
 `, ctxName, namespace, cluster, user)
+	}
+	if imp.empty() || strings.TrimSpace(user) == "" {
+		return b.String()
+	}
+	fmt.Fprintf(&b, "users:\n- name: %s\n  user:\n", user)
+	if u := strings.TrimSpace(imp.User); u != "" {
+		fmt.Fprintf(&b, "    impersonate-user: %s\n", u)
+	}
+	if uid := strings.TrimSpace(imp.UID); uid != "" {
+		fmt.Fprintf(&b, "    impersonate-uid: %s\n", uid)
+	}
+	if len(imp.Groups) > 0 {
+		fmt.Fprintf(&b, "    impersonate-groups:\n")
+		for _, g := range imp.Groups {
+			g = strings.TrimSpace(g)
+			if g == "" {
+				continue
+			}
+			fmt.Fprintf(&b, "    - %s\n", g)
+		}
+	}
+	return b.String()
 }
 
 func parseOverlay(body string) (ctxName, namespace string) {
@@ -226,6 +264,35 @@ func parseOverlay(body string) (ctxName, namespace string) {
 		}
 	}
 	return ctxName, namespace
+}
+
+func applyImpersonation(cfg *clientcmdapi.Config, ctxName string, imp Impersonation) error {
+	if imp.empty() {
+		return nil
+	}
+	if cfg == nil {
+		return fmt.Errorf("kubeconfig missing for impersonation")
+	}
+	ctx := cfg.Contexts[ctxName]
+	if ctx == nil {
+		return fmt.Errorf("context %s not found in kubeconfig", ctxName)
+	}
+	userName := strings.TrimSpace(ctx.AuthInfo)
+	if userName == "" {
+		return fmt.Errorf("context %s missing user for impersonation", ctxName)
+	}
+	if cfg.AuthInfos == nil {
+		cfg.AuthInfos = make(map[string]*clientcmdapi.AuthInfo)
+	}
+	auth := cfg.AuthInfos[userName]
+	if auth == nil {
+		auth = &clientcmdapi.AuthInfo{}
+		cfg.AuthInfos[userName] = auth
+	}
+	auth.Impersonate = strings.TrimSpace(imp.User)
+	auth.ImpersonateUID = strings.TrimSpace(imp.UID)
+	auth.ImpersonateGroups = append([]string(nil), imp.Groups...)
+	return nil
 }
 
 func reap(root string) {

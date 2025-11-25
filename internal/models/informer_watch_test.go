@@ -13,7 +13,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -32,12 +31,7 @@ func TestStartInformerForResourceEmitsSyncedAndWatches(t *testing.T) {
 	}
 	defer func() { _ = env.Stop() }()
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("add corev1 to scheme: %v", err)
-	}
-
-	cl, err := kccluster.New(cfg, kccluster.WithScheme(scheme))
+	cl, err := kccluster.New(cfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}

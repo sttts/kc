@@ -11,7 +11,6 @@ import (
 	metameta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	toolscache "k8s.io/client-go/tools/cache"
 	crcache "sigs.k8s.io/controller-runtime/pkg/cache"
@@ -33,12 +32,7 @@ func TestClusterDiscoveryListenerNotified(t *testing.T) {
 	}
 	defer func() { _ = env.Stop() }()
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("add corev1 to scheme: %v", err)
-	}
-
-	cl, err := New(cfg, WithScheme(scheme))
+	cl, err := New(cfg)
 	if err != nil {
 		t.Fatalf("cluster: %v", err)
 	}
@@ -76,12 +70,7 @@ func TestNamespaceScopedInformerExposesStore(t *testing.T) {
 	}
 	defer func() { _ = env.Stop() }()
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("add corev1 to scheme: %v", err)
-	}
-
-	cl, err := New(cfg, WithScheme(scheme), WithNamespaceScope("ns-a"))
+	cl, err := New(cfg, WithNamespaceScope("ns-a"))
 	if err != nil {
 		t.Fatalf("namespace-scoped cluster: %v", err)
 	}

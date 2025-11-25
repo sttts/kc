@@ -14,7 +14,6 @@ import (
 	metamapper "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
@@ -32,6 +31,10 @@ import (
 	// Table-rendering cache integration
 	tablecache "github.com/sttts/kc/internal/tablecache"
 )
+
+func init() {
+	_ = tablecache.AddToScheme(scheme.Scheme)
+}
 
 // Cluster is a thin extension around controller-runtime's Cluster that exposes
 // a self-updating RESTMapper and convenience helpers.
@@ -67,14 +70,10 @@ type Cluster struct {
 // Option configures Cluster.
 type Option func(*options)
 type options struct {
-	scheme    *runtime.Scheme
 	refresh   time.Duration
 	namespace string
 	selectors map[schema.GroupVersionResource]crcache.ByObject
 }
-
-// WithScheme sets the runtime.Scheme used by the controller-runtime cluster.
-func WithScheme(s *runtime.Scheme) Option { return func(o *options) { o.scheme = s } }
 
 // WithRefreshInterval sets the discovery/RESTMapper refresh interval (default 30s).
 func WithRefreshInterval(d time.Duration) Option { return func(o *options) { o.refresh = d } }
@@ -96,7 +95,7 @@ func WithSelectorScope(selectors map[schema.GroupVersionResource]crcache.ByObjec
 // New creates a new Cluster embedding controller-runtime's Cluster and wiring a cached discovery client
 // plus a Resettable RESTMapper.
 func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
-	o := &options{scheme: scheme.Scheme, refresh: 30 * time.Second}
+	o := &options{refresh: 30 * time.Second}
 	for _, fn := range opts {
 		fn(o)
 	}
@@ -122,7 +121,6 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 	}
 
 	cl, err := crcluster.New(cfg, func(co *crcluster.Options) {
-		co.Scheme = o.scheme
 		if cacheHTTPClient != nil {
 			co.Cache.HTTPClient = cacheHTTPClient
 		}
@@ -148,8 +146,7 @@ func New(cfg *rest.Config, opts ...Option) (*Cluster, error) {
 
 	// Build a dedicated table-aware cache for Row/RowList alongside the default cache.
 	// Register Row/RowList types in the scheme so the cache can marshal them.
-	_ = tablecache.AddToScheme(o.scheme)
-	tableCacheOpts := crcache.Options{Scheme: o.scheme}
+	tableCacheOpts := crcache.Options{}
 	if cacheHTTPClient != nil {
 		tableCacheOpts.HTTPClient = cacheHTTPClient
 	}

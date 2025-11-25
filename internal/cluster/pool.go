@@ -14,10 +14,13 @@ import (
 
 // Key identifies a controller-runtime Cluster by kubeconfig path and context name.
 type Key struct {
-	KubeconfigPath string
-	ContextName    string
-	Namespace      string
-	SelectorKey    string
+	KubeconfigPath       string
+	ContextName          string
+	Namespace            string
+	SelectorKey          string
+	ImpersonateUser      string
+	ImpersonateUID       string
+	ImpersonateGroupsKey string
 }
 
 type entry struct {
@@ -85,9 +88,19 @@ func (p *Pool) get(ctx context.Context, k Key, selectors map[schema.GroupVersion
 		p.mu.Unlock()
 		return e.cl, nil
 	}
+	override := clientcmd.ConfigOverrides{CurrentContext: k.ContextName}
+	if strings.TrimSpace(k.ImpersonateUser) != "" {
+		override.AuthInfo.Impersonate = strings.TrimSpace(k.ImpersonateUser)
+	}
+	if strings.TrimSpace(k.ImpersonateUID) != "" {
+		override.AuthInfo.ImpersonateUID = strings.TrimSpace(k.ImpersonateUID)
+	}
+	if g := strings.TrimSpace(k.ImpersonateGroupsKey); g != "" {
+		override.AuthInfo.ImpersonateGroups = strings.Split(g, ",")
+	}
 	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		&clientcmd.ClientConfigLoadingRules{ExplicitPath: k.KubeconfigPath},
-		&clientcmd.ConfigOverrides{CurrentContext: k.ContextName},
+		&override,
 	).ClientConfig()
 	if err != nil {
 		p.mu.Unlock()

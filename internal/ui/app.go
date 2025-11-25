@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -114,14 +115,17 @@ type App struct {
 	// Esc sequence tracking
 	escPressed bool
 	// Data providers
-	kubeMgr    *kubeconfig.Manager
-	cl         *kccluster.Cluster
-	clPool     *kccluster.Pool
-	ctx        context.Context
-	cancel     context.CancelFunc
-	currentCtx *kubeconfig.Context
-	viewConfig *ViewConfig
-	cfg        *appconfig.Config
+	kubeMgr           *kubeconfig.Manager
+	cl                *kccluster.Cluster
+	clPool            *kccluster.Pool
+	ctx               context.Context
+	cancel            context.CancelFunc
+	currentCtx        *kubeconfig.Context
+	impersonateUser   string
+	impersonateUID    string
+	impersonateGroups []string
+	viewConfig        *ViewConfig
+	cfg               *appconfig.Config
 	// New navigation (folder-backed) using a Navigator
 	leftNav  *navui.Navigator
 	rightNav *navui.Navigator
@@ -706,8 +710,11 @@ func (a *App) currentClusterKey() kccluster.Key {
 		return kccluster.Key{}
 	}
 	return kccluster.Key{
-		KubeconfigPath: a.currentCtx.Kubeconfig.Path,
-		ContextName:    a.currentCtx.Name,
+		KubeconfigPath:       a.currentCtx.Kubeconfig.Path,
+		ContextName:          a.currentCtx.Name,
+		ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
+		ImpersonateUID:       strings.TrimSpace(a.impersonateUID),
+		ImpersonateGroupsKey: a.impersonationGroupsKey(),
 	}
 }
 
@@ -730,6 +737,64 @@ func (a *App) navigatorPath(nav *navui.Navigator) string {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	return nav.Path(ctx)
+}
+
+func (a *App) impersonationGroupsKey() string {
+	if len(a.impersonateGroups) == 0 {
+		return ""
+	}
+	groups := append([]string(nil), a.impersonateGroups...)
+	for i := range groups {
+		groups[i] = strings.TrimSpace(groups[i])
+	}
+	sort.Strings(groups)
+	return strings.Join(groups, ",")
+}
+
+func (a *App) impersonationSpec() termctx.Impersonation {
+	imp := termctx.Impersonation{
+		User: strings.TrimSpace(a.impersonateUser),
+		UID:  strings.TrimSpace(a.impersonateUID),
+	}
+	for _, g := range a.impersonateGroups {
+		g = strings.TrimSpace(g)
+		if g == "" {
+			continue
+		}
+		imp.Groups = append(imp.Groups, g)
+	}
+	return imp
+}
+
+func (a *App) impersonationTemplate() *clientcmdapi.Config {
+	if a.currentCtx == nil || a.currentCtx.Kubeconfig == nil || a.currentCtx.Kubeconfig.Config == nil {
+		return nil
+	}
+	imp := a.impersonationSpec()
+	if strings.TrimSpace(imp.User) == "" && strings.TrimSpace(imp.UID) == "" && len(imp.Groups) == 0 {
+		return a.currentCtx.Kubeconfig.Config
+	}
+	cfg := a.currentCtx.Kubeconfig.Config.DeepCopy()
+	ctx := cfg.Contexts[a.currentCtx.Name]
+	if ctx == nil {
+		return cfg
+	}
+	userName := strings.TrimSpace(ctx.AuthInfo)
+	if userName == "" {
+		return cfg
+	}
+	if cfg.AuthInfos == nil {
+		cfg.AuthInfos = make(map[string]*clientcmdapi.AuthInfo)
+	}
+	auth := cfg.AuthInfos[userName]
+	if auth == nil {
+		auth = &clientcmdapi.AuthInfo{}
+		cfg.AuthInfos[userName] = auth
+	}
+	auth.Impersonate = imp.User
+	auth.ImpersonateUID = imp.UID
+	auth.ImpersonateGroups = append([]string(nil), imp.Groups...)
+	return cfg
 }
 
 func (a *App) navigatorNamespace(nav *navui.Navigator) string {
@@ -770,7 +835,13 @@ func (a *App) makeEnterContextFunc(cfg *appconfig.Config) func(string, []string)
 		if target.Kubeconfig == nil {
 			return nil, fmt.Errorf("context %q has no kubeconfig", name)
 		}
-		key := kccluster.Key{KubeconfigPath: target.Kubeconfig.Path, ContextName: target.Name}
+		key := kccluster.Key{
+			KubeconfigPath:       target.Kubeconfig.Path,
+			ContextName:          target.Name,
+			ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
+			ImpersonateUID:       strings.TrimSpace(a.impersonateUID),
+			ImpersonateGroupsKey: a.impersonationGroupsKey(),
+		}
 		cl, err := a.clPool.Get(a.ctx, key)
 		if err != nil {
 			return nil, err
@@ -2286,7 +2357,7 @@ func (a *App) ensureTermContext() {
 		_ = a.termCtx.Close()
 	}
 	mode := convertTerminalMode(a.cfg.Terminal.Mode)
-	mgr, err := termctx.NewManager(a.currentCtx.Kubeconfig.Path, a.currentCtx.Kubeconfig.Config, mode)
+	mgr, err := termctx.NewManager(a.currentCtx.Kubeconfig.Path, a.impersonationTemplate(), mode, a.impersonationSpec())
 	if err != nil {
 		if a.toastLogger != nil {
 			a.enqueueCmd(a.toastLogger.Errorf("Terminal overlay: %v", err))
@@ -2622,6 +2693,9 @@ type RunConfig struct {
 	// SwitchToFileLogger is called right before the UI program starts. Allows callers
 	// to stop logging to stderr once bubbletea takes over the terminal.
 	SwitchToFileLogger func()
+	ImpersonateUser    string
+	ImpersonateUID     string
+	ImpersonateGroups  []string
 }
 
 // Run starts the application
@@ -2631,6 +2705,9 @@ func Run(ctx context.Context, cfg RunConfig) error {
 	app := NewApp()
 	app.namespaceOverride = strings.TrimSpace(cfg.Namespace)
 	app.startupIntent = cfg.StartupIntent
+	app.impersonateUser = strings.TrimSpace(cfg.ImpersonateUser)
+	app.impersonateUID = strings.TrimSpace(cfg.ImpersonateUID)
+	app.impersonateGroups = append([]string(nil), cfg.ImpersonateGroups...)
 
 	// Initialize data model (best-effort; UI can still run without it)
 	log.Info("initializing data")
@@ -2736,7 +2813,13 @@ func (a *App) initData(ctx context.Context) error {
 	)
 	log.Info("starting cluster pool")
 	a.clPool.Start()
-	k := kccluster.Key{KubeconfigPath: a.currentCtx.Kubeconfig.Path, ContextName: a.currentCtx.Name}
+	k := kccluster.Key{
+		KubeconfigPath:       a.currentCtx.Kubeconfig.Path,
+		ContextName:          a.currentCtx.Name,
+		ImpersonateUser:      strings.TrimSpace(a.impersonateUser),
+		ImpersonateUID:       strings.TrimSpace(a.impersonateUID),
+		ImpersonateGroupsKey: a.impersonationGroupsKey(),
+	}
 	log.Info("acquiring cluster", "key", k)
 	cl, err := a.clPool.Get(a.ctx, k)
 	if err != nil {

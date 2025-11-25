@@ -29,7 +29,7 @@ func writeTestConfig(t *testing.T) (string, *clientcmdapi.Config) {
 
 func TestManagerUpdate(t *testing.T) {
 	base, cfg := writeTestConfig(t)
-	mgr, err := NewManager(base, cfg, ModeOverlay)
+	mgr, err := NewManager(base, cfg, ModeOverlay, Impersonation{})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestManagerUpdate(t *testing.T) {
 
 func TestManagerNamespaceOverlay(t *testing.T) {
 	base, cfg := writeTestConfig(t)
-	mgr, err := NewManager(base, cfg, ModeOverlay)
+	mgr, err := NewManager(base, cfg, ModeOverlay, Impersonation{})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestManagerNamespaceOverlay(t *testing.T) {
 
 func TestDetectExternalChange(t *testing.T) {
 	base, cfg := writeTestConfig(t)
-	mgr, err := NewManager(base, cfg, ModeOverlay)
+	mgr, err := NewManager(base, cfg, ModeOverlay, Impersonation{})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestReapRemovesStale(t *testing.T) {
 
 func TestManagerCopyMode(t *testing.T) {
 	base, cfg := writeTestConfig(t)
-	mgr, err := NewManager(base, cfg, ModeCopy)
+	mgr, err := NewManager(base, cfg, ModeCopy, Impersonation{})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}

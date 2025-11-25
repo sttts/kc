@@ -36,6 +36,9 @@ type cliFlags struct {
 	Namespace  string         `help:"Namespace to open on startup" short:"n"`
 	PprofAddr  string         `help:"Start net/http/pprof listener on this address (e.g., localhost:6060)"`
 	Verbosity  int            `help:"klog verbosity level (same as --v)" name:"v"`
+	As         string         `help:"Username to impersonate for the operation (regular user or service account)"`
+	AsGroup    []string       `help:"Group to impersonate for the operation (repeatable)"`
+	AsUID      string         `help:"UID to impersonate for the operation"`
 	Root       rootCommand    `cmd:"" hidden:"true" default:"1"`
 	Get        getCommand     `cmd:"get" help:"Mirror kubectl get"`
 	Logs       logsCommand    `cmd:"logs" help:"Mirror kubectl logs"`
@@ -140,6 +143,9 @@ func main() {
 		StartupIntent:      intent,
 		DebugLogPath:       debugLogPath,
 		SwitchToFileLogger: switchToUILogger,
+		ImpersonateUser:    strings.TrimSpace(cli.As),
+		ImpersonateUID:     strings.TrimSpace(cli.AsUID),
+		ImpersonateGroups:  append([]string(nil), cli.AsGroup...),
 	}
 	if err := ui.Run(context.Background(), runCfg); err != nil {
 		fmt.Printf("Error: %v\n", err)

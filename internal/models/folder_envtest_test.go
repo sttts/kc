@@ -175,9 +175,7 @@ func TestDiscoveryRefreshAddsCRD(t *testing.T) {
 	}
 	defer func() { _ = env.Stop() }()
 
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	cl, err := kccluster.New(cfg, kccluster.WithScheme(scheme))
+	cl, err := kccluster.New(cfg)
 	if err != nil {
 		t.Fatalf("kccluster: %v", err)
 	}
