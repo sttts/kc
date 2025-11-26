@@ -207,7 +207,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		// In panel mode, use smart key routing based on terminal state
 		// If user typed in the 2-line terminal, Enter and Ctrl+C must be SENT to the terminal,
 		// then reset typed state to return focus to the panels.
-		if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() {
+		if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() && !a.interactiveCommandActive() {
 			cmd := a.updateTerminal(msg, "panel forwarded to terminal")
 			a.terminal.ClearTyped() // reset typed; next keys route to panels
 			return a, cmd
@@ -236,6 +236,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 
 // shouldRouteToPanel determines if a key should be routed to the panel based on terminal state
 func (a *App) shouldRouteToPanel(key string) bool {
+	// Interactive command in focus gets priority over the inline terminal.
+	if a.interactiveCommandActive() {
+		return true
+	}
+
 	// Always route these keys to terminal
 	terminalKeys := []string{
 		" ",     // space bar (Bubble Tea reports as literal space)
@@ -320,5 +325,15 @@ func (a *App) shouldRouteToPanel(key string) bool {
 	}
 
 	// Default: route to terminal for typing
+	return false
+}
+
+func (a *App) interactiveCommandActive() bool {
+	if a.showTerminal {
+		return false
+	}
+	if p := a.activePanelRef(); p != nil && p.HasCommandFocus() {
+		return true
+	}
 	return false
 }

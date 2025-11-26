@@ -258,32 +258,36 @@ func (a *App) renderFunctionKeys() string {
 		keys = []string{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels")}
 	} else {
 		panel := a.activePanelRef()
-		caps := a.capabilitiesForPanel(panel)
-		renderKey := func(key, label string, enabled bool) string {
-			desc := uistyles.FunctionKeyDescriptionStyle
-			if !enabled {
-				desc = uistyles.FunctionKeyDisabledStyle
+		if panel != nil && panel.HasCommandFocus() {
+			keys = []string{uistyles.FunctionKeyStyle.Render("Esc Esc") + uistyles.FunctionKeyDescriptionStyle.Render("Exit command")}
+		} else {
+			caps := a.capabilitiesForPanel(panel)
+			renderKey := func(key, label string, enabled bool) string {
+				desc := uistyles.FunctionKeyDescriptionStyle
+				if !enabled {
+					desc = uistyles.FunctionKeyDisabledStyle
+				}
+				trimmed := strings.TrimSpace(label)
+				if trimmed == "" {
+					placeholder := desc.Copy().Padding(0, 0, 0, 0)
+					return uistyles.FunctionKeyStyle.Render(key) + placeholder.Render(" - ")
+				}
+				return uistyles.FunctionKeyStyle.Render(key) + desc.Render(label)
 			}
-			trimmed := strings.TrimSpace(label)
-			if trimmed == "" {
-				placeholder := desc.Copy().Padding(0, 0, 0, 0)
-				return uistyles.FunctionKeyStyle.Render(key) + placeholder.Render(" - ")
-			}
-			return uistyles.FunctionKeyStyle.Render(key) + desc.Render(label)
-		}
 
-		keys = []string{
-			renderKey("F1", "Help", caps.HasHelp),
-			renderKey("F2", "Options", caps.HasOptions),
-			renderKey("F3", "View", caps.CanView),
-			renderKey("F4", "Edit", caps.CanEdit),
-			renderKey("F5", "Copy", caps.CanCopy),
-			renderKey("F6", "", false),
-			renderKey("F7", "Namespace", caps.CanCreateNS),
-			renderKey("F8", "Delete", caps.CanDelete),
-			renderKey("F9", "Commands", caps.HasContextMenu),
-			uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
-			uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
+			keys = []string{
+				renderKey("F1", "Help", caps.HasHelp),
+				renderKey("F2", "Options", caps.HasOptions),
+				renderKey("F3", "View", caps.CanView),
+				renderKey("F4", "Edit", caps.CanEdit),
+				renderKey("F5", "Copy", caps.CanCopy),
+				renderKey("F6", "", false),
+				renderKey("F7", "Namespace", caps.CanCreateNS),
+				renderKey("F8", "Delete", caps.CanDelete),
+				renderKey("F9", "Commands", caps.HasContextMenu),
+				uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
+				uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
+			}
 		}
 	}
 
@@ -301,6 +305,11 @@ func (a *App) renderFunctionKeys() string {
 func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 	if a.toastActive {
 		return nil
+	}
+	if !a.showTerminal {
+		if p := a.activePanelRef(); p != nil && p.HasCommandFocus() {
+			return nil
+		}
 	}
 	var keys []struct {
 		label   string

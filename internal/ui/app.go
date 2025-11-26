@@ -279,6 +279,8 @@ func NewApp() *App {
 	app.ctx, app.cancel = context.WithCancel(context.Background())
 	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
 	app.toastLogger = NewToastLogger(app, 2*time.Second)
+	app.leftPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(0, f) })
+	app.rightPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(1, f) })
 
 	// Register modals
 	app.setupModals()
@@ -1056,6 +1058,19 @@ func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
 		loader = clientcmd.NewDefaultClientConfig(*a.currentCtx.Kubeconfig.Config, overrides)
 	}
 	return describe.NewRenderer(cfg, mapper, disco, loader)
+}
+
+func (a *App) onCommandFocusChanged(panelIdx int, focused bool) tea.Cmd {
+	if a.terminal != nil {
+		if focused {
+			a.terminal.Blur()
+		} else {
+			a.terminal.Focus()
+		}
+	}
+	a.invalidateFunctionBar("command focus change")
+	a.invalidateView("command focus change")
+	return nil
 }
 
 func (a *App) panelActionHandlers() PanelActionHandlers {

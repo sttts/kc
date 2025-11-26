@@ -49,13 +49,19 @@ type CommandWidget struct {
 	exitKnown      bool
 	exitCode       int
 	lastFrame      string
+	interactive    bool
+	interactiveOn  bool
+	escArmed       bool
+	escTimerToken  int
+	onFocusChanged func(bool) tea.Cmd
 }
 
 func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
 	return &CommandWidget{
-		panelDeps: deps,
-		config:    config,
-		log:       ctrllog.Log.WithName("command"),
+		panelDeps:   deps,
+		config:      config,
+		log:         ctrllog.Log.WithName("command"),
+		interactive: config.Interactive,
 	}
 }
 
@@ -66,6 +72,7 @@ func (w *CommandWidget) Init(ctx context.Context) tea.Cmd {
 func (w *CommandWidget) Teardown(ctx context.Context) {
 	w.watchToken++
 	w.heartbeatToken++
+	w.setInteractiveFocus(false)
 	if w.cmd != nil && w.cmd.Process != nil {
 		_ = w.cmd.Process.Kill()
 	}
@@ -76,6 +83,12 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 	// Handle debounce timer
 	if _, ok := msg.(debounceMsg); ok {
 		return w.startPendingCommand(), true
+	}
+	if esc, ok := msg.(commandEscTimeoutMsg); ok {
+		if esc.token == w.escTimerToken {
+			w.escArmed = false
+		}
+		return nil, true
 	}
 	if tick, ok := msg.(commandWatchMsg); ok {
 		w.log.V(1).Info("received watch tick", "token", tick.token, "currentToken", w.watchToken, "interval", w.watchInterval)
@@ -106,10 +119,31 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 			if !w.config.Interactive {
 				return nil, false
 			}
-			// Special case: Tab should remain a panel navigation key even for interactive commands.
-			if key.String() == "tab" {
+			// Interactive commands only consume keys when they hold focus.
+			if !w.interactiveOn {
+				if key.String() == "enter" {
+					return w.setInteractiveFocus(true), true
+				}
 				return nil, false
 			}
+			if key.String() == "esc" {
+				if w.escArmed {
+					return w.setInteractiveFocus(false), true
+				}
+				w.escArmed = true
+				w.escTimerToken++
+				token := w.escTimerToken
+				timer := tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
+					return commandEscTimeoutMsg{token: token}
+				})
+				// Forward ESC to the command while arming the double-ESC exit.
+				model, cmd := w.terminal.Update(msg)
+				if term, ok := model.(*bubbleterm.Model); ok {
+					w.terminal = term
+				}
+				return tea.Batch(timer, cmd), true
+			}
+			// When focused, consume all other keys.
 		}
 		model, cmd := w.terminal.Update(msg)
 		if term, ok := model.(*bubbleterm.Model); ok {
@@ -308,6 +342,9 @@ type commandWatchMsg struct {
 type heartbeatMsg struct {
 	token int
 }
+type commandEscTimeoutMsg struct {
+	token int
+}
 
 // Implement other Widget interface methods...
 func (w *CommandWidget) SelectedNavItem(ctx context.Context) (models.Item, bool) {
@@ -404,3 +441,38 @@ var heartbeatFrames = []string{"<3", "<3", "<3", "<<3", "<3<", "<3"}
 
 const heartbeatInterval = 150 * time.Millisecond
 const heartbeatBurst = 900 * time.Millisecond
+
+// SetInteractive marks this command as interactive.
+func (w *CommandWidget) SetInteractive(on bool) {
+	w.interactive = on
+}
+
+// SetFocusChangedHandler installs a focus-change callback.
+func (w *CommandWidget) SetFocusChangedHandler(fn func(bool) tea.Cmd) {
+	w.onFocusChanged = fn
+}
+
+// HasInteractiveFocus reports whether this widget currently owns keyboard focus.
+func (w *CommandWidget) HasInteractiveFocus() bool {
+	return w.interactiveOn
+}
+
+func (w *CommandWidget) setInteractiveFocus(on bool) tea.Cmd {
+	if !w.interactive {
+		return nil
+	}
+	if w.interactiveOn == on {
+		return nil
+	}
+	w.interactiveOn = on
+	w.escArmed = false
+	if on && w.terminal != nil {
+		w.terminal.Focus()
+	} else if w.terminal != nil {
+		w.terminal.Blur()
+	}
+	if w.onFocusChanged != nil {
+		return w.onFocusChanged(on)
+	}
+	return nil
+}

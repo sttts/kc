@@ -101,6 +101,12 @@ commands:
     type: "global" # Independent of selection
     watchInterval: 5s
 
+  - name: "My Shell"
+    command: "$SHELL"
+    type: "global"
+    interactive: true
+    onExit: "restore" # Return to previous panel mode when the shell exits
+
   - name: "Describe Resource"
     command: "kubectl describe {{.Resource}} {{.Name}} -n {{.Namespace}}"
     type: "selector" # Reruns when selection changes

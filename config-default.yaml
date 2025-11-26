@@ -46,6 +46,12 @@ commands:
     watchInterval: 5s
     debounce: 500ms
     onExit: keep-open
+  - name: My Shell
+    command: $SHELL
+    type: global
+    location: panel
+    interactive: true
+    onExit: restore
   - name: Top Pods
     command: kubectl top pods -n {{.Namespace}}
     type: namespace

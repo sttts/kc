@@ -32,6 +32,8 @@ type Panel struct {
 	mode                 PanelViewMode
 	widgets              map[PanelViewMode]PanelWidget
 	widgetFactories      map[PanelViewMode]PanelWidgetFactory
+	commandInteractive   bool
+	commandFocusHandler  func(bool) tea.Cmd
 	lastSelectionID      string
 	lastSelection        models.Item
 	renderCache          string
@@ -75,6 +77,8 @@ func NewPanel(title string) *Panel {
 func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource, frameWidth, frameHeight int) tea.Cmd {
 	// Create widget if not exists or if config changed (simplified: always create new for now)
 	widget := NewCommandWidget(p.listWidgetDeps(), config)
+	widget.SetInteractive(config.Interactive)
+	widget.SetFocusChangedHandler(p.setCommandFocus)
 
 	// Register it as the widget for PanelModeCommand
 	p.RegisterMode(PanelModeCommand, func(panel *Panel) panelcontent.Widget {
@@ -441,6 +445,16 @@ func (p *Panel) ObjectOrder() string {
 	return "name"
 }
 
+// HasInteractiveCommand reports whether the active command widget is interactive.
+func (p *Panel) HasInteractiveCommand() bool {
+	return p.mode == PanelModeCommand && p.commandInteractive
+}
+
+// HasCommandFocus reports whether the command widget currently holds keyboard focus.
+func (p *Panel) HasCommandFocus() bool {
+	return p.mode == PanelModeCommand && p.commandInteractive
+}
+
 // CommandWatchInterval reports the current watch interval for the command widget.
 func (p *Panel) CommandWatchInterval(ctx context.Context) time.Duration {
 	if cw := p.commandWidget(ctx); cw != nil {
@@ -453,6 +467,23 @@ func (p *Panel) CommandWatchInterval(ctx context.Context) time.Duration {
 func (p *Panel) SetCommandWatchInterval(ctx context.Context, interval time.Duration) tea.Cmd {
 	if cw := p.commandWidget(ctx); cw != nil {
 		return cw.SetWatchInterval(ctx, interval)
+	}
+	return nil
+}
+
+// SetCommandFocusHandler installs a callback invoked when the command widget focus toggles.
+func (p *Panel) SetCommandFocusHandler(h func(bool) tea.Cmd) {
+	p.commandFocusHandler = h
+}
+
+func (p *Panel) setCommandFocus(focused bool) tea.Cmd {
+	if p.commandInteractive == focused {
+		return nil
+	}
+	p.commandInteractive = focused
+	p.invalidateRenderCache()
+	if h := p.commandFocusHandler; h != nil {
+		return h(focused)
 	}
 	return nil
 }
@@ -965,6 +996,15 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 		Background(lipgloss.Blue).
 		Width(width).
 		Height(height)
+	if p.commandInteractive && focused {
+		boxStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color(uistyles.ColorDarkGrey)).
+			BorderBackground(lipgloss.Color(uistyles.ColorModalBg)).
+			Background(lipgloss.Color(uistyles.ColorModalBg)).
+			Width(width).
+			Height(height)
+	}
 
 	var labelStyle lipgloss.Style
 	if focused {
@@ -977,6 +1017,13 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 			Foreground(lipgloss.White).
 			Background(lipgloss.Blue).
 			Padding(0, 1)
+	}
+	if p.commandInteractive && focused {
+		labelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(uistyles.ColorBlack)).
+			Background(lipgloss.Color(uistyles.ColorModalBg)).
+			Padding(0, 1).
+			Bold(true)
 	}
 
 	border := boxStyle.GetBorderStyle()

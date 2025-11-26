@@ -223,6 +223,14 @@ func Default() *Config {
 				OnExit:        CommandExitKeepOpen,
 			},
 			{
+				Name:        "My Shell",
+				Command:     "$SHELL",
+				Type:        CommandTypeGlobal,
+				Location:    CommandLocationPanel,
+				Interactive: true,
+				OnExit:      CommandExitRestore,
+			},
+			{
 				Name:     "Top Pods",
 				Command:  "kubectl top pods -n {{.Namespace}}",
 				Type:     CommandTypeNamespace,
