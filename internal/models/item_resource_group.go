@@ -96,6 +96,9 @@ func (r *ResourceGroupItem) Count() int {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.peekBlocked {
+		return 0
+	}
 	if r.countKnown {
 		return r.count
 	}
@@ -297,7 +300,7 @@ func (r *ResourceGroupItem) peekEmptyLocked() (bool, bool) {
 	if err != nil {
 		if apierrors.IsForbidden(err) {
 			r.blockPeeksLocked(err)
-			return false, true
+			return true, true
 		}
 		r.lastPeek = time.Now()
 		r.recordPeekErrorLocked(err)
