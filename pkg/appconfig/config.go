@@ -109,6 +109,48 @@ type Config struct {
 	Resources  ResourcesViewConfig `json:"resources"`
 	Objects    ObjectsConfig       `json:"objects"`
 	Terminal   TerminalConfig      `json:"terminal"`
+	Commands   []CommandConfig     `json:"commands"`
+}
+
+type CommandType string
+
+const (
+	CommandTypeSelector  CommandType = "selector"
+	CommandTypeSticky    CommandType = "sticky"
+	CommandTypeNamespace CommandType = "namespace"
+	CommandTypeGlobal    CommandType = "global"
+)
+
+type CommandLocation string
+
+const (
+	CommandLocationPanel      CommandLocation = "panel"
+	CommandLocationFullscreen CommandLocation = "fullscreen"
+)
+
+type CommandExitBehavior string
+
+const (
+	CommandExitKeepOpen CommandExitBehavior = "keep-open"
+	CommandExitClose    CommandExitBehavior = "close"
+	CommandExitRestore  CommandExitBehavior = "restore"
+)
+
+type CommandShowForConfig struct {
+	Resources []string `json:"resources"`
+	Groups    []string `json:"groups"`
+}
+
+type CommandConfig struct {
+	Name                   string               `json:"name"`
+	Command                string               `json:"command"`
+	Type                   CommandType          `json:"type"`
+	SupportsMultiSelection bool                 `json:"supportsMultiSelection"`
+	ShowFor                CommandShowForConfig `json:"showFor"`
+	Location               CommandLocation      `json:"location"`
+	Interactive            bool                 `json:"interactive"`
+	Debounce               metav1.Duration      `json:"debounce"`
+	OnExit                 CommandExitBehavior  `json:"onExit"`
 }
 
 // ObjectsConfig controls object-list specific options.
@@ -168,6 +210,24 @@ func Default() *Config {
 		},
 		Objects:  ObjectsConfig{Order: ObjectsOrderName, Columns: ColumnsModeNormal},
 		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
+		Commands: []CommandConfig{
+			{
+				Name:     "Top Nodes",
+				Command:  "kubectl top nodes",
+				Type:     CommandTypeGlobal,
+				Location: CommandLocationPanel,
+				Debounce: metav1.Duration{Duration: 500 * time.Millisecond},
+				OnExit:   CommandExitKeepOpen,
+			},
+			{
+				Name:     "Top Pods",
+				Command:  "kubectl top pods -n {{.Namespace}}",
+				Type:     CommandTypeNamespace,
+				Location: CommandLocationPanel,
+				Debounce: metav1.Duration{Duration: 500 * time.Millisecond},
+				OnExit:   CommandExitKeepOpen,
+			},
+		},
 	}
 }
 
@@ -254,6 +314,20 @@ func Load() (*Config, error) {
 			cfg.Objects.Columns = ColumnsModeWide
 		} else {
 			cfg.Objects.Columns = ColumnsModeNormal
+		}
+
+		// Normalize commands
+		for i := range cfg.Commands {
+			cmd := &cfg.Commands[i]
+			if cmd.Debounce.Duration == 0 {
+				cmd.Debounce = metav1.Duration{Duration: 500 * time.Millisecond}
+			}
+			if cmd.OnExit == "" {
+				cmd.OnExit = CommandExitKeepOpen
+			}
+			if cmd.Location == "" {
+				cmd.Location = CommandLocationPanel
+			}
 		}
 		return cfg, nil
 	}

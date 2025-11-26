@@ -109,8 +109,8 @@ func TestPanelHelpAndMenuActions(t *testing.T) {
 	if !caps.HasHelp {
 		t.Fatal("expected HasHelp to be true when help is implemented")
 	}
-	if caps.HasContextMenu {
-		t.Fatal("expected HasContextMenu to be false until context menu is implemented")
+	if !caps.HasContextMenu {
+		t.Fatal("expected HasContextMenu to be true when context menu is implemented")
 	}
 }
 

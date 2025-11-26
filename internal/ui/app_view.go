@@ -250,12 +250,7 @@ func (a *App) renderFunctionKeys() string {
 		keys = []string{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels")}
 	} else {
 		panel := a.activePanelRef()
-		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-		caps := PanelCapabilities{}
-		if panel != nil {
-			caps = panel.Capabilities(ctx)
-		}
-		cancel()
+		caps := a.capabilitiesForPanel(panel)
 		renderKey := func(key, label string, enabled bool) string {
 			desc := uistyles.FunctionKeyDescriptionStyle
 			if !enabled {
@@ -278,7 +273,7 @@ func (a *App) renderFunctionKeys() string {
 			renderKey("F6", "", false),
 			renderKey("F7", "Namespace", caps.CanCreateNS),
 			renderKey("F8", "Delete", caps.CanDelete),
-			renderKey("F9", "", false),
+			renderKey("F9", "Commands", caps.HasContextMenu),
 			uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
 			uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
 		}
@@ -321,12 +316,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 		}
 	} else {
 		panel := a.activePanelRef()
-		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-		caps := PanelCapabilities{}
-		if panel != nil {
-			caps = panel.Capabilities(ctx)
-		}
-		cancel()
+		caps := a.capabilitiesForPanel(panel)
 		makeLbl := func(key, label string, enabled bool) string {
 			desc := uistyles.FunctionKeyDescriptionStyle
 			if !enabled {
@@ -358,7 +348,7 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			{makeLbl("F6", "Rename/Move", false), false, a.renameMoveItem},
 			{makeLbl("F7", "Namespace", caps.CanCreateNS), caps.CanCreateNS, invoke(PanelActionCreateNamespace)},
 			{makeLbl("F8", "Delete", caps.CanDelete), caps.CanDelete, invoke(PanelActionDelete)},
-			{uistyles.FunctionKeyStyle.Render("F9") + uistyles.FunctionKeyDescriptionStyle.Render("Menu"), caps.HasContextMenu, invoke(PanelActionMenu)},
+			{uistyles.FunctionKeyStyle.Render("F9") + uistyles.FunctionKeyDescriptionStyle.Render("Commands"), caps.HasContextMenu, invoke(PanelActionMenu)},
 			{uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
 			{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
 				a.showTerminal = true

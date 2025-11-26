@@ -37,3 +37,17 @@ objects:
   # - normal: show priority 0 columns (kubectl default)
   # - wide: show all server-provided columns (like `kubectl get -o wide`)
   columns: normal
+
+commands:
+  - name: Top Nodes
+    command: kubectl top nodes
+    type: global
+    location: panel
+    debounce: 500ms
+    onExit: keep-open
+  - name: Top Pods
+    command: kubectl top pods -n {{.Namespace}}
+    type: namespace
+    location: panel
+    debounce: 500ms
+    onExit: keep-open

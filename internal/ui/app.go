@@ -53,6 +53,23 @@ type FolderDirtyMsg struct {
 	PanelIdx int
 }
 
+func (a *App) hasApplicableCommands(panel *Panel) bool {
+	if panel == nil || len(a.cfg.Commands) == 0 {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	item, _ := panel.SelectedNavItem(ctx)
+	selected := panel.GetSelectedItems()
+	activeNamespace := deriveNamespace(item, selected, panel.currentPath)
+	for _, cmd := range a.cfg.Commands {
+		if isCommandApplicable(cmd, item, len(selected), activeNamespace) {
+			return true
+		}
+	}
+	return false
+}
+
 // DiscoveryRefreshedMsg is emitted when API discovery invalidates; resource folders should refresh.
 type DiscoveryRefreshedMsg struct{}
 
@@ -851,8 +868,6 @@ func (a *App) makeEnterContextFunc(cfg *appconfig.Config) func(string, []string)
 	}
 }
 
-// Update handles messages and updates the application state
-
 // setupModals sets up the modal dialogs
 
 func (a *App) setupModals() {
@@ -997,9 +1012,11 @@ func (a *App) panelActionHandlers() PanelActionHandlers {
 		PanelActionDelete: func(p *Panel) tea.Cmd {
 			return a.deleteResourceForPanel(p)
 		},
+		PanelActionMenu: func(p *Panel) tea.Cmd {
+			return a.showContextMenuForPanel(p)
+		},
 	}
-	// Help (F1) and context menu (F9) are intentionally omitted until the
-	// corresponding features are implemented (see showHelp/showContextMenuForPanel).
+	// Help (F1) is intentionally omitted until implemented.
 	return handlers
 }
 
@@ -1023,7 +1040,34 @@ func (a *App) capabilitiesForPanel(panel *Panel) PanelCapabilities {
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
-	return panel.Capabilities(ctx)
+	caps := panel.Capabilities(ctx)
+	if caps.HasContextMenu {
+		caps.HasContextMenu = a.hasApplicableCommands(panel)
+	}
+	return caps
+}
+
+func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {
+	var cmds []tea.Cmd
+	if a.leftPanel != nil {
+		model, cmd := a.leftPanel.Update(msg)
+		if model != nil {
+			a.leftPanel = model.(*Panel)
+		}
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if a.rightPanel != nil {
+		model, cmd := a.rightPanel.Update(msg)
+		if model != nil {
+			a.rightPanel = model.(*Panel)
+		}
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return cmds
 }
 
 func (a *App) cyclePanelMode(idx int) tea.Cmd {
@@ -1569,11 +1613,6 @@ func (a *App) deleteResourceForPanel(panel *Panel) tea.Cmd {
 
 func (a *App) showContextMenu() tea.Cmd {
 	return a.showContextMenuForPanel(a.activePanelRef())
-}
-
-func (a *App) showContextMenuForPanel(_ *Panel) tea.Cmd {
-	// TODO: Implement context menu
-	return nil
 }
 
 func (a *App) createNamespaceWithName(name string) tea.Cmd {
@@ -3476,4 +3515,72 @@ func (a *App) swapPanels() {
 
 	// Toggle active panel so focus follows the content
 	a.activePanel = (a.activePanel + 1) % 2
+}
+
+func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+
+	item, ok := p.SelectedNavItem(ctx)
+	if !ok || item == nil {
+		// For now, only show if item selected.
+		// Later we might support global commands without selection if they don't depend on it.
+		// But the requirement says "Global (d): Completely independent of selection".
+		// So we should proceed even if item is nil, but filter accordingly.
+	}
+
+	// Filter commands
+	selectedItems := p.GetSelectedItems()
+	activeNamespace := deriveNamespace(item, selectedItems, p.currentPath)
+	var available []appconfig.CommandConfig
+	for _, cmd := range a.cfg.Commands {
+		if isCommandApplicable(cmd, item, len(selectedItems), activeNamespace) {
+			available = append(available, cmd)
+		}
+	}
+
+	if len(available) == 0 {
+		return nil
+	}
+
+	// Create selector
+	selector := NewCommandSelectorModel(available, func(cmd appconfig.CommandConfig) tea.Cmd {
+		a.hideModal()
+		// Get items (handle multi-selection if supported)
+		var items []models.Item
+		if cmd.SupportsMultiSelection {
+			// TODO: Get selected items from panel if multiple selected
+			if item != nil {
+				items = []models.Item{item}
+			}
+		} else {
+			if item != nil {
+				items = []models.Item{item}
+			}
+		}
+
+		// Resolve GVR
+		var gvr schema.GroupVersionResource
+		if item != nil {
+			if obj, ok := item.(models.ObjectItem); ok {
+				gvr = obj.GVR()
+			}
+		}
+
+		return p.StartCommand(a.ctx, cmd, items, gvr)
+	}, func() tea.Cmd {
+		a.hideModal()
+		return nil
+	})
+
+	modal := NewModal("Commands", selector)
+	modal.SetCloseOnSingleEsc(true)
+	panelIdx := a.panelIndex(p)
+	// Rebuild each time so we pick up fresh command lists and selection state.
+	a.modalManager.Register("command_menu", modal)
+	// Size and position like other panel-scoped modals.
+	a.configureModalWindow(modal, selector, panelIdx, "", 48, len(selector.entries)+3)
+	modal.SetOnClose(func() tea.Cmd { return nil })
+	a.showModal("command_menu")
+	return nil
 }

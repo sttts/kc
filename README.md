@@ -48,7 +48,7 @@ brew install sttts/homebrew-kc/kc
 
 ## Releases
 
-Binaries are published by the maintainers via GitHub Releases and the Homebrew tap. The release process itself is documented for maintainers in `docs/RELEASING.md`.
+Binaries are published by the maintainers via GitHub Releases and the Homebrew tap. Push a `v*` tag to trigger the Goreleaser workflow, which builds/signed binaries, publishes the GitHub Release, notarizes the macOS artifacts, and refreshes the Homebrew tap. See `docs/RELEASING.md` for the Apple signing credentials required for CI.
 
 ### Kubectl-style shortcuts
 
@@ -72,11 +72,48 @@ All commands honor `-n/--namespace`; when omitted, kc uses the kubeconfig’s de
 | `F5`       | Copy – download the current YAML/log/log/file to the local filesystem.          |
 | `F7`       | Create namespace (panels) / Search (viewers/logs).                              |
 | `F8`       | Delete – opens the confirmation modal and issues a DELETE via controller client.|
+| `F9`       | Menu – Open custom commands menu.                                               |
 | `F10`      | Quit (`Esc+0` alternative; `Ctrl+Q` also exits).                                |
 | `Tab`      | Switch panels.                                                                  |
 | `Ctrl+O`   | Toggle the integrated terminal.                                                 |
+| `Ctrl+C`   | Quit.                                                                           |
 
-Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). Unimplemented slots (`F6/F9`) are hidden/disabled until their workflows land.
+Function keys are also reachable via `Esc+<digit>` (e.g., `Esc+3` for `F3`). Unimplemented slots (`F6`) are hidden/disabled until their workflows land.
+
+## Custom Commands
+
+You can define custom shell commands in `~/.kc/config.yaml` and execute them via the **F9** menu. Commands run in a terminal panel and can use templates to reference the selected item.
+By default, kc ships with `Top Nodes` (global) and `Top Pods` (namespace-scoped) until you define your own commands.
+
+### Configuration Example
+
+```yaml
+commands:
+  - name: "Top Pods"
+    command: "kubectl top pods -n {{.Namespace}}"
+    type: "namespace" # Sticky for the current namespace
+    showFor:
+      resources: ["pods"]
+
+  - name: "Top Nodes"
+    command: "kubectl top nodes"
+    type: "global" # Independent of selection
+
+  - name: "Describe Resource"
+    command: "kubectl describe {{.Resource}} {{.Name}} -n {{.Namespace}}"
+    type: "selector" # Reruns when selection changes
+    location: "panel"
+    onExit: "keep-open"
+```
+
+### Command Types
+- **selector**: Triggered by selection, reruns on change. Good for `describe`, `get -o yaml`, etc.
+- **sticky**: Starts with current selection but keeps running.
+- **namespace**: Sticky for the current namespace, restarts on namespace change.
+- **global**: Independent of selection. Good for cluster-wide commands like `top nodes`.
+
+### Templating
+Available variables: `{{.Name}}`, `{{.Namespace}}`, `{{.Kind}}`, `{{.Group}}`, `{{.Version}}`, `{{.Resource}}`.
 
 ## Configuration
 

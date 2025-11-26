@@ -11,6 +11,7 @@ const (
 	PanelModeList PanelViewMode = iota
 	PanelModeDescribe
 	PanelModeManifest
+	PanelModeCommand
 )
 
 // PanelWidget abstracts panel content implementations.
@@ -19,7 +20,7 @@ type PanelWidget = panelcontent.Widget
 // PanelWidgetFactory constructs a widget bound to the provided panel shell.
 type PanelWidgetFactory func(*Panel) panelcontent.Widget
 
-var panelModeOrder = []PanelViewMode{PanelModeList, PanelModeDescribe, PanelModeManifest}
+var panelModeOrder = []PanelViewMode{PanelModeList, PanelModeDescribe, PanelModeManifest, PanelModeCommand}
 
 // PanelMouseType identifies mouse intents routed to widgets.
 type PanelMouseType = panelcontent.MouseIntent

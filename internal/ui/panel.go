@@ -13,6 +13,8 @@ import (
 	listwidget "github.com/sttts/kc/internal/ui/panelcontent/list"
 	manifestwidget "github.com/sttts/kc/internal/ui/panelcontent/manifest"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
+	"github.com/sttts/kc/pkg/appconfig"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -63,7 +65,27 @@ func NewPanel(title string) *Panel {
 	p.RegisterMode(PanelModeManifest, func(panel *Panel) panelcontent.Widget {
 		return manifestwidget.New(panel.manifestWidgetDeps())
 	})
+	// Command widget is registered dynamically when StartCommand is called.
 	return p
+}
+
+// StartCommand starts a custom command in the panel
+func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) tea.Cmd {
+	// Create widget if not exists or if config changed (simplified: always create new for now)
+	widget := NewCommandWidget(p.listWidgetDeps(), config)
+
+	// Register it as the widget for PanelModeCommand
+	p.RegisterMode(PanelModeCommand, func(panel *Panel) panelcontent.Widget {
+		return widget
+	})
+
+	// Switch mode
+	cmd := p.SetMode(ctx, PanelModeCommand)
+
+	// Start command
+	startCmd := widget.StartCommand(ctx, items, gvr)
+
+	return tea.Batch(cmd, startCmd)
 }
 
 func (p *Panel) invalidateRenderCache() {
@@ -536,6 +558,7 @@ func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	defer cancel()
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if cmd, handled := widget.Update(ctx, msg); handled {
+			p.invalidateRenderCache()
 			return p, cmd
 		}
 	}
@@ -608,6 +631,7 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	}
 	contentWidth := max(1, width-2)
 	frameHeight := max(2, height)
+	// Default content height assumes both top/bottom borders consume 2 rows.
 	contentHeight := max(1, frameHeight-2)
 
 	var (
@@ -647,7 +671,12 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 		footerHeight = 0
 	}
 	frameHeight = max(2, height-footerHeight)
-	contentHeight = max(1, frameHeight-2)
+	// If footer is suppressed, we can reclaim the bottom border row for content.
+	if info.SuppressFooter {
+		contentHeight = max(1, frameHeight-1)
+	} else {
+		contentHeight = max(1, frameHeight-2)
+	}
 	p.SetDimensions(ctx, contentWidth, contentHeight)
 	info = p.frameInfo(ctx)
 
