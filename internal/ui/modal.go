@@ -196,7 +196,7 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Otherwise arm ESC sequence to allow ESC ESC close
 			m.escPressed = true
-			return m, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
+			return m, tea.Tick(EscSequenceTimeout, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
 		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
 			if m.escPressed {
 				if fk, ok := functionKeyFromDigit(msg.String()); ok {

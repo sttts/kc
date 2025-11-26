@@ -626,6 +626,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return a.handleKeyMsg(msg, cmds)
+	case commandExitMsg:
+		if msg.OnExit == appconfig.CommandExitRestore || msg.OnExit == appconfig.CommandExitClose {
+			if panel := a.panelByIndex(msg.PanelIdx); panel != nil {
+				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+				modeCmd := panel.SetMode(ctx, PanelModeList)
+				panel.setCommandFocus(false)
+				cancel()
+				if modeCmd != nil {
+					cmds = append(cmds, modeCmd)
+				}
+				a.invalidateView("command exit restore")
+				a.invalidateFunctionBar("command exit restore")
+			}
+		}
+		return a, tea.Batch(cmds...)
 
 	default:
 		if mm, ok := msg.(tea.MouseMsg); ok {

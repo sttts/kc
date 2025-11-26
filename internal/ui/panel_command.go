@@ -34,6 +34,7 @@ type CommandWidget struct {
 	output    string // To show output after exit if keep-open
 	err       error
 	log       logr.Logger
+	post      func(tea.Msg)
 	// Debounce state
 	debounceTimer *time.Timer
 	pendingItems  []models.Item
@@ -61,6 +62,7 @@ func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConf
 		panelDeps:   deps,
 		config:      config,
 		log:         ctrllog.Log.WithName("command"),
+		post:        deps.Post,
 		interactive: config.Interactive,
 	}
 }
@@ -133,7 +135,7 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 				w.escArmed = true
 				w.escTimerToken++
 				token := w.escTimerToken
-				timer := tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
+				timer := tea.Tick(EscSequenceTimeout, func(time.Time) tea.Msg {
 					return commandEscTimeoutMsg{token: token}
 				})
 				// Forward ESC to the command while arming the double-ESC exit.
@@ -278,8 +280,17 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 	}
 	w.log.V(1).Info("starting command", "name", w.config.Name, "type", w.config.Type, "cmd", cmdStr, "interactive", w.config.Interactive, "width", w.width, "height", w.height)
 
+	width := w.width
+	height := w.height
+	if width <= 0 {
+		width = 80
+	}
+	if height <= 0 {
+		height = 24
+	}
+
 	// Create terminal
-	term, err := bubbleterm.New(w.width, w.height)
+	term, err := bubbleterm.New(width, height)
 	if err != nil {
 		w.err = err
 		return nil
@@ -305,8 +316,10 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 			w.exitKnown = true
 		}
 		// Handle OnExit behavior
-		// If keep-open, we just leave the terminal view as is (it shows output)
-		// If close, we should notify panel to switch back
+		w.setInteractiveFocus(false)
+		if w.post != nil {
+			w.post(commandExitMsg{OnExit: w.config.OnExit})
+		}
 	})
 
 	w.running = true
@@ -445,6 +458,11 @@ const heartbeatBurst = 900 * time.Millisecond
 // SetInteractive marks this command as interactive.
 func (w *CommandWidget) SetInteractive(on bool) {
 	w.interactive = on
+}
+
+// HasInteractive reports whether this command supports interactive focus.
+func (w *CommandWidget) HasInteractive() bool {
+	return w.interactive
 }
 
 // SetFocusChangedHandler installs a focus-change callback.

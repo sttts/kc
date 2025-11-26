@@ -88,10 +88,10 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 
 	// Handle Esc+number escape sequences (Esc then number)
 	keyStr := msg.String()
-	if keyStr == "esc" {
+	if keyStr == "esc" && !a.interactiveCommandActive() {
 		// Esc key pressed - start escape sequence with timeout
 		a.escPressed = true
-		return a, tea.Tick(time.Second, func(time.Time) tea.Msg {
+		return a, tea.Tick(EscSequenceTimeout, func(time.Time) tea.Msg {
 			return EscTimeoutMsg{}
 		})
 	} else if a.escPressed {
@@ -212,6 +212,19 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.terminal.ClearTyped() // reset typed; next keys route to panels
 			return a, cmd
 		}
+		if a.interactiveCommandActive() {
+			// Route all keys to the active panel/command widget when it holds focus.
+			if a.activePanel == 0 {
+				model, cmd := a.leftPanel.Update(msg)
+				a.leftPanel = model.(*Panel)
+				cmds = append(cmds, cmd)
+			} else {
+				model, cmd := a.rightPanel.Update(msg)
+				a.rightPanel = model.(*Panel)
+				cmds = append(cmds, cmd)
+			}
+			return a, tea.Batch(cmds...)
+		}
 		if a.shouldRouteToPanel(msg.String()) {
 			// Handle panel-specific keys
 			if a.activePanel == 0 {
@@ -236,11 +249,6 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 
 // shouldRouteToPanel determines if a key should be routed to the panel based on terminal state
 func (a *App) shouldRouteToPanel(key string) bool {
-	// Interactive command in focus gets priority over the inline terminal.
-	if a.interactiveCommandActive() {
-		return true
-	}
-
 	// Always route these keys to terminal
 	terminalKeys := []string{
 		" ",     // space bar (Bubble Tea reports as literal space)

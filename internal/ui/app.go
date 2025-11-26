@@ -115,6 +115,11 @@ type resourceDeletedMsg struct {
 	err    error
 }
 
+type commandExitMsg struct {
+	PanelIdx int
+	OnExit   appconfig.CommandExitBehavior
+}
+
 func (a *App) setCommandWatchInterval(panelIdx int, interval time.Duration) tea.Cmd {
 	if panelIdx < 0 || panelIdx > 1 {
 		return nil
@@ -281,6 +286,8 @@ func NewApp() *App {
 	app.toastLogger = NewToastLogger(app, 2*time.Second)
 	app.leftPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(0, f) })
 	app.rightPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(1, f) })
+	app.leftPanel.SetMessagePoster(app.postFromPanel(0))
+	app.rightPanel.SetMessagePoster(app.postFromPanel(1))
 
 	// Register modals
 	app.setupModals()
@@ -1058,6 +1065,21 @@ func (a *App) newDescribeRenderer() (*describe.Renderer, error) {
 		loader = clientcmd.NewDefaultClientConfig(*a.currentCtx.Kubeconfig.Config, overrides)
 	}
 	return describe.NewRenderer(cfg, mapper, disco, loader)
+}
+
+func (a *App) postFromPanel(idx int) func(tea.Msg) {
+	return func(msg tea.Msg) {
+		if msg == nil {
+			return
+		}
+		switch m := msg.(type) {
+		case commandExitMsg:
+			m.PanelIdx = idx
+			a.enqueueCmd(func() tea.Msg { return m })
+		default:
+			a.enqueueCmd(func() tea.Msg { return msg })
+		}
+	}
 }
 
 func (a *App) onCommandFocusChanged(panelIdx int, focused bool) tea.Cmd {
@@ -3608,6 +3630,16 @@ func (a *App) swapPanels() {
 	}
 	if a.rightPanel != nil {
 		a.attachFolderDirtyListener(1, a.rightPanel.Folder())
+	}
+
+	// Re-wire command focus/message handlers to the new sides.
+	if a.leftPanel != nil {
+		a.leftPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return a.onCommandFocusChanged(0, f) })
+		a.leftPanel.SetMessagePoster(a.postFromPanel(0))
+	}
+	if a.rightPanel != nil {
+		a.rightPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return a.onCommandFocusChanged(1, f) })
+		a.rightPanel.SetMessagePoster(a.postFromPanel(1))
 	}
 
 	// Invalidate everything

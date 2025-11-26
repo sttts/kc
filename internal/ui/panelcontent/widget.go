@@ -40,6 +40,7 @@ type WidgetDeps struct {
 	SelectionChanged func(context.Context, Selection) tea.Cmd
 	SelectedItem     func(context.Context) (models.Item, bool)
 	Describe         DescribeFunc
+	Post             func(tea.Msg)
 }
 
 // DescribeFunc renders describe output for widget selections.
