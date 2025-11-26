@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -22,6 +23,7 @@ type ViewOptionsCommittedMsg struct {
 	HasTableMode      bool
 	Resources         *ViewOptionsResourcesPayload
 	Objects           *ViewOptionsObjectsPayload
+	Command           *ViewOptionsCommandPayload
 	Viewer            *ViewOptionsViewerPayload
 	SaveDefault       bool
 	Accept            bool
@@ -44,6 +46,11 @@ type ViewOptionsObjectsPayload struct {
 	Order           string
 }
 
+// ViewOptionsCommandPayload carries command-specific options.
+type ViewOptionsCommandPayload struct {
+	WatchInterval time.Duration
+}
+
 // ViewOptionsViewerPayload carries viewer-specific options.
 type ViewOptionsViewerPayload struct {
 	Theme    string
@@ -63,6 +70,7 @@ type ViewOptionsConfig struct {
 
 	Resources *ViewOptionsResourcesConfig
 	Objects   *ViewOptionsObjectsConfig
+	Command   *ViewOptionsCommandConfig
 	Viewer    *ViewOptionsViewerConfig
 }
 
@@ -82,11 +90,54 @@ type ViewOptionsObjectsConfig struct {
 	Order         string
 }
 
+// ViewOptionsCommandConfig configures the Command section.
+type ViewOptionsCommandConfig struct {
+	WatchInterval time.Duration
+}
+
 // ViewOptionsViewerConfig configures the Viewer section.
 type ViewOptionsViewerConfig struct {
 	ThemeNames []string
 	Theme      string
 	WrapMode   string
+}
+
+var commandWatchDurations = []time.Duration{
+	0,
+	time.Second,
+	2 * time.Second,
+	3 * time.Second,
+	4 * time.Second,
+	5 * time.Second,
+	6 * time.Second,
+	7 * time.Second,
+	8 * time.Second,
+	9 * time.Second,
+	10 * time.Second,
+	20 * time.Second,
+	30 * time.Second,
+	40 * time.Second,
+	50 * time.Second,
+	time.Minute,
+}
+
+var commandWatchLabels = []string{
+	"Off",
+	"1s",
+	"2s",
+	"3s",
+	"4s",
+	"5s",
+	"6s",
+	"7s",
+	"8s",
+	"9s",
+	"10s",
+	"20s",
+	"30s",
+	"40s",
+	"50s",
+	"1m",
 }
 
 type viewOptionEntryKind int
@@ -108,6 +159,7 @@ const (
 	viewOptionObjectTableMode
 	viewOptionObjectColumns
 	viewOptionObjectOrder
+	viewOptionCommandWatch
 	viewOptionViewerTheme
 	viewOptionViewerWrapMode
 )
@@ -159,6 +211,11 @@ type ViewOptionsModel struct {
 		themeNames []string
 		themeIdx   int
 		wrapMode   string
+	}
+
+	command struct {
+		enabled  bool
+		watchIdx int
 	}
 }
 
@@ -247,6 +304,21 @@ func NewViewOptionsModel(cfg ViewOptionsConfig) *ViewOptionsModel {
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectColumns},
 			viewOptionEntry{kind: viewOptionEntryOption, option: viewOptionObjectOrder},
 		)
+	}
+
+	if cfg.Command != nil {
+		model.command.enabled = true
+		model.command.watchIdx = commandWatchIndexFor(cfg.Command.WatchInterval)
+
+		model.appendSectionSpacerIfNeeded()
+		model.entries = append(model.entries, viewOptionEntry{
+			kind:  viewOptionEntrySection,
+			title: "Command:",
+		})
+		model.entries = append(model.entries, viewOptionEntry{
+			kind:   viewOptionEntryOption,
+			option: viewOptionCommandWatch,
+		})
 	}
 
 	if cfg.Viewer != nil {
@@ -366,6 +438,13 @@ func absInt(v int) int {
 	return v
 }
 
+func absDuration(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
+}
+
 func objectColumnsIndexFor(columns string) int {
 	for i, key := range objColumnsKeys {
 		if strings.EqualFold(key, columns) {
@@ -382,6 +461,21 @@ func objectOrderIndexFor(order string) int {
 		}
 	}
 	return 0
+}
+
+func commandWatchIndexFor(interval time.Duration) int {
+	if len(commandWatchDurations) == 0 {
+		return 0
+	}
+	best := 0
+	bestDelta := absDuration(commandWatchDurations[0] - interval)
+	for i := 1; i < len(commandWatchDurations); i++ {
+		if delta := absDuration(commandWatchDurations[i] - interval); delta < bestDelta {
+			best = i
+			bestDelta = delta
+		}
+	}
+	return best
 }
 
 // Init implements tea.Model.
@@ -592,6 +686,18 @@ func (m *ViewOptionsModel) adjustCurrent(delta int) {
 		} else {
 			m.viewer.wrapMode = appconfig.ViewerModeWrap
 		}
+	case viewOptionCommandWatch:
+		if len(commandWatchDurations) == 0 {
+			return
+		}
+		if delta < 0 {
+			m.command.watchIdx--
+			if m.command.watchIdx < 0 {
+				m.command.watchIdx = len(commandWatchDurations) - 1
+			}
+		} else {
+			m.command.watchIdx = (m.command.watchIdx + 1) % len(commandWatchDurations)
+		}
 	}
 }
 
@@ -659,6 +765,15 @@ func (m *ViewOptionsModel) commit(accept, save bool) ViewOptionsCommittedMsg {
 			WrapMode: mode,
 		}
 	}
+	if m.command.enabled {
+		interval := time.Duration(0)
+		if len(commandWatchDurations) > 0 && m.command.watchIdx >= 0 && m.command.watchIdx < len(commandWatchDurations) {
+			interval = commandWatchDurations[m.command.watchIdx]
+		}
+		msg.Command = &ViewOptionsCommandPayload{
+			WatchInterval: interval,
+		}
+	}
 	return msg
 }
 
@@ -686,6 +801,11 @@ func (m *ViewOptionsModel) optionLabelAndValue(opt viewOptionKind) (string, stri
 		return "Columns", objColumnsLabels[m.objects.columnsIdx]
 	case viewOptionObjectOrder:
 		return "Objects order", objOrderLabels[m.objects.orderIdx]
+	case viewOptionCommandWatch:
+		if len(commandWatchLabels) == 0 {
+			return "Watch", "-"
+		}
+		return "Watch", commandWatchLabels[m.command.watchIdx]
 	case viewOptionViewerTheme:
 		if len(m.viewer.themeNames) == 0 {
 			return "Theme", "-"

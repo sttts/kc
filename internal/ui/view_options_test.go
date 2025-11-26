@@ -1,6 +1,9 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestViewOptionsModelPanelWidthCommit(t *testing.T) {
 	model := NewViewOptionsModel(ViewOptionsConfig{
@@ -57,5 +60,37 @@ func TestViewOptionsPanelWidthClamp(t *testing.T) {
 	model.adjustCurrent(1)
 	if msg := model.commit(true, false); msg.PanelWidthPercent != 100 {
 		t.Fatalf("expected to stay at upper bound, got %d", msg.PanelWidthPercent)
+	}
+}
+
+func TestViewOptionsCommandWatchCommit(t *testing.T) {
+	t.Parallel()
+
+	model := NewViewOptionsModel(ViewOptionsConfig{
+		PanelIndex:        0,
+		PanelModes:        []PanelViewMode{PanelModeCommand},
+		ActivePanelMode:   PanelModeCommand,
+		PanelWidthPercent: 50,
+		Command: &ViewOptionsCommandConfig{
+			WatchInterval: 10 * time.Second,
+		},
+	})
+
+	// Focus command watch option (panel mode -> panel width -> watch)
+	model.moveFocus(1)
+	model.moveFocus(1)
+
+	msg := model.commit(true, false)
+	if msg.Command == nil {
+		t.Fatalf("expected command payload in commit")
+	}
+	if msg.Command.WatchInterval != 10*time.Second {
+		t.Fatalf("expected watch interval 10s, got %s", msg.Command.WatchInterval)
+	}
+
+	model.adjustCurrent(1)
+	msg = model.commit(true, false)
+	if msg.Command.WatchInterval != 20*time.Second {
+		t.Fatalf("expected watch interval to advance to 20s, got %s", msg.Command.WatchInterval)
 	}
 }

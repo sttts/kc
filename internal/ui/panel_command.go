@@ -34,6 +34,9 @@ type CommandWidget struct {
 	debounceTimer *time.Timer
 	pendingItems  []models.Item
 	pendingGVR    schema.GroupVersionResource
+	// Watch state
+	watchInterval time.Duration
+	watchToken    int
 }
 
 func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
@@ -48,6 +51,7 @@ func (w *CommandWidget) Init(ctx context.Context) tea.Cmd {
 }
 
 func (w *CommandWidget) Teardown(ctx context.Context) {
+	w.watchToken++
 	if w.cmd != nil && w.cmd.Process != nil {
 		_ = w.cmd.Process.Kill()
 	}
@@ -57,6 +61,12 @@ func (w *CommandWidget) Teardown(ctx context.Context) {
 func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	// Handle debounce timer
 	if _, ok := msg.(debounceMsg); ok {
+		return w.startPendingCommand(), true
+	}
+	if tick, ok := msg.(commandWatchMsg); ok {
+		if tick.token != w.watchToken || w.watchInterval <= 0 {
+			return nil, false
+		}
 		return w.startPendingCommand(), true
 	}
 
@@ -233,10 +243,14 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 	return tea.Batch(
 		w.terminal.Init(),
 		w.terminal.StartCommand(w.cmd),
+		w.restartWatchTimer(),
 	)
 }
 
 type debounceMsg struct{}
+type commandWatchMsg struct {
+	token int
+}
 
 // Implement other Widget interface methods...
 func (w *CommandWidget) SelectedNavItem(ctx context.Context) (models.Item, bool) {
@@ -268,4 +282,34 @@ func (w *CommandWidget) FrameInfo(ctx context.Context, req panelcontent.FrameInf
 		HeaderStatus:   "",
 		SuppressFooter: true,
 	}
+}
+
+// WatchInterval reports the active watch interval.
+func (w *CommandWidget) WatchInterval() time.Duration {
+	return w.watchInterval
+}
+
+// SetWatchInterval updates the watch interval and schedules the next tick.
+func (w *CommandWidget) SetWatchInterval(ctx context.Context, interval time.Duration) tea.Cmd {
+	if interval == w.watchInterval {
+		return nil
+	}
+	w.watchInterval = interval
+	return w.restartWatchTimer()
+}
+
+func (w *CommandWidget) restartWatchTimer() tea.Cmd {
+	// Skip auto-restart for interactive commands to avoid killing user sessions.
+	if w.config.Interactive {
+		return nil
+	}
+	w.watchToken++
+	if w.watchInterval <= 0 {
+		return nil
+	}
+	token := w.watchToken
+	interval := w.watchInterval
+	return tea.Tick(interval, func(time.Time) tea.Msg {
+		return commandWatchMsg{token: token}
+	})
 }

@@ -525,6 +525,25 @@ func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int
 	return
 }
 
+func (a *App) resizePanelsForCurrentLayout() {
+	if a == nil {
+		return
+	}
+	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+	contentHeight := max(1, panelHeight-2)
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	resize := func(p *Panel, width int) {
+		if p == nil || width <= 0 {
+			return
+		}
+		contentWidth := max(1, width-2)
+		p.SetDimensions(ctx, contentWidth, contentHeight)
+	}
+	resize(a.leftPanel, leftWidth)
+	resize(a.rightPanel, rightWidth)
+}
+
 func (a *App) panelWidthPercentFor(panelIdx int) int {
 	if panelIdx == 1 {
 		return clampPercent(a.rightPanelWidthPercent)
@@ -596,6 +615,7 @@ func (a *App) setPanelWidthPercent(panelIdx int, percent int) {
 	} else if a.leftPanelWidthPercent == 100 && a.rightPanelWidthPercent == 0 {
 		a.setActivePanel(0, "panel width forced left")
 	}
+	a.resizePanelsForCurrentLayout()
 	a.invalidateView("panel width percent")
 }
 
@@ -1198,6 +1218,7 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 	showInclude := false
 	showOrder := false
 	resourceSection := false
+	commandSection := panel.Mode() == PanelModeCommand
 	if curFolder != nil {
 		switch curFolder.(type) {
 		case *models.RootFolder,
@@ -1210,6 +1231,9 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 			resourceSection = true
 		}
 	}
+	if commandSection {
+		resourceSection = false
+	}
 
 	objectSection := false
 	if curFolder != nil {
@@ -1220,6 +1244,9 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 		}
 	}
 	if panel.Mode() != PanelModeList {
+		objectSection = false
+	}
+	if commandSection {
 		objectSection = false
 	}
 
@@ -1249,6 +1276,15 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 		}
 	}
 
+	var cmdConfig *ViewOptionsCommandConfig
+	if commandSection {
+		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+		defer cancel()
+		cmdConfig = &ViewOptionsCommandConfig{
+			WatchInterval: panel.CommandWatchInterval(ctx),
+		}
+	}
+
 	content := NewViewOptionsModel(ViewOptionsConfig{
 		PanelIndex:        panelIdx,
 		PanelModes:        panel.AvailableModes(),
@@ -1257,6 +1293,7 @@ func (a *App) showViewOptionsModalForPanel(panel *Panel) tea.Cmd {
 		TableMode:         tableMode,
 		Resources:         resConfig,
 		Objects:           objConfig,
+		Command:           cmdConfig,
 	})
 
 	modal := a.modalManager.modals["view_options"]

@@ -138,6 +138,14 @@ func (p *Panel) listWidget(ctx context.Context) *listwidget.Widget {
 	return nil
 }
 
+func (p *Panel) commandWidget(ctx context.Context) *CommandWidget {
+	widget := p.ensureWidget(ctx, PanelModeCommand)
+	if cw, ok := widget.(*CommandWidget); ok {
+		return cw
+	}
+	return nil
+}
+
 func (p *Panel) invokeWidgetAction(ctx context.Context, action panelcontent.Action) tea.Cmd {
 	switch action {
 	case panelcontent.ActionHelp:
@@ -426,6 +434,22 @@ func (p *Panel) ObjectOrder() string {
 	return "name"
 }
 
+// CommandWatchInterval reports the current watch interval for the command widget.
+func (p *Panel) CommandWatchInterval(ctx context.Context) time.Duration {
+	if cw := p.commandWidget(ctx); cw != nil {
+		return cw.WatchInterval()
+	}
+	return 0
+}
+
+// SetCommandWatchInterval updates the command widget watch interval if present.
+func (p *Panel) SetCommandWatchInterval(ctx context.Context, interval time.Duration) tea.Cmd {
+	if cw := p.commandWidget(ctx); cw != nil {
+		return cw.SetWatchInterval(ctx, interval)
+	}
+	return nil
+}
+
 // SelectByRowID moves the selection to the row with the given ID if present.
 func (p *Panel) SelectByRowID(ctx context.Context, id string) {
 	if lw := p.listWidget(ctx); lw != nil {
@@ -645,6 +669,10 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 		info = p.frameInfo(ctx)
 		footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 		footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
+		if info.SuppressFooter {
+			footerFrame = ""
+			footerHeight = 0
+		}
 		if footerHeight >= height {
 			footerFrame = ""
 			footerHeight = 0
@@ -666,6 +694,10 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	info = p.frameInfo(ctx)
 	footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 	footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
+	if info.SuppressFooter {
+		footerFrame = ""
+		footerHeight = 0
+	}
 	if footerHeight >= height {
 		footerFrame = ""
 		footerHeight = 0

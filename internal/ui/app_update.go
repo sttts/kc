@@ -189,6 +189,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						saveHandled = true
 					}
 				}
+				if m.Command != nil && (m.Accept || m.SaveDefault) {
+					cmdMsg := CommandOptionsChangedMsg{
+						WatchInterval: m.Command.WatchInterval,
+						SaveDefault:   m.SaveDefault,
+						Accept:        m.Accept,
+						Close:         m.Close,
+					}
+					if _, cmd := a.Update(cmdMsg); cmd != nil {
+						subCmds = append(subCmds, cmd)
+					}
+					if m.Close {
+						closedBySubMsg = true
+					}
+				}
 				if widthSavePending && !saveHandled {
 					_ = appconfig.Save(a.cfg)
 				}
@@ -316,6 +330,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						a.rightPanel.RefreshFolder(ctxRefresh)
 						cancelRefresh()
 					}
+				}
+				if m.Close {
+					a.hideModal()
+				}
+				return a, nil
+			case CommandOptionsChangedMsg:
+				panel := a.activePanelRef()
+				if panel != nil {
+					ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
+					if cmd := panel.SetCommandWatchInterval(ctxPanel, m.WatchInterval); cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+					cancelPanel()
 				}
 				if m.Close {
 					a.hideModal()
