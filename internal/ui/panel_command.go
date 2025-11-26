@@ -2,7 +2,9 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -75,6 +77,7 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 		return w.startPendingCommand(), true
 	}
 	if tick, ok := msg.(commandWatchMsg); ok {
+		w.log.V(1).Info("received watch tick", "token", tick.token, "currentToken", w.watchToken, "interval", w.watchInterval)
 		if tick.token != w.watchToken || w.watchInterval <= 0 {
 			return nil, false
 		}
@@ -210,7 +213,11 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 		// TODO: How to kill? SIGTERM or SIGKILL?
 		// User said: "kill the previous process immediately"
 		if err := w.cmd.Process.Kill(); err != nil {
-			w.log.Error(err, "killing previous command")
+			if !errors.Is(err, os.ErrProcessDone) {
+				w.log.Error(err, "killing previous command")
+			} else {
+				w.log.V(1).Info("previous command already exited")
+			}
 		}
 		w.cmd = nil
 		w.running = false
@@ -278,7 +285,6 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 	return tea.Batch(
 		w.terminal.Init(),
 		w.terminal.StartCommand(w.cmd),
-		w.restartWatchTimer(),
 		w.triggerHeartbeat(),
 	)
 }
@@ -334,23 +340,12 @@ func (w *CommandWidget) SetWatchInterval(ctx context.Context, interval time.Dura
 		return nil
 	}
 	w.watchInterval = interval
-	return w.restartWatchTimer()
+	w.log.Info("command watch interval updated", "name", w.config.Name, "interval", w.watchInterval)
+	return nil
 }
 
 func (w *CommandWidget) restartWatchTimer() tea.Cmd {
-	// Skip auto-restart for interactive commands to avoid killing user sessions.
-	if w.config.Interactive {
-		return nil
-	}
-	w.watchToken++
-	if w.watchInterval <= 0 {
-		return nil
-	}
-	token := w.watchToken
-	interval := w.watchInterval
-	return tea.Tick(interval, func(time.Time) tea.Msg {
-		return commandWatchMsg{token: token}
-	})
+	return nil
 }
 
 func (w *CommandWidget) triggerHeartbeat() tea.Cmd {
@@ -368,6 +363,11 @@ func (w *CommandWidget) armHeartbeat() {
 	w.heartbeatUntil = time.Now().Add(heartbeatBurst)
 }
 
+// Restart re-runs the command using the last pending items/GVR.
+func (w *CommandWidget) Restart(ctx context.Context) tea.Cmd {
+	return w.startPendingCommand()
+}
+
 func (w *CommandWidget) heartbeatStatus() string {
 	frame := heartbeatFrames[w.heartbeatPhase%len(heartbeatFrames)]
 	if !w.heartbeatOn {
@@ -376,11 +376,16 @@ func (w *CommandWidget) heartbeatStatus() string {
 	if !w.running && !w.exitKnown && !w.heartbeatOn {
 		return ""
 	}
+	var parts []string
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color(uistyles.ColorWhite)).Bold(true)
 	if w.exitKnown && w.exitCode != 0 {
 		style = style.Foreground(lipgloss.Color("1"))
 	}
-	return style.Render(frame)
+	parts = append(parts, style.Render(frame))
+	if w.watchInterval > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(lipgloss.Color(uistyles.ColorGrey)).Render(w.watchInterval.String()))
+	}
+	return strings.Join(parts, " ")
 }
 
 var heartbeatFrames = []string{"<3", "<3", "<3", "<<3", "<3<", "<3"}

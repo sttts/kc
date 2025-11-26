@@ -90,6 +90,11 @@ type namespaceRetryMsg struct {
 	namespace string
 }
 
+type commandWatchTickMsg struct {
+	PanelIdx int
+	Token    int
+}
+
 type startupIntentMsg struct{}
 
 type deleteTarget struct {
@@ -108,6 +113,37 @@ type cachedView struct {
 type resourceDeletedMsg struct {
 	target deleteTarget
 	err    error
+}
+
+func (a *App) setCommandWatchInterval(panelIdx int, interval time.Duration) tea.Cmd {
+	if panelIdx < 0 || panelIdx > 1 {
+		return nil
+	}
+	a.commandWatchInterval[panelIdx] = interval
+	// Invalidate outstanding ticks.
+	a.commandWatchToken[panelIdx]++
+	if interval <= 0 {
+		return nil
+	}
+	token := a.commandWatchToken[panelIdx]
+	return tea.Tick(interval, func(time.Time) tea.Msg {
+		return commandWatchTickMsg{PanelIdx: panelIdx, Token: token}
+	})
+}
+
+func (a *App) scheduleCommandWatch(panelIdx int) tea.Cmd {
+	if panelIdx < 0 || panelIdx > 1 {
+		return nil
+	}
+	interval := a.commandWatchInterval[panelIdx]
+	a.commandWatchToken[panelIdx]++
+	if interval <= 0 {
+		return nil
+	}
+	token := a.commandWatchToken[panelIdx]
+	return tea.Tick(interval, func(time.Time) tea.Msg {
+		return commandWatchTickMsg{PanelIdx: panelIdx, Token: token}
+	})
 }
 
 type viewerOptionsTarget interface {
@@ -143,6 +179,9 @@ type App struct {
 	impersonateGroups []string
 	viewConfig        *ViewConfig
 	cfg               *appconfig.Config
+	// Command watch scheduling
+	commandWatchToken    [2]int
+	commandWatchInterval [2]time.Duration
 	// New navigation (folder-backed) using a Navigator
 	leftNav  *navui.Navigator
 	rightNav *navui.Navigator
@@ -540,20 +579,32 @@ func (a *App) resizePanelsForCurrentLayout() {
 		return
 	}
 	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
-	contentHeight := max(1, panelHeight-2)
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	log := ctrllog.FromContext(ctx).WithName("ui").WithName("panelResize")
+	computeContentHeight := func(p *Panel, width int) int {
+		if p == nil || width <= 0 {
+			return 0
+		}
+		footerHeight := p.EstimatedFooterHeight(ctx, width)
+		return max(1, panelHeight-footerHeight-2)
+	}
 	resize := func(p *Panel, width int) {
 		if p == nil || width <= 0 {
 			return
 		}
 		contentWidth := max(1, width-2)
-		p.SetDimensions(ctx, contentWidth, contentHeight)
+		p.SetDimensions(ctx, contentWidth, computeContentHeight(p, width))
 	}
 	resize(a.leftPanel, leftWidth)
 	resize(a.rightPanel, rightWidth)
-	log.V(1).Info("panels resized", "leftWidth", leftWidth, "rightWidth", rightWidth, "contentHeight", contentHeight)
+	log.V(1).Info("panels resized",
+		"leftWidth", leftWidth,
+		"rightWidth", rightWidth,
+		"panelHeight", panelHeight,
+		"leftContentHeight", computeContentHeight(a.leftPanel, leftWidth),
+		"rightContentHeight", computeContentHeight(a.rightPanel, rightWidth),
+	)
 }
 
 func (a *App) panelWidthPercentFor(panelIdx int) int {

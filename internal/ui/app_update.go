@@ -55,6 +55,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 		return a, tea.Batch(cmds...)
+	case commandWatchTickMsg:
+		model, cmd := a.handleCommandWatchTick(msg)
+		return model, cmd
 	case namespaceRetryMsg:
 		a.goToNamespaceWithRetry(msg.namespace, false)
 		return a, tea.Batch(cmds...)
@@ -337,6 +340,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			case CommandOptionsChangedMsg:
 				panel := a.activePanelRef()
+				panelIdx := a.activePanel
 				if panel != nil {
 					ctxPanel, cancelPanel := context.WithTimeout(a.ctx, panelContextTimeout)
 					if cmd := panel.SetCommandWatchInterval(ctxPanel, m.WatchInterval); cmd != nil {
@@ -344,10 +348,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					cancelPanel()
 				}
+				if panelIdx >= 0 && panelIdx <= 1 {
+					if cmd := a.setCommandWatchInterval(panelIdx, m.WatchInterval); cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+				}
 				if m.Close {
 					a.hideModal()
 				}
-				return a, nil
+				return a, tea.Batch(cmds...)
 			}
 			model, cmd := a.modalManager.Update(msg)
 			a.modalManager = model.(*ModalManager)
@@ -755,4 +764,27 @@ func (a *App) dispatchPanelMouse(msg tea.MouseMsg) (tea.Cmd, *Panel, PanelMouseM
 		}
 	}
 	return cmd, panel, panelMsg, panelIdx, true
+}
+
+func (a *App) handleCommandWatchTick(msg commandWatchTickMsg) (tea.Model, tea.Cmd) {
+	if msg.PanelIdx < 0 || msg.PanelIdx > 1 {
+		return a, nil
+	}
+	// Ignore stale ticks.
+	if msg.Token != a.commandWatchToken[msg.PanelIdx] {
+		return a, nil
+	}
+	interval := a.commandWatchInterval[msg.PanelIdx]
+	if interval <= 0 {
+		return a, nil
+	}
+	panel := a.panelByIndex(msg.PanelIdx)
+	if panel == nil {
+		return a, nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	restart := panel.RestartCommand(ctx)
+	next := a.scheduleCommandWatch(msg.PanelIdx)
+	return a, tea.Batch(restart, next)
 }

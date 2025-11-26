@@ -450,6 +450,14 @@ func (p *Panel) SetCommandWatchInterval(ctx context.Context, interval time.Durat
 	return nil
 }
 
+// RestartCommand reruns the active command widget if present.
+func (p *Panel) RestartCommand(ctx context.Context) tea.Cmd {
+	if cw := p.commandWidget(ctx); cw != nil {
+		return cw.Restart(ctx)
+	}
+	return nil
+}
+
 // SelectByRowID moves the selection to the row with the given ID if present.
 func (p *Panel) SelectByRowID(ctx context.Context, id string) {
 	if lw := p.listWidget(ctx); lw != nil {
@@ -907,6 +915,21 @@ func (p *Panel) renderFramedFooter(content string, width int) (string, int) {
 		Width(width).
 		Render(content)
 	return frame, lipgloss.Height(frame)
+}
+
+// EstimatedFooterHeight approximates the framed footer height for the given width.
+// It reuses the widget-provided footer state and respects suppression flags.
+func (p *Panel) EstimatedFooterHeight(ctx context.Context, width int) int {
+	if p == nil || width <= 0 {
+		return 0
+	}
+	info := p.frameInfo(ctx)
+	footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
+	footerFrame, footerHeight := p.renderFramedFooter(footerContent, width)
+	if info.SuppressFooter || footerFrame == "" {
+		return 0
+	}
+	return footerHeight
 }
 
 func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title string, width, height int, focused bool, hasFooter bool) string {
