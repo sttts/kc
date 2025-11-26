@@ -48,6 +48,7 @@ type CommandWidget struct {
 	heartbeatOn    bool
 	exitKnown      bool
 	exitCode       int
+	lastFrame      string
 }
 
 func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
@@ -129,15 +130,26 @@ func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) stri
 	if w.terminal != nil {
 		view := w.terminal.View()
 		if view.Content != nil {
-			return fmt.Sprint(view.Content)
+			content := fmt.Sprint(view.Content)
+			if content != "" {
+				w.lastFrame = content
+			}
+			return content
+		}
+		if w.lastFrame != "" {
+			return w.lastFrame
 		}
 		return ""
 	}
 
 	if w.output != "" {
+		w.lastFrame = w.output
 		return w.output
 	}
 
+	if w.lastFrame != "" {
+		return w.lastFrame
+	}
 	return "Starting..."
 }
 
