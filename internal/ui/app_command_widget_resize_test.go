@@ -54,10 +54,7 @@ func TestCommandWidgetResizedWhenPanelWidthChangesViaViewOptions(t *testing.T) {
 		t.Fatalf("expected command widget width to increase after resize, got %d -> %d", initialSize.Width, updatedSize.Width)
 	}
 	leftWidth, _, panelHeight, _ := app.panelAreaMetrics()
-	expected := panelcontent.Size{
-		Width:  max(1, leftWidth-2),
-		Height: max(1, panelHeight-2),
-	}
+	expected, _ := app.leftPanel.FrameContentSize(ctx, leftWidth, panelHeight)
 	if updatedSize != expected {
 		t.Fatalf("expected command widget size %+v after resize, got %+v", expected, updatedSize)
 	}

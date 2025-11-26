@@ -872,6 +872,10 @@ func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string
 }
 
 func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) string {
+	return p.renderFooterWithWidth(ctx, status, suppress, p.width)
+}
+
+func (p *Panel) renderFooterWithWidth(ctx context.Context, status string, suppress bool, width int) string {
 	if suppress {
 		return ""
 	}
@@ -890,11 +894,11 @@ func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) 
 	styled := make([]string, len(lines))
 	for i, line := range lines {
 		text := line
-		if lipgloss.Width(text) > p.width {
-			text = truncateToWidth(text, p.width)
+		if lipgloss.Width(text) > width {
+			text = truncateToWidth(text, width)
 		}
 		style := uistyles.PanelFooterStyle.Copy().
-			Width(p.width).
+			Width(width).
 			Height(1)
 		styled[i] = style.Align(lipgloss.Left).Render(text)
 	}
@@ -917,19 +921,29 @@ func (p *Panel) renderFramedFooter(content string, width int) (string, int) {
 	return frame, lipgloss.Height(frame)
 }
 
-// EstimatedFooterHeight approximates the framed footer height for the given width.
-// It reuses the widget-provided footer state and respects suppression flags.
-func (p *Panel) EstimatedFooterHeight(ctx context.Context, width int) int {
-	if p == nil || width <= 0 {
-		return 0
+// FrameContentSize computes the content rectangle and footer height for the given frame.
+func (p *Panel) FrameContentSize(ctx context.Context, frameWidth, frameHeight int) (panelcontent.Size, int) {
+	if frameWidth <= 0 {
+		frameWidth = 1
 	}
+	if frameHeight <= 0 {
+		frameHeight = 1
+	}
+	contentWidth := max(1, frameWidth-2)
 	info := p.frameInfo(ctx)
-	footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
-	footerFrame, footerHeight := p.renderFramedFooter(footerContent, width)
+	footerContent := p.renderFooterWithWidth(ctx, info.FooterStatus, info.SuppressFooter, contentWidth)
+	footerFrame, footerHeight := p.renderFramedFooter(footerContent, frameWidth)
 	if info.SuppressFooter || footerFrame == "" {
-		return 0
+		footerHeight = 0
 	}
-	return footerHeight
+	contentHeight := max(1, frameHeight-footerHeight-2)
+	return panelcontent.Size{Width: contentWidth, Height: contentHeight}, footerHeight
+}
+
+// SetFrameDimensions accepts a frame size (outer border box) and applies the derived content size.
+func (p *Panel) SetFrameDimensions(ctx context.Context, frameWidth, frameHeight int) {
+	size, _ := p.FrameContentSize(ctx, frameWidth, frameHeight)
+	p.SetDimensions(ctx, size.Width, size.Height)
 }
 
 func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title string, width, height int, focused bool, hasFooter bool) string {

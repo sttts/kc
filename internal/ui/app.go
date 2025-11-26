@@ -582,29 +582,15 @@ func (a *App) resizePanelsForCurrentLayout() {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 	log := ctrllog.FromContext(ctx).WithName("ui").WithName("panelResize")
-	computeContentHeight := func(p *Panel, width int) int {
-		if p == nil || width <= 0 {
-			return 0
-		}
-		footerHeight := p.EstimatedFooterHeight(ctx, width)
-		return max(1, panelHeight-footerHeight-2)
-	}
 	resize := func(p *Panel, width int) {
 		if p == nil || width <= 0 {
 			return
 		}
-		contentWidth := max(1, width-2)
-		p.SetDimensions(ctx, contentWidth, computeContentHeight(p, width))
+		p.SetFrameDimensions(ctx, width, panelHeight)
 	}
 	resize(a.leftPanel, leftWidth)
 	resize(a.rightPanel, rightWidth)
-	log.V(1).Info("panels resized",
-		"leftWidth", leftWidth,
-		"rightWidth", rightWidth,
-		"panelHeight", panelHeight,
-		"leftContentHeight", computeContentHeight(a.leftPanel, leftWidth),
-		"rightContentHeight", computeContentHeight(a.rightPanel, rightWidth),
-	)
+	log.V(1).Info("panels resized", "leftWidth", leftWidth, "rightWidth", rightWidth, "panelHeight", panelHeight)
 }
 
 func (a *App) panelWidthPercentFor(panelIdx int) int {
