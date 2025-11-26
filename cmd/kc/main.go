@@ -137,6 +137,14 @@ func main() {
 		ns = strings.TrimSpace(cli.Namespace)
 	}
 
+	// After the UI exits, run a minimal cleanup mirroring the manual sequence:
+	// hop to alt screen, disable kitty keyboard protocol, return to primary.
+	defer func() {
+		fmt.Print("\033[?1049h") // alt screen on
+		fmt.Print("\033[>u")     // kitty: push zero (disable)
+		fmt.Print("\033[?1049l") // back to primary
+	}()
+
 	// Run the application
 	runCfg := ui.RunConfig{
 		Namespace:          ns,

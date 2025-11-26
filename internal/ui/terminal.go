@@ -521,3 +521,11 @@ func (t *Terminal) ClearTyped() { t.hasTyped = false }
 
 // SetLogger installs a logger for terminal lifecycle events.
 func (t *Terminal) SetLogger(log logr.Logger) { t.log = log }
+
+// Close shuts down the underlying emulator/PTY.
+func (t *Terminal) Close() error {
+	if t == nil || t.terminal == nil {
+		return nil
+	}
+	return t.terminal.Close()
+}

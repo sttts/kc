@@ -2748,10 +2748,10 @@ func Run(ctx context.Context, cfg RunConfig) error {
 
 	// Ensure terminal is reset on exit
 	defer func() {
-		// Reset terminal to normal state
-		fmt.Print("\033[?1049l") // Exit alternate screen
-		fmt.Print("\033[?25h")   // Show cursor
-		fmt.Print("\033[0m")     // Reset all attributes
+		// Close the embedded terminal/PTY to restore its raw mode
+		if app.terminal != nil {
+			_ = app.terminal.Close()
+		}
 		// Stop background resources
 		if app.discoveryCancel != nil {
 			app.discoveryCancel()
