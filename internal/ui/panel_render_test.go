@@ -86,6 +86,26 @@ func TestFooterIndentWithoutMode(t *testing.T) {
 	}
 }
 
+func TestRenderWithoutFooterKeepsContentHeight(t *testing.T) {
+	ctx := context.Background()
+	p := NewPanel("test")
+	stub := &sizingWidget{
+		info: panelcontent.FrameInfo{
+			SuppressFooter: true,
+			FooterStatus:   "status",
+		},
+	}
+	p.widgets[p.mode] = stub
+
+	panelHeight := 8
+	p.Render(ctx, 30, panelHeight, false)
+
+	expectedHeight := max(1, panelHeight-2)
+	if stub.last.Height != expectedHeight {
+		t.Fatalf("expected widget height %d, got %d", expectedHeight, stub.last.Height)
+	}
+}
+
 type footerStub struct {
 	footer string
 }
@@ -99,4 +119,25 @@ func (f *footerStub) Teardown(context.Context)                        {}
 func (f *footerStub) Footer(context.Context, int) string              { return f.footer }
 func (f *footerStub) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
 	return panelcontent.FrameInfo{}
+}
+
+type sizingWidget struct {
+	info panelcontent.FrameInfo
+	last panelcontent.Size
+}
+
+func (s *sizingWidget) Init(context.Context) tea.Cmd                    { return nil }
+func (s *sizingWidget) Update(context.Context, tea.Msg) (tea.Cmd, bool) { return nil, false }
+func (s *sizingWidget) View(_ context.Context, frame panelcontent.Frame) string {
+	lines := make([]string, max(1, frame.Size.Height))
+	for i := range lines {
+		lines[i] = "x"
+	}
+	return strings.Join(lines, "\n")
+}
+func (s *sizingWidget) Resize(_ context.Context, size panelcontent.Size) { s.last = size }
+func (s *sizingWidget) SetFocus(context.Context, bool)                   {}
+func (s *sizingWidget) Teardown(context.Context)                         {}
+func (s *sizingWidget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
+	return s.info
 }

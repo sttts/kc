@@ -671,12 +671,9 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 		footerHeight = 0
 	}
 	frameHeight = max(2, height-footerHeight)
-	// If footer is suppressed, we can reclaim the bottom border row for content.
-	if info.SuppressFooter {
-		contentHeight = max(1, frameHeight-1)
-	} else {
-		contentHeight = max(1, frameHeight-2)
-	}
+	// The frame always includes both a top and bottom border row; keep content height
+	// consistent regardless of whether a footer bar is rendered.
+	contentHeight = max(1, frameHeight-2)
 	p.SetDimensions(ctx, contentWidth, contentHeight)
 	info = p.frameInfo(ctx)
 
