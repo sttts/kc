@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/ui/panelcontent"
+	uistyles "github.com/sttts/kc/internal/ui/styles"
 	"github.com/sttts/kc/pkg/appconfig"
 	bubbleterm "github.com/taigrr/bubbleterm"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -37,12 +39,20 @@ type CommandWidget struct {
 	// Watch state
 	watchInterval time.Duration
 	watchToken    int
+	// Heartbeat / status
+	heartbeatToken int
+	heartbeatPhase int
+	heartbeatUntil time.Time
+	heartbeatOn    bool
+	exitKnown      bool
+	exitCode       int
 }
 
 func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
 	return &CommandWidget{
 		panelDeps: deps,
 		config:    config,
+		log:       ctrllog.Log.WithName("command"),
 	}
 }
 
@@ -52,6 +62,7 @@ func (w *CommandWidget) Init(ctx context.Context) tea.Cmd {
 
 func (w *CommandWidget) Teardown(ctx context.Context) {
 	w.watchToken++
+	w.heartbeatToken++
 	if w.cmd != nil && w.cmd.Process != nil {
 		_ = w.cmd.Process.Kill()
 	}
@@ -67,7 +78,22 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 		if tick.token != w.watchToken || w.watchInterval <= 0 {
 			return nil, false
 		}
+		w.armHeartbeat()
+		w.log.Info("restarting command on watch interval", "name", w.config.Name, "interval", w.watchInterval)
 		return w.startPendingCommand(), true
+	}
+	if tick, ok := msg.(heartbeatMsg); ok {
+		if tick.token != w.heartbeatToken || !w.heartbeatOn {
+			return nil, false
+		}
+		if time.Now().After(w.heartbeatUntil) {
+			w.heartbeatOn = false
+			return nil, true
+		}
+		w.heartbeatPhase = (w.heartbeatPhase + 1) % len(heartbeatFrames)
+		return tea.Tick(heartbeatInterval, func(time.Time) tea.Msg {
+			return heartbeatMsg{token: tick.token}
+		}), true
 	}
 
 	if w.terminal != nil {
@@ -115,6 +141,9 @@ func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) stri
 func (w *CommandWidget) Resize(ctx context.Context, size panelcontent.Size) {
 	w.width = size.Width
 	w.height = size.Height
+	if w.log.GetSink() != nil {
+		w.log.V(1).Info("command widget resized", "width", w.width, "height", w.height)
+	}
 	if w.terminal != nil {
 		msg := tea.WindowSizeMsg{Width: size.Width, Height: size.Height}
 		model, _ := w.terminal.Update(msg)
@@ -217,6 +246,11 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 	// Setup exit handler
 	term.GetEmulator().SetOnExit(func(code string) {
 		w.running = false
+		w.exitKnown = false
+		if c, err := strconv.Atoi(strings.TrimSpace(code)); err == nil {
+			w.exitCode = c
+			w.exitKnown = true
+		}
 		// Handle OnExit behavior
 		// If keep-open, we just leave the terminal view as is (it shows output)
 		// If close, we should notify panel to switch back
@@ -224,6 +258,7 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 
 	w.running = true
 	w.err = nil
+	w.exitKnown = false
 
 	envVars := []string{}
 	for _, kv := range w.cmd.Env {
@@ -244,11 +279,15 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 		w.terminal.Init(),
 		w.terminal.StartCommand(w.cmd),
 		w.restartWatchTimer(),
+		w.triggerHeartbeat(),
 	)
 }
 
 type debounceMsg struct{}
 type commandWatchMsg struct {
+	token int
+}
+type heartbeatMsg struct {
 	token int
 }
 
@@ -279,7 +318,7 @@ func (w *CommandWidget) RefreshFolder(ctx context.Context) {}
 func (w *CommandWidget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
 	return panelcontent.FrameInfo{
 		Breadcrumb:     w.config.Name,
-		HeaderStatus:   "",
+		HeaderStatus:   w.heartbeatStatus(),
 		SuppressFooter: true,
 	}
 }
@@ -313,3 +352,38 @@ func (w *CommandWidget) restartWatchTimer() tea.Cmd {
 		return commandWatchMsg{token: token}
 	})
 }
+
+func (w *CommandWidget) triggerHeartbeat() tea.Cmd {
+	w.armHeartbeat()
+	token := w.heartbeatToken
+	return tea.Tick(heartbeatInterval, func(time.Time) tea.Msg {
+		return heartbeatMsg{token: token}
+	})
+}
+
+func (w *CommandWidget) armHeartbeat() {
+	w.heartbeatToken++
+	w.heartbeatPhase = 0
+	w.heartbeatOn = true
+	w.heartbeatUntil = time.Now().Add(heartbeatBurst)
+}
+
+func (w *CommandWidget) heartbeatStatus() string {
+	frame := heartbeatFrames[w.heartbeatPhase%len(heartbeatFrames)]
+	if !w.heartbeatOn {
+		frame = heartbeatFrames[0]
+	}
+	if !w.running && !w.exitKnown && !w.heartbeatOn {
+		return ""
+	}
+	style := lipgloss.NewStyle().Foreground(lipgloss.Color(uistyles.ColorWhite)).Bold(true)
+	if w.exitKnown && w.exitCode != 0 {
+		style = style.Foreground(lipgloss.Color("1"))
+	}
+	return style.Render(frame)
+}
+
+var heartbeatFrames = []string{"<3", "<3", "<3", "<<3", "<3<", "<3"}
+
+const heartbeatInterval = 150 * time.Millisecond
+const heartbeatBurst = 900 * time.Millisecond

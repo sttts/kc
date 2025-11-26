@@ -511,8 +511,18 @@ func (a *App) panelIndexFor(panel *Panel) (int, bool) {
 	return -1, false
 }
 
+func (a *App) inlineTerminalHeight() int {
+	if a == nil || a.terminal == nil {
+		return 0
+	}
+	if a.showTerminal {
+		return 0
+	}
+	return 2
+}
+
 func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int, headerOffset int) {
-	reserved := 3
+	reserved := 1 + a.inlineTerminalHeight()
 	if a.toastActive {
 		reserved++
 	}
@@ -533,6 +543,7 @@ func (a *App) resizePanelsForCurrentLayout() {
 	contentHeight := max(1, panelHeight-2)
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
+	log := ctrllog.FromContext(ctx).WithName("ui").WithName("panelResize")
 	resize := func(p *Panel, width int) {
 		if p == nil || width <= 0 {
 			return
@@ -542,6 +553,7 @@ func (a *App) resizePanelsForCurrentLayout() {
 	}
 	resize(a.leftPanel, leftWidth)
 	resize(a.rightPanel, rightWidth)
+	log.V(1).Info("panels resized", "leftWidth", leftWidth, "rightWidth", rightWidth, "contentHeight", contentHeight)
 }
 
 func (a *App) panelWidthPercentFor(panelIdx int) int {

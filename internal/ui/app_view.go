@@ -53,8 +53,9 @@ func (a *App) View() tea.View {
 // renderMainView renders the main two-panel view
 func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Calculate dimensions
-	// Reserve space for: terminal (2) + function keys (1)
-	reserved := 3
+	terminalHeight := a.inlineTerminalHeight()
+	// Reserve space for the inline terminal (if visible) and function keys (1)
+	reserved := terminalHeight + 1
 	panelHeight := a.height - reserved
 	if panelHeight < 3 {
 		panelHeight = 3
@@ -97,16 +98,23 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	}
 
 	// Add terminal (2 lines)
-	terminalView, terminalCursor := a.renderTerminalArea()
+	terminalView := ""
+	var terminalCursor *tea.Cursor
+	if terminalHeight > 0 {
+		terminalView, terminalCursor = a.renderTerminalArea()
+	}
 
 	// Add function key bar
 	functionKeys := a.renderFunctionKeys()
-	combinedView := lipgloss.JoinVertical(
-		lipgloss.Left,
-		panels,
-		terminalView,
-		functionKeys,
-	)
+	combinedView := lipgloss.JoinVertical(lipgloss.Left, panels, functionKeys)
+	if terminalHeight > 0 {
+		combinedView = lipgloss.JoinVertical(
+			lipgloss.Left,
+			panels,
+			terminalView,
+			functionKeys,
+		)
+	}
 
 	// Busy overlay: show a small 2x2 ASCII animation centered over the main view
 	if a.busyActive {
