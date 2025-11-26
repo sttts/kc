@@ -8,14 +8,45 @@
   - Correct: `tea "charm.land/bubbletea/v2"`
   - Incorrect: `tea "charm.land/bubbletea"` (will break types between v1/v2)
 
-## Project Structure & Module Organization
-- `cmd/kc/`: Application entrypoint (main package).
-- `internal/ui/`: TUI components (App, Panel, Terminal).
-- `pkg/handlers/`: Resource handlers and registry.
-- `pkg/kubeconfig/`: Kubeconfig discovery and client creation.
-- `pkg/navigation/`, `pkg/resources/`: Navigation and resource helpers.
-- `examples/`: Minimal runnable samples (e.g., `examples/handler`, `examples/kubeconfig`).
-- Tests live next to code as `*_test.go` within each package.
+## Architecture & Project Structure
+
+The application is a **Kubernetes TUI** built with **Go 1.24** and **Bubble Tea v2**, structured around a hierarchical navigation model where resources are treated as "folders" and "files".
+
+### Core Components
+
+1.  **Entry Point (`cmd/kc`)**:
+    -   Uses `kong` for CLI argument parsing.
+    -   Sets up `controller-runtime` logging (zap).
+    -   Initializes the UI via `ui.Run`.
+
+2.  **UI Core (`internal/ui`)**:
+    -   **App Model**: The central Bubble Tea model (`App` struct in `app.go`). It manages global state: two panels (`leftPanel`, `rightPanel`), an integrated terminal, and modal overlays.
+    -   **Panels**: Each `Panel` is a self-contained component that displays either a list of items (a "Folder") or a content viewer (YAML, logs).
+    -   **Navigator**: (`internal/navigation`) Manages the navigation stack for each panel. It treats navigation as a stack of `Folder` objects, supporting "enter" (push) and "back" (pop) operations.
+
+3.  **Data Layer (`internal/tablecache`, `internal/cluster`)**:
+    -   **Live Data**: Uses **Informers** (via `controller-runtime`) to maintain a live cache of resources.
+    -   **Table Cache**: Decorates standard K8s clients to produce "Table" views (similar to `kubectl get`). It watches for changes and updates the UI in real-time.
+    -   **Cluster Pool**: Manages connections to Kubernetes clusters.
+
+4.  **Abstraction (`internal/models`)**:
+    -   **Folder Interface**: The core abstraction. A `Folder` provides a list of `Item`s.
+    -   **Enterable Interface**: Items that can be "entered" (like a Namespace or a Pod) implement this interface to return a new `Folder`.
+    -   **Universal Navigation**: Allows uniform navigation through Contexts → Namespaces → Resource Groups → Resources → Objects → Sub-resources.
+
+### Key Characteristics
+-   **Server-Side Rendering**: Relies on server-side printing (Table output) from Kubernetes to determine how to display resources, ensuring compatibility with CRDs.
+-   **"Vibe-Coded"**: Embraces an AI-assisted, experimental coding style, prioritizing features and "feel" over strict traditional rigor, while maintaining a solid modular architecture.
+
+### Directory Layout
+-   `cmd/kc/`: Application entrypoint.
+-   `internal/ui/`: TUI components (App, Panel, Terminal).
+-   `internal/models/`: Core interfaces (Folder, Item, Enterable).
+-   `internal/tablecache/`: Live data caching and Table view materialization.
+-   `internal/cluster/`: Kubeconfig and client pool management.
+-   `internal/navigation/`: Stack-based navigation logic.
+-   `pkg/`: Reusable helpers (config, etc.).
+-   `examples/`: Minimal runnable samples.
 
 ## Build, Test, and Development Commands
 - Build binary: `go build -o kc ./cmd/kc`
