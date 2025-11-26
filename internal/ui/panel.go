@@ -1073,14 +1073,14 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 		border.BottomRight = "┤"
 	}
 
-	lines[len(lines)-1] = composeBottomBorder(border, boxStyle, info, width, modeLabel(p.mode))
+	lines[len(lines)-1] = p.composeBottomBorder(border, boxStyle, info, width, modeLabel(p.mode))
 
 	frame := top + "\n" + strings.Join(lines, "\n")
 
 	return frame
 }
 
-func composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.Style, info panelcontent.FrameInfo, width int, mode string) string {
+func (p *Panel) composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.Style, info panelcontent.FrameInfo, width int, mode string) string {
 	borderStyle := lipgloss.NewStyle().
 		Foreground(boxStyle.GetBorderBottomForeground()).
 		Background(boxStyle.GetBorderBottomBackground())
@@ -1113,7 +1113,13 @@ func composeBottomBorder(border lipgloss.Border, boxStyle lipgloss.Style, info p
 	renderedText := ""
 	textWidth := 0
 	if text != "" {
-		renderedText = uistyles.PanelFooterStyle.Copy().Render(text)
+		style := uistyles.PanelFooterStyle.Copy()
+		if p.commandFocused {
+			style = style.
+				Background(lipgloss.Color(uistyles.ColorModalBg)).
+				Foreground(lipgloss.Color(uistyles.ColorBlack))
+		}
+		renderedText = style.Render(text)
 		textWidth = lipgloss.Width(renderedText)
 	}
 	fillerWidth := contentWidth - textWidth

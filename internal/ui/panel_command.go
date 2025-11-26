@@ -146,6 +146,10 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 				return tea.Batch(timer, cmd), true
 			}
 			// When focused, consume all other keys.
+			// Keep terminal cursor visibility aligned with focus.
+			if w.terminal != nil {
+				w.terminal.Focus()
+			}
 		}
 		model, cmd := w.terminal.Update(msg)
 		if term, ok := model.(*bubbleterm.Model); ok {

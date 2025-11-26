@@ -259,7 +259,7 @@ func (a *App) renderFunctionKeys() string {
 	} else {
 		panel := a.activePanelRef()
 		if panel != nil && panel.HasCommandFocus() {
-			keys = []string{uistyles.FunctionKeyStyle.Render("Esc Esc") + uistyles.FunctionKeyDescriptionStyle.Render("Exit command")}
+			keys = []string{uistyles.FunctionKeyStyle.Render("Esc Esc") + uistyles.FunctionKeyDescriptionStyle.Render("Drop focus")}
 		} else {
 			caps := a.capabilitiesForPanel(panel)
 			renderKey := func(key, label string, enabled bool) string {
