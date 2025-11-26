@@ -61,9 +61,15 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 	}
 
 	if w.terminal != nil {
-		// Special case: Tab should remain a panel navigation key even for interactive commands.
-		if key, ok := msg.(tea.KeyMsg); ok && key.String() == "tab" {
-			return nil, false
+		if key, ok := msg.(tea.KeyMsg); ok {
+			// Non-interactive commands should not consume key input.
+			if !w.config.Interactive {
+				return nil, false
+			}
+			// Special case: Tab should remain a panel navigation key even for interactive commands.
+			if key.String() == "tab" {
+				return nil, false
+			}
 		}
 		model, cmd := w.terminal.Update(msg)
 		if term, ok := model.(*bubbleterm.Model); ok {
