@@ -25,7 +25,8 @@ func TestCommandOptionsChangedMsgAppliesWatchInterval(t *testing.T) {
 		Name:    "Top Nodes",
 		Command: "echo ok",
 	}
-	_ = app.leftPanel.StartCommand(ctx, cmdCfg, nil, schema.GroupVersionResource{})
+	// Frame size is irrelevant for this test; use zeroes.
+	_ = app.leftPanel.StartCommand(ctx, cmdCfg, nil, schema.GroupVersionResource{}, 0, 0)
 
 	msg := CommandOptionsChangedMsg{
 		WatchInterval: 2 * time.Second,

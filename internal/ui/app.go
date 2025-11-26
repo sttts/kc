@@ -3653,7 +3653,12 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			}
 		}
 
-		start := p.StartCommand(a.ctx, cmd, items, gvr)
+		leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+		frameWidth := leftWidth
+		if idx := a.panelIndex(p); idx == 1 {
+			frameWidth = rightWidth
+		}
+		start := p.StartCommand(a.ctx, cmd, items, gvr, frameWidth, panelHeight)
 		var sched tea.Cmd
 		if panelIdx := a.panelIndex(p); panelIdx >= 0 {
 			ctxCmd, cancelCmd := context.WithTimeout(a.ctx, panelContextTimeout)

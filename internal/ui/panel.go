@@ -69,8 +69,10 @@ func NewPanel(title string) *Panel {
 	return p
 }
 
-// StartCommand starts a custom command in the panel
-func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource) tea.Cmd {
+// StartCommand starts a custom command in the panel using an optional frame size.
+// When frameWidth/frameHeight are >0, the panel is resized for the command mode
+// before launching the widget to ensure bubbleterm dimensions are correct.
+func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource, frameWidth, frameHeight int) tea.Cmd {
 	// Create widget if not exists or if config changed (simplified: always create new for now)
 	widget := NewCommandWidget(p.listWidgetDeps(), config)
 
@@ -81,6 +83,11 @@ func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig
 
 	// Switch mode
 	cmd := p.SetMode(ctx, PanelModeCommand)
+
+	// Resize to the provided frame size now that the command mode is active.
+	if frameWidth > 0 && frameHeight > 0 {
+		p.SetFrameDimensions(ctx, frameWidth, frameHeight)
+	}
 
 	// Start command
 	startCmd := widget.StartCommand(ctx, items, gvr)

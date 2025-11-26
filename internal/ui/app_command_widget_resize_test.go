@@ -48,6 +48,8 @@ func TestCommandWidgetResizedWhenPanelWidthChangesViaViewOptions(t *testing.T) {
 		Accept:            true,
 		Close:             true,
 	})
+	// Re-render to apply new frame sizes to the widget.
+	app.renderMainView()
 
 	updatedSize := leftWidget.lastSize
 	if updatedSize.Width <= initialSize.Width {
