@@ -651,6 +651,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, tea.Batch(cmds...)
 		}
+		if !a.showTerminal {
+			if panelCmds := a.updatePanelsWithMsg(msg); len(panelCmds) > 0 {
+				cmds = append(cmds, panelCmds...)
+				a.invalidateView("panel update msg")
+			}
+		}
 		if cmd := a.updateTerminal(msg, ""); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
