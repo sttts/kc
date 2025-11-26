@@ -82,6 +82,14 @@ func (w *CommandWidget) Teardown(ctx context.Context) {
 }
 
 func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
+	// Mouse events should respect interactive focus.
+	if mm, ok := msg.(panelcontent.MouseMsg); ok && w.interactiveOn {
+		model, cmd := w.terminal.Update(mm)
+		if term, ok := model.(*bubbleterm.Model); ok {
+			w.terminal = term
+		}
+		return cmd, true
+	}
 	// Handle debounce timer
 	if _, ok := msg.(debounceMsg); ok {
 		return w.startPendingCommand(), true
@@ -116,6 +124,19 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 	}
 
 	if w.terminal != nil {
+		if mm, ok := msg.(panelcontent.MouseMsg); ok && w.interactiveOn {
+			if mm.Row > 0 {
+				mm.Row--
+			}
+			if mm.Row > 0 {
+				mm.Row--
+			}
+			model, cmd := w.terminal.Update(mm)
+			if term, ok := model.(*bubbleterm.Model); ok {
+				w.terminal = term
+			}
+			return cmd, true
+		}
 		if key, ok := msg.(tea.KeyMsg); ok {
 			// Non-interactive commands should not consume key input.
 			if !w.config.Interactive {
@@ -127,6 +148,9 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 					return w.setInteractiveFocus(true), true
 				}
 				return nil, false
+			}
+			if w.terminal != nil {
+				w.terminal.Focus()
 			}
 			if key.String() == "esc" {
 				if w.escArmed {
