@@ -116,8 +116,8 @@ func TestResourceGroupItemPeeksStopAfterForbidden(t *testing.T) {
 		return false, denied
 	}
 
-	if empty := item.Empty(); empty {
-		t.Fatalf("expected resource not to be marked empty on forbidden")
+	if empty := item.Empty(); !empty {
+		t.Fatalf("expected resource to be marked empty on forbidden")
 	}
 	if calls != 1 {
 		t.Fatalf("expected a single peek attempt, got %d", calls)
@@ -125,13 +125,16 @@ func TestResourceGroupItemPeeksStopAfterForbidden(t *testing.T) {
 	if !item.peekBlocked {
 		t.Fatalf("expected peeks to be blocked after forbidden")
 	}
+	if count := item.Count(); count != 0 {
+		t.Fatalf("expected count to be zero when peeks are blocked, got %d", count)
+	}
 
 	item.hasAny = func(context.Context, schema.GroupVersionResource, string) (bool, error) {
 		calls++
 		return true, nil
 	}
-	if empty := item.Empty(); empty {
-		t.Fatalf("expected empty status to remain false after blocking")
+	if empty := item.Empty(); !empty {
+		t.Fatalf("expected empty status to remain true after blocking")
 	}
 	if calls != 1 {
 		t.Fatalf("expected forbidden to suppress subsequent peeks, got %d calls", calls)
