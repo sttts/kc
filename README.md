@@ -92,12 +92,14 @@ commands:
   - name: "Top Pods"
     command: "kubectl top pods -n {{.Namespace}}"
     type: "namespace" # Sticky for the current namespace
+    watchInterval: 5s
     showFor:
       resources: ["pods"]
 
   - name: "Top Nodes"
     command: "kubectl top nodes"
     type: "global" # Independent of selection
+    watchInterval: 5s
 
   - name: "Describe Resource"
     command: "kubectl describe {{.Resource}} {{.Name}} -n {{.Namespace}}"

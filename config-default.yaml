@@ -43,6 +43,7 @@ commands:
     command: kubectl top nodes
     type: global
     location: panel
+    watchInterval: 5s
     debounce: 500ms
     onExit: keep-open
   - name: Top Pods

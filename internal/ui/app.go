@@ -3667,7 +3667,17 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			}
 		}
 
-		return p.StartCommand(a.ctx, cmd, items, gvr)
+		start := p.StartCommand(a.ctx, cmd, items, gvr)
+		var sched tea.Cmd
+		if panelIdx := a.panelIndex(p); panelIdx >= 0 {
+			ctxCmd, cancelCmd := context.WithTimeout(a.ctx, panelContextTimeout)
+			_ = p.SetCommandWatchInterval(ctxCmd, cmd.WatchInterval.Duration)
+			cancelCmd()
+			if cmd.WatchInterval.Duration > 0 {
+				sched = a.setCommandWatchInterval(panelIdx, cmd.WatchInterval.Duration)
+			}
+		}
+		return tea.Batch(start, sched)
 	}, func() tea.Cmd {
 		a.hideModal()
 		return nil

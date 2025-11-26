@@ -149,6 +149,7 @@ type CommandConfig struct {
 	ShowFor                CommandShowForConfig `json:"showFor"`
 	Location               CommandLocation      `json:"location"`
 	Interactive            bool                 `json:"interactive"`
+	WatchInterval          metav1.Duration      `json:"watchInterval"`
 	Debounce               metav1.Duration      `json:"debounce"`
 	OnExit                 CommandExitBehavior  `json:"onExit"`
 }
@@ -212,12 +213,14 @@ func Default() *Config {
 		Terminal: TerminalConfig{Follow: true, Mode: TerminalModeOverlay},
 		Commands: []CommandConfig{
 			{
-				Name:     "Top Nodes",
-				Command:  "kubectl top nodes",
-				Type:     CommandTypeGlobal,
-				Location: CommandLocationPanel,
-				Debounce: metav1.Duration{Duration: 500 * time.Millisecond},
-				OnExit:   CommandExitKeepOpen,
+				Name:          "Top Nodes",
+				Command:       "kubectl top nodes",
+				Type:          CommandTypeGlobal,
+				Location:      CommandLocationPanel,
+				WatchInterval: metav1.Duration{Duration: 5 * time.Second},
+				Interactive:   false,
+				Debounce:      metav1.Duration{Duration: 500 * time.Millisecond},
+				OnExit:        CommandExitKeepOpen,
 			},
 			{
 				Name:     "Top Pods",
