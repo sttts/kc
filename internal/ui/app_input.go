@@ -59,6 +59,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		return a, nil
 
 	case "tab":
+		if a.interactiveCommandActive() {
+			break
+		}
 		leftWidth, rightWidth, _, _ := a.panelAreaMetrics()
 		if leftWidth <= 0 && rightWidth <= 0 {
 			return a, nil
@@ -78,7 +81,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	case "f10":
 		// F10 only quits kc when not in fullscreen mode
 		// In fullscreen mode, F10 should go to terminal (for shell commands)
-		if !a.showTerminal {
+		if !a.showTerminal && !a.interactiveCommandActive() {
 			return a, tea.Quit
 		}
 		// In fullscreen mode, don't handle F10 here - let it go to terminal
