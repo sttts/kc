@@ -62,7 +62,10 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	}
 	leftPanelWidth, rightPanelWidth := a.panelWidthsFor(a.width)
 
-	var panelCursor *tea.Cursor
+	var (
+		panelCursor *tea.Cursor
+		panelOrigin int
+	)
 
 	renderPanel := func(panel *Panel, width int, focused bool) string {
 		if width <= 0 {
@@ -74,7 +77,11 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 		defer cancel()
 		view := panel.Render(ctx, width, panelHeight, focused)
-		if panel == a.activePanelRef() {
+		if panel == a.activePanelRef() && panel.HasCommandFocus() {
+			panelOrigin = 0
+			if panel == a.rightPanel && leftPanelWidth > 0 {
+				panelOrigin = leftPanelWidth
+			}
 			if cur := panel.widgetCursor(ctx); cur != nil {
 				panelCursor = cur
 			}
@@ -133,10 +140,15 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	}
 
 	// Adjust cursor position for the combined view.
-	// Prefer panel cursor; fall back to terminal cursor.
+	// Prefer panel cursor when focused; fall back to terminal cursor.
 	if panelCursor != nil {
-		// Panel cursor already relative to panel frame.
-		return combinedView, panelCursor
+		offsetX := panelOrigin + 1
+		offsetY := 1
+		adjusted := tea.NewCursor(panelCursor.X+offsetX, panelCursor.Y+offsetY)
+		adjusted.Blink = panelCursor.Blink
+		adjusted.Color = panelCursor.Color
+		adjusted.Shape = panelCursor.Shape
+		return combinedView, adjusted
 	}
 	if terminalCursor != nil {
 		// Calculate the offset: panels height
