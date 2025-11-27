@@ -135,6 +135,7 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	// Adjust cursor position for the combined view.
 	// Prefer panel cursor; fall back to terminal cursor.
 	if panelCursor != nil {
+		// Panel cursor already relative to panel frame.
 		return combinedView, panelCursor
 	}
 	if terminalCursor != nil {
