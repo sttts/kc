@@ -304,6 +304,15 @@ func (p *Panel) ensureWidget(ctx context.Context, mode PanelViewMode) PanelWidge
 	return widget
 }
 
+func (p *Panel) widgetCursor(ctx context.Context) *tea.Cursor {
+	if widget := p.ensureActiveWidget(ctx); widget != nil {
+		if cp, ok := widget.(interface{ Cursor() *tea.Cursor }); ok {
+			return cp.Cursor()
+		}
+	}
+	return nil
+}
+
 // Mode returns the currently active view mode.
 func (p *Panel) Mode() PanelViewMode { return p.mode }
 
@@ -676,22 +685,27 @@ func (p *Panel) View() tea.View {
 	info := p.frameInfo(ctx)
 	header := p.renderHeader(info.Breadcrumb, info.HeaderStatus)
 	content := p.renderContent(ctx)
+	cursor := p.widgetCursor(ctx)
 	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 
 	if footer == "" {
-		return tea.NewView(lipgloss.JoinVertical(
+		view := tea.NewView(lipgloss.JoinVertical(
 			lipgloss.Left,
 			header,
 			content,
 		))
+		view.Cursor = cursor
+		return view
 	}
 
-	return tea.NewView(lipgloss.JoinVertical(
+	view := tea.NewView(lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
 		content,
 		footer,
 	))
+	view.Cursor = cursor
+	return view
 }
 
 // Render draws the fully framed panel, including optional footer, using the provided dimensions.
@@ -1002,7 +1016,7 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 		Background(lipgloss.Blue).
 		Width(width).
 		Height(height)
-	if p.commandFocused && focused {
+	if p.commandFocused {
 		boxStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(uistyles.ColorDarkGrey)).
@@ -1024,7 +1038,7 @@ func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title s
 			Background(lipgloss.Blue).
 			Padding(0, 1)
 	}
-	if p.commandFocused && focused {
+	if p.commandFocused {
 		labelStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color(uistyles.ColorBlack)).
 			Background(lipgloss.Color(uistyles.ColorModalBg)).

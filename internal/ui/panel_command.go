@@ -128,9 +128,6 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 			if mm.Row > 0 {
 				mm.Row--
 			}
-			if mm.Row > 0 {
-				mm.Row--
-			}
 			model, cmd := w.terminal.Update(mm)
 			if term, ok := model.(*bubbleterm.Model); ok {
 				w.terminal = term
@@ -215,6 +212,15 @@ func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) stri
 		return w.lastFrame
 	}
 	return "Starting..."
+}
+
+// Cursor exposes the terminal cursor when present.
+func (w *CommandWidget) Cursor() *tea.Cursor {
+	if w.terminal == nil {
+		return nil
+	}
+	view := w.terminal.View()
+	return view.Cursor
 }
 
 func (w *CommandWidget) Resize(ctx context.Context, size panelcontent.Size) {
