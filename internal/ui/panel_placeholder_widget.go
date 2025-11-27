@@ -24,9 +24,9 @@ func (w *placeholderWidget) Update(context.Context, tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-func (w *placeholderWidget) View(ctx context.Context, frame panelcontent.Frame) string {
+func (w *placeholderWidget) View(ctx context.Context, frame panelcontent.Frame) tea.View {
 	if w.panel == nil {
-		return ""
+		return tea.NewView("")
 	}
 	width := frame.Size.Width
 	if width <= 0 {
@@ -50,7 +50,7 @@ func (w *placeholderWidget) View(ctx context.Context, frame panelcontent.Frame) 
 	if frame.Focused {
 		style = style.Copy().Bold(true)
 	}
-	return style.Render(content)
+	return tea.NewView(style.Render(content))
 }
 
 func (w *placeholderWidget) Resize(context.Context, panelcontent.Size) {}

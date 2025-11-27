@@ -183,9 +183,9 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 	return nil, false
 }
 
-func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) string {
+func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) tea.View {
 	if w.err != nil {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(fmt.Sprintf("Error: %v", w.err))
+		return tea.NewView(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(fmt.Sprintf("Error: %v", w.err)))
 	}
 
 	if w.terminal != nil {
@@ -195,23 +195,23 @@ func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) stri
 			if content != "" {
 				w.lastFrame = content
 			}
-			return content
+			return tea.NewView(content)
 		}
 		if w.lastFrame != "" {
-			return w.lastFrame
+			return tea.NewView(w.lastFrame)
 		}
-		return ""
+		return tea.NewView("")
 	}
 
 	if w.output != "" {
 		w.lastFrame = w.output
-		return w.output
+		return tea.NewView(w.output)
 	}
 
 	if w.lastFrame != "" {
-		return w.lastFrame
+		return tea.NewView(w.lastFrame)
 	}
-	return "Starting..."
+	return tea.NewView("Starting...")
 }
 
 // Cursor exposes the terminal cursor when present.

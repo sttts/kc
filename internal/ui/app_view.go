@@ -62,6 +62,8 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 	}
 	leftPanelWidth, rightPanelWidth := a.panelWidthsFor(a.width)
 
+	var panelCursor *tea.Cursor
+
 	renderPanel := func(panel *Panel, width int, focused bool) string {
 		if width <= 0 {
 			return ""
@@ -71,7 +73,13 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 		}
 		ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 		defer cancel()
-		return panel.Render(ctx, width, panelHeight, focused)
+		view := panel.Render(ctx, width, panelHeight, focused)
+		if panel == a.activePanelRef() {
+			if cur := panel.widgetCursor(ctx); cur != nil {
+				panelCursor = cur
+			}
+		}
+		return view
 	}
 
 	leftPanel := ""
@@ -124,8 +132,11 @@ func (a *App) renderMainView() (string, *tea.Cursor) {
 		}
 	}
 
-	// Adjust cursor position for the combined view
-	// The cursor needs to be offset by the height of panels
+	// Adjust cursor position for the combined view.
+	// Prefer panel cursor; fall back to terminal cursor.
+	if panelCursor != nil {
+		return combinedView, panelCursor
+	}
 	if terminalCursor != nil {
 		// Calculate the offset: panels height
 		offsetY := panelHeight

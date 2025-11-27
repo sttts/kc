@@ -86,10 +86,10 @@ func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	return w.selectionCmd(ctx, prev, cmd), true
 }
 
-func (w *Widget) View(ctx context.Context, frame panelcontent.Frame) string {
+func (w *Widget) View(ctx context.Context, frame panelcontent.Frame) tea.View {
 	w.width = frame.Size.Width
 	w.height = frame.Size.Height
-	return w.render(ctx, frame.Focused)
+	return tea.NewView(w.render(ctx, frame.Focused))
 }
 
 func (w *Widget) Resize(ctx context.Context, size panelcontent.Size) {

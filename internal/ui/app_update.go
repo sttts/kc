@@ -668,6 +668,23 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return a, nil
 			}
+			if a.interactiveCommandActive() {
+				panel := a.activePanelRef()
+				if panel != nil {
+					model, cmd := panel.Update(mm)
+					if panelIdx, ok := a.panelIndexFor(panel); ok {
+						if panelIdx == 0 {
+							a.leftPanel = model.(*Panel)
+						} else if panelIdx == 1 {
+							a.rightPanel = model.(*Panel)
+						}
+					}
+					if cmd != nil {
+						cmds = append(cmds, cmd)
+					}
+					return a, tea.Batch(cmds...)
+				}
+			}
 			if cmd, panel, panelMsg, panelIdx, handled := a.dispatchPanelMouse(mm); handled {
 				if cmd != nil {
 					cmds = append(cmds, cmd)
