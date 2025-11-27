@@ -70,10 +70,12 @@ type selectionSpyWidget struct {
 
 func (s *selectionSpyWidget) Init(context.Context) tea.Cmd                    { return nil }
 func (s *selectionSpyWidget) Update(context.Context, tea.Msg) (tea.Cmd, bool) { return nil, false }
-func (s *selectionSpyWidget) View(context.Context, panelcontent.Frame) string { return "" }
-func (s *selectionSpyWidget) Resize(context.Context, panelcontent.Size)       {}
-func (s *selectionSpyWidget) SetFocus(context.Context, bool)                  {}
-func (s *selectionSpyWidget) Teardown(context.Context)                        {}
+func (s *selectionSpyWidget) View(context.Context, panelcontent.Frame) tea.View {
+	return tea.NewView("")
+}
+func (s *selectionSpyWidget) Resize(context.Context, panelcontent.Size) {}
+func (s *selectionSpyWidget) SetFocus(context.Context, bool)            {}
+func (s *selectionSpyWidget) Teardown(context.Context)                  {}
 func (s *selectionSpyWidget) OnSelectionChanged(_ context.Context, sel panelcontent.Selection) {
 	s.events = append(s.events, sel)
 }

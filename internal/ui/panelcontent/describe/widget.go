@@ -34,12 +34,12 @@ func (w *Widget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	return w.viewer.Update(msg)
 }
 
-func (w *Widget) View(_ context.Context, frame panelcontent.Frame) string {
-	return w.viewer.View(viewer.Frame{
+func (w *Widget) View(_ context.Context, frame panelcontent.Frame) tea.View {
+	return tea.NewView(w.viewer.View(viewer.Frame{
 		Width:   frame.Size.Width,
 		Height:  frame.Size.Height,
 		Focused: frame.Focused,
-	})
+	}))
 }
 
 func (w *Widget) Resize(_ context.Context, size panelcontent.Size) {

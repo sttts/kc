@@ -684,7 +684,7 @@ func (p *Panel) View() tea.View {
 
 	info := p.frameInfo(ctx)
 	header := p.renderHeader(info.Breadcrumb, info.HeaderStatus)
-	content := p.renderContent(ctx)
+	content := viewString(p.renderContent(ctx))
 	cursor := p.widgetCursor(ctx)
 	footer := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
 
@@ -780,7 +780,7 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 		title = p.currentPath
 	}
 	contentView := p.renderContentFocused(ctx, focused)
-	frame := p.renderFrame(contentView, info, title, width, frameHeight, focused, footerFrame != "")
+	frame := p.renderFrame(viewString(contentView), info, title, width, frameHeight, focused, footerFrame != "")
 	if footerFrame != "" {
 		p.renderCache = lipgloss.JoinVertical(lipgloss.Top, frame, footerFrame)
 	} else {
@@ -914,19 +914,19 @@ func (p *Panel) ellipsizePath(path string, width int) string {
 }
 
 // renderContent renders the panel content
-func (p *Panel) renderContent(ctx context.Context) string {
+func (p *Panel) renderContent(ctx context.Context) tea.View {
 	return p.renderContentFocused(ctx, false)
 }
 
 // renderContentFocused renders the panel content with focus state
-func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) string {
+func (p *Panel) renderContentFocused(ctx context.Context, isFocused bool) tea.View {
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		return widget.View(ctx, panelcontent.Frame{
 			Size:    panelcontent.Size{Width: p.width, Height: p.height},
 			Focused: isFocused,
 		})
 	}
-	return ""
+	return tea.NewView("")
 }
 
 func (p *Panel) renderFooter(ctx context.Context, status string, suppress bool) string {

@@ -15,7 +15,9 @@ type recordingWidget struct {
 
 func (w *recordingWidget) Init(context.Context) tea.Cmd                    { return nil }
 func (w *recordingWidget) Update(context.Context, tea.Msg) (tea.Cmd, bool) { return nil, false }
-func (w *recordingWidget) View(context.Context, panelcontent.Frame) string { return "" }
+func (w *recordingWidget) View(context.Context, panelcontent.Frame) tea.View {
+	return tea.NewView("")
+}
 func (w *recordingWidget) Resize(_ context.Context, size panelcontent.Size) {
 	w.resizeCount++
 	w.lastSize = size

@@ -112,11 +112,13 @@ type footerStub struct {
 
 func (f *footerStub) Init(context.Context) tea.Cmd                    { return nil }
 func (f *footerStub) Update(context.Context, tea.Msg) (tea.Cmd, bool) { return nil, false }
-func (f *footerStub) View(context.Context, panelcontent.Frame) string { return f.footer }
-func (f *footerStub) Resize(context.Context, panelcontent.Size)       {}
-func (f *footerStub) SetFocus(context.Context, bool)                  {}
-func (f *footerStub) Teardown(context.Context)                        {}
-func (f *footerStub) Footer(context.Context, int) string              { return f.footer }
+func (f *footerStub) View(context.Context, panelcontent.Frame) tea.View {
+	return tea.NewView(f.footer)
+}
+func (f *footerStub) Resize(context.Context, panelcontent.Size) {}
+func (f *footerStub) SetFocus(context.Context, bool)            {}
+func (f *footerStub) Teardown(context.Context)                  {}
+func (f *footerStub) Footer(context.Context, int) string        { return f.footer }
 func (f *footerStub) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
 	return panelcontent.FrameInfo{}
 }
@@ -128,12 +130,12 @@ type sizingWidget struct {
 
 func (s *sizingWidget) Init(context.Context) tea.Cmd                    { return nil }
 func (s *sizingWidget) Update(context.Context, tea.Msg) (tea.Cmd, bool) { return nil, false }
-func (s *sizingWidget) View(_ context.Context, frame panelcontent.Frame) string {
+func (s *sizingWidget) View(_ context.Context, frame panelcontent.Frame) tea.View {
 	lines := make([]string, max(1, frame.Size.Height))
 	for i := range lines {
 		lines[i] = "x"
 	}
-	return strings.Join(lines, "\n")
+	return tea.NewView(strings.Join(lines, "\n"))
 }
 func (s *sizingWidget) Resize(_ context.Context, size panelcontent.Size) { s.last = size }
 func (s *sizingWidget) SetFocus(context.Context, bool)                   {}
