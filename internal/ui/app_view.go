@@ -181,11 +181,18 @@ func (a *App) renderBusyOverlay() string {
 // renderTerminalArea renders the 2-line terminal area in main view
 func (a *App) renderTerminalArea() (string, *tea.Cursor) {
 	if view, cursor, ok := a.terminalAreaCache.get(); ok {
+		if a.interactiveCommandActive() {
+			return view, nil
+		}
 		return view, cursor
 	}
 	terminalView := a.terminal.View()
 	terminalContent := viewString(terminalView)
-	a.terminalAreaCache.set(terminalContent, terminalView.Cursor)
+	cur := terminalView.Cursor
+	if a.interactiveCommandActive() {
+		cur = nil
+	}
+	a.terminalAreaCache.set(terminalContent, cur)
 	view, cursor, _ := a.terminalAreaCache.get()
 	return view, cursor
 }
@@ -196,6 +203,9 @@ func (a *App) renderTerminalView() (string, *tea.Cursor) {
 	tv := a.terminal.View()
 	terminalView := viewString(tv)
 	terminalCursor := tv.Cursor
+	if a.interactiveCommandActive() {
+		terminalCursor = nil
+	}
 
 	// Compose with a one-line toggle message at the bottom. To ensure it's visible,
 	// clamp the terminal content to a.height-1 lines.

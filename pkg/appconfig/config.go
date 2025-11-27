@@ -2,6 +2,7 @@ package appconfig
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -223,7 +224,7 @@ func Default() *Config {
 				OnExit:        CommandExitKeepOpen,
 			},
 			{
-				Name:        "My Shell",
+				Name:        fmt.Sprintf("Shell (%s)", shellEnv()),
 				Command:     "$SHELL",
 				Type:        CommandTypeGlobal,
 				Location:    CommandLocationPanel,
@@ -248,6 +249,13 @@ func path() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".kc", "config.yaml"), nil
+}
+
+func shellEnv() string {
+	if val := os.Getenv("SHELL"); strings.TrimSpace(val) != "" {
+		return val
+	}
+	return "sh"
 }
 
 // Load reads ~/.kc/config.yaml if present, otherwise returns defaults.

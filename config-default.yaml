@@ -46,7 +46,7 @@ commands:
     watchInterval: 5s
     debounce: 500ms
     onExit: keep-open
-  - name: My Shell
+  - name: Shell ($SHELL)
     command: $SHELL
     type: global
     location: panel

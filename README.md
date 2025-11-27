@@ -101,7 +101,7 @@ commands:
     type: "global" # Independent of selection
     watchInterval: 5s
 
-  - name: "My Shell"
+  - name: "Shell ($SHELL)"
     command: "$SHELL"
     type: "global"
     interactive: true
