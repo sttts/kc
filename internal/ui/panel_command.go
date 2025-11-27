@@ -125,9 +125,6 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 
 	if w.terminal != nil {
 		if mm, ok := msg.(panelcontent.MouseMsg); ok && w.interactiveOn {
-			if mm.Row > 0 {
-				mm.Row--
-			}
 			model, cmd := w.terminal.Update(mm)
 			if term, ok := model.(*bubbleterm.Model); ok {
 				w.terminal = term
