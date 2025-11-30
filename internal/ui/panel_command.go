@@ -197,7 +197,8 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 
 func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) tea.View {
 	if w.err != nil {
-		return tea.NewView(lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(fmt.Sprintf("Error: %v", w.err)))
+		errView := lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render(fmt.Sprintf("Error: %v", w.err))
+		return w.renderWithBackground(errView)
 	}
 
 	if w.terminal != nil {
@@ -207,23 +208,23 @@ func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) tea.
 			if content != "" {
 				w.lastFrame = content
 			}
-			return tea.NewView(content)
+			return w.renderWithBackground(content)
 		}
 		if w.lastFrame != "" {
-			return tea.NewView(w.lastFrame)
+			return w.renderWithBackground(w.lastFrame)
 		}
-		return tea.NewView("")
+		return w.renderWithBackground("")
 	}
 
 	if w.output != "" {
 		w.lastFrame = w.output
-		return tea.NewView(w.output)
+		return w.renderWithBackground(w.output)
 	}
 
 	if w.lastFrame != "" {
-		return tea.NewView(w.lastFrame)
+		return w.renderWithBackground(w.lastFrame)
 	}
-	return tea.NewView("Starting...")
+	return w.renderWithBackground("Starting...")
 }
 
 // Cursor exposes the terminal cursor when present.
@@ -504,6 +505,23 @@ const heartbeatBurst = 900 * time.Millisecond
 // SetInteractive marks this command as interactive.
 func (w *CommandWidget) SetInteractive(on bool) {
 	w.interactive = on
+}
+
+func (w *CommandWidget) renderWithBackground(content string) tea.View {
+	width := w.width
+	height := w.height
+	if width <= 0 {
+		width = 1
+	}
+	if height <= 0 {
+		height = 1
+	}
+	rendered := lipgloss.NewStyle().
+		Width(width).
+		Height(height).
+		Background(lipgloss.Color("0")).
+		Render(content)
+	return tea.NewView(rendered)
 }
 
 // HasInteractive reports whether this command supports interactive focus.
