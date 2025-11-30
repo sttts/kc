@@ -61,7 +61,7 @@ func (a *App) hasApplicableCommands(panel *Panel) bool {
 	defer cancel()
 	item, _ := panel.SelectedNavItem(ctx)
 	selected := panel.GetSelectedItems()
-	activeNamespace := deriveNamespace(item, selected, panel.currentPath)
+	activeNamespace := deriveNamespace(item, selected, panel.namespace(ctx))
 	for _, cmd := range a.cfg.Commands {
 		if isCommandApplicable(cmd, item, len(selected), activeNamespace) {
 			return true
@@ -3678,7 +3678,7 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 
 	// Filter commands
 	selectedItems := p.GetSelectedItems()
-	activeNamespace := deriveNamespace(item, selectedItems, p.currentPath)
+	activeNamespace := deriveNamespace(item, selectedItems, p.namespace(ctx))
 	var available []appconfig.CommandConfig
 	for _, cmd := range a.cfg.Commands {
 		if isCommandApplicable(cmd, item, len(selectedItems), activeNamespace) {

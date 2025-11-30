@@ -69,7 +69,7 @@ func isCommandApplicable(cmd appconfig.CommandConfig, item models.Item, selected
 	return true
 }
 
-func deriveNamespace(item models.Item, selected []Item, path string) string {
+func deriveNamespace(item models.Item, selected []Item, folderNamespace string) string {
 	if ns := namespaceFromItem(item); ns != "" {
 		return ns
 	}
@@ -78,7 +78,10 @@ func deriveNamespace(item models.Item, selected []Item, path string) string {
 			return ns
 		}
 	}
-	return namespaceFromPath(path)
+	if folderNamespace != "" {
+		return folderNamespace
+	}
+	return ""
 }
 
 func namespaceFromItem(item models.Item) string {
@@ -87,16 +90,6 @@ func namespaceFromItem(item models.Item) string {
 	}
 	if obj, ok := item.(models.ObjectItem); ok {
 		return obj.Namespace()
-	}
-	return ""
-}
-
-func namespaceFromPath(path string) string {
-	parts := strings.Split(path, "/")
-	for i := 0; i < len(parts)-1; i++ {
-		if parts[i] == "namespaces" && parts[i+1] != "" {
-			return parts[i+1]
-		}
 	}
 	return ""
 }

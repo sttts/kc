@@ -948,6 +948,17 @@ func (w *Widget) showGlobPatternDialog(string) tea.Cmd {
 	return nil
 }
 
+// Namespace reports the active namespace when the backing folder exposes one.
+func (w *Widget) Namespace() string {
+	if w.folder == nil {
+		return ""
+	}
+	if ns, ok := w.folder.(interface{ Namespace() string }); ok {
+		return ns.Namespace()
+	}
+	return ""
+}
+
 func (w *Widget) adjustScroll() {
 	visible := w.visibleHeight()
 	if w.selected < w.scroll {

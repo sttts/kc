@@ -175,6 +175,14 @@ func (p *Panel) listWidget(ctx context.Context) *listwidget.Widget {
 	return nil
 }
 
+// namespace returns the active namespace derived from the backing folder when available.
+func (p *Panel) namespace(ctx context.Context) string {
+	if lw := p.listWidget(ctx); lw != nil {
+		return lw.Namespace()
+	}
+	return ""
+}
+
 func (p *Panel) commandWidget(ctx context.Context) *CommandWidget {
 	widget := p.ensureWidget(ctx, PanelModeCommand)
 	if cw, ok := widget.(*CommandWidget); ok {
