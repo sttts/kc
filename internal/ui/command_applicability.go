@@ -91,7 +91,15 @@ func deriveNamespace(item models.Item, selected []Item, folderNamespace string) 
 				return name
 			}
 		}
+		// Cluster-scoped object: do not inherit folder namespace.
+		return ""
 	}
+
+	// If there is a concrete (non-namespaced) selection, do not inherit folder namespace.
+	if item != nil || len(selected) > 0 {
+		return ""
+	}
+
 	if folderNamespace != "" {
 		return folderNamespace
 	}

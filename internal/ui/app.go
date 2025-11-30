@@ -3719,6 +3719,8 @@ func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, n
 		return nil
 	}
 
+	panel.InvalidateRenderCache()
+
 	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
 	frameWidth := leftWidth
 	if panelIdx == 1 {
@@ -3728,7 +3730,14 @@ func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, n
 	a.namespaceCommandTarget[panelIdx] = namespace
 
 	if namespace == "" {
-		return panel.ShowCommandPlaceholder(a.ctx, cfg, "Not in namespace scope", frameWidth, panelHeight)
+		// Disable watch ticks while out of scope.
+		a.commandWatchInterval[panelIdx] = 0
+		a.commandWatchToken[panelIdx]++
+		bc := cfg.Name
+		if cfg.Type == appconfig.CommandTypeNamespace {
+			bc = fmt.Sprintf("%s (ns: -)", cfg.Name)
+		}
+		return panel.ShowCommandPlaceholder(a.ctx, cfg, "Not in namespace scope", bc, frameWidth, panelHeight)
 	}
 
 	items := []models.Item{namespaceCommandItem{namespace: namespace}}
@@ -3746,18 +3755,34 @@ func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, n
 func (a *App) maybeRestartNamespaceCommand(panelIdx int, namespace string) tea.Cmd {
 	panel := a.panelByIndex(panelIdx)
 	if panel == nil {
+		ctrllog.FromContext(a.ctx).WithName("namespaceCommand").V(1).Info("ns-follow: skip (no panel)", "panel", panelIdx)
 		return nil
 	}
 	cfg := panel.CommandConfig()
 	if cfg == nil || cfg.Type != appconfig.CommandTypeNamespace {
+		ctrllog.FromContext(a.ctx).WithName("namespaceCommand").V(1).Info("ns-follow: skip (no namespaced command)", "panel", panelIdx, "mode", panel.Mode())
+		return nil
+	}
+	if panel.Mode() != PanelModeCommand {
+		ctrllog.FromContext(a.ctx).WithName("namespaceCommand").V(1).Info("ns-follow: skip (not in command mode)", "panel", panelIdx, "mode", panel.Mode())
 		return nil
 	}
 
-	if namespace == a.namespaceCommandTarget[panelIdx] {
-		return nil
-	}
+	ctrllog.FromContext(a.ctx).WithName("namespaceCommand").V(1).Info("ns-follow: namespace change detected",
+		"panel", panelIdx,
+		"incoming", namespace,
+		"currentTarget", a.namespaceCommandTarget[panelIdx],
+		"mode", panel.Mode(),
+		"cfg", cfg.Name,
+	)
 
 	if cfg.Debounce.Duration > 0 {
+		ctrllog.FromContext(a.ctx).WithName("namespaceCommand").V(1).Info("ns-follow: debouncing restart",
+			"panel", panelIdx,
+			"namespace", namespace,
+			"delay", cfg.Debounce.Duration,
+			"cfg", cfg.Name,
+		)
 		return tea.Tick(cfg.Debounce.Duration, func(time.Time) tea.Msg {
 			return restartNamespaceCommandMsg{PanelIdx: panelIdx, Namespace: namespace}
 		})
@@ -3852,8 +3877,10 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 		}
 
 		runPanel := p
+		runPanelIdx := a.panelIndex(p)
 		if cmd.Type == appconfig.CommandTypeNamespace && otherPanel != nil {
 			runPanel = otherPanel
+			runPanelIdx = a.panelIndex(otherPanel)
 		}
 
 		if cmd.Type == appconfig.CommandTypeNamespace {
@@ -3861,8 +3888,7 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			if ns == namespacePlaceholder {
 				ns = ""
 			}
-			panelIdx := a.panelIndex(runPanel)
-			return a.startNamespaceCommand(panelIdx, cmd, ns)
+			return a.startNamespaceCommand(runPanelIdx, cmd, ns)
 		}
 
 		leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()

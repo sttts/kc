@@ -74,7 +74,7 @@ func NewPanel(title string, cfg ...*appconfig.Config) *Panel {
 		return listwidget.New(panel.listWidgetDeps())
 	})
 	p.RegisterMode(PanelModeDescribe, func(panel *Panel) panelcontent.Widget {
-		return newPlaceholderWidget(panel, "Describe mode placeholder")
+		return newPlaceholderWidget(panel, "Describe mode placeholder", "Describe")
 	})
 	p.RegisterMode(PanelModeManifest, func(panel *Panel) panelcontent.Widget {
 		return manifestwidget.New(panel.manifestWidgetDeps())
@@ -130,7 +130,7 @@ func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig
 }
 
 // ShowCommandPlaceholder renders a non-interactive placeholder instead of launching a command widget.
-func (p *Panel) ShowCommandPlaceholder(ctx context.Context, config appconfig.CommandConfig, message string, frameWidth, frameHeight int) tea.Cmd {
+func (p *Panel) ShowCommandPlaceholder(ctx context.Context, config appconfig.CommandConfig, message string, breadcrumb string, frameWidth, frameHeight int) tea.Cmd {
 	if existing := p.commandWidget(ctx); existing != nil {
 		existing.Teardown(ctx)
 	}
@@ -140,7 +140,7 @@ func (p *Panel) ShowCommandPlaceholder(ctx context.Context, config appconfig.Com
 	p.commandConfig = &cfgCopy
 
 	p.RegisterMode(PanelModeCommand, func(panel *Panel) panelcontent.Widget {
-		return newPlaceholderWidget(panel, message)
+		return newPlaceholderWidget(panel, message, breadcrumb)
 	})
 
 	cmd := p.SetMode(ctx, PanelModeCommand)
@@ -161,6 +161,11 @@ func (p *Panel) CommandConfig() *appconfig.CommandConfig {
 
 func (p *Panel) invalidateRenderCache() {
 	p.renderCacheValid = false
+}
+
+// InvalidateRenderCache clears the cached render so the next View recomputes.
+func (p *Panel) InvalidateRenderCache() {
+	p.invalidateRenderCache()
 }
 
 func (p *Panel) renderCacheMatches(width, height int, focused bool) bool {

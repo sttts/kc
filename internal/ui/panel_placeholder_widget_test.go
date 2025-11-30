@@ -8,7 +8,7 @@ import (
 )
 
 func TestPlaceholderFrameInfoSuppressesFooter(t *testing.T) {
-	widget := newPlaceholderWidget(nil, "unimplemented")
+	widget := newPlaceholderWidget(nil, "unimplemented", "")
 	provider, ok := widget.(panelcontent.FrameInfoProvider)
 	if !ok {
 		t.Fatalf("placeholder widget does not implement FrameInfoProvider")

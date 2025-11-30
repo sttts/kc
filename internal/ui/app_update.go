@@ -56,15 +56,30 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, tea.Batch(cmds...)
 	case panelNamespaceChangedMsg:
-		other := 1 - msg.PanelIdx
-		if cmd := a.maybeRestartNamespaceCommand(other, msg.Namespace); cmd != nil {
-			cmds = append(cmds, cmd)
+		ctrllog.FromContext(a.ctx).WithName("namespaceCommand").V(1).Info("ns-follow: namespace message received",
+			"leader", msg.PanelIdx,
+			"namespace", msg.Namespace,
+		)
+		for idx := 0; idx < 2; idx++ {
+			if cmd := a.maybeRestartNamespaceCommand(idx, msg.Namespace); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			ctrllog.FromContext(a.ctx).WithName("namespaceCommand").V(1).Info("ns-follow: namespace message processed",
+				"leader", msg.PanelIdx,
+				"follower", idx,
+				"namespace", msg.Namespace,
+			)
 		}
 		return a, tea.Batch(cmds...)
 	case restartNamespaceCommandMsg:
 		panel := a.panelByIndex(msg.PanelIdx)
 		if panel != nil {
 			if cfg := panel.CommandConfig(); cfg != nil && cfg.Type == appconfig.CommandTypeNamespace {
+				ctrllog.FromContext(a.ctx).WithName("namespaceCommand").V(1).Info("ns-follow: restart tick",
+					"panel", msg.PanelIdx,
+					"namespace", msg.Namespace,
+					"cfg", cfg.Name,
+				)
 				if cmd := a.startNamespaceCommand(msg.PanelIdx, *cfg, msg.Namespace); cmd != nil {
 					cmds = append(cmds, cmd)
 				}

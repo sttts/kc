@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -13,10 +14,11 @@ import (
 type placeholderWidget struct {
 	panel   *Panel
 	message string
+	crumb   string
 }
 
-func newPlaceholderWidget(panel *Panel, msg string) panelcontent.Widget {
-	return &placeholderWidget{panel: panel, message: msg}
+func newPlaceholderWidget(panel *Panel, msg string, breadcrumb string) panelcontent.Widget {
+	return &placeholderWidget{panel: panel, message: msg, crumb: breadcrumb}
 }
 
 func (w *placeholderWidget) Init(context.Context) tea.Cmd { return nil }
@@ -66,7 +68,12 @@ func (w *placeholderWidget) SetFocus(context.Context, bool) {}
 func (w *placeholderWidget) Teardown(context.Context) {}
 
 func (w *placeholderWidget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
+	crumb := w.crumb
+	if crumb == "" {
+		crumb = w.message
+	}
 	return panelcontent.FrameInfo{
+		Breadcrumb:      fmt.Sprintf("%s", crumb),
 		SuppressFooter:  true,
 		TopIndicator:    "─",
 		BottomIndicator: "─",
