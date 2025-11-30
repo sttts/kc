@@ -1199,7 +1199,38 @@ func (a *App) capabilitiesForPanel(panel *Panel) PanelCapabilities {
 	if caps.HasContextMenu {
 		caps.HasContextMenu = a.hasApplicableCommands(panel)
 	}
-	return caps
+	return maskCapabilitiesForMode(panel.Mode(), panel.HasCommandFocus(), caps)
+}
+
+func maskCapabilitiesForMode(mode PanelViewMode, commandFocused bool, caps PanelCapabilities) PanelCapabilities {
+	switch mode {
+	case PanelModeList:
+		return caps
+	case PanelModeDescribe, PanelModeManifest:
+		// Read-only; allow help/options/menu only.
+		caps.CanView = false
+		caps.CanCopy = false
+		caps.CanEdit = false
+		caps.CanDelete = false
+		caps.CanCreateNS = false
+		return caps
+	case PanelModeCommand:
+		// Command mode: no resource actions. Keep help/options/menu when the widget
+		// isn't holding focus so they can be used from the bar.
+		caps.CanView = false
+		caps.CanCopy = false
+		caps.CanEdit = false
+		caps.CanDelete = false
+		caps.CanCreateNS = false
+		if commandFocused {
+			caps.HasHelp = false
+			caps.HasOptions = false
+			caps.HasContextMenu = false
+		}
+		return caps
+	default:
+		return caps
+	}
 }
 
 func (a *App) setPanelMode(ctx context.Context, panel *Panel, mode PanelViewMode, reason string) tea.Cmd {
