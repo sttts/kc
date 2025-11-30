@@ -15,22 +15,22 @@ func TestTranslateKeyForTerminal(t *testing.T) {
 		{
 			name: "space",
 			msg:  tea.KeyPressMsg(tea.Key{Code: tea.KeySpace, Text: " "}),
-			want: " ",
+			want: "space",
 		},
 		{
 			name: "tab",
 			msg:  tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}),
-			want: "\t",
+			want: "tab",
 		},
 		{
 			name: "backspace",
 			msg:  tea.KeyPressMsg(tea.Key{Code: tea.KeyBackspace}),
-			want: "\x7f",
+			want: "backspace",
 		},
 		{
 			name: "ctrl+a",
 			msg:  tea.KeyPressMsg(tea.Key{Code: 'a', Mod: tea.ModCtrl}),
-			want: "\x01",
+			want: "ctrl+a",
 		},
 		{
 			name: "printable",
