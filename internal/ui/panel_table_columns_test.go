@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
 )
@@ -54,7 +55,9 @@ func TestPanelSetFolderUsesServerColumns(t *testing.T) {
 	p := NewPanel("")
 	ctx := t.Context()
 	p.UseFolder(ctx, true)
-	p.SetDimensions(ctx, 80, 20)
+	if model, _ := p.Update(tea.WindowSizeMsg{Width: 80, Height: 20}); model != nil {
+		p = model.(*Panel)
+	}
 	p.SetFolder(ctx, ff, false)
 	cols := p.ColumnTitles(ctx)
 	if len(cols) < 2 {
@@ -68,7 +71,9 @@ func TestPanelRefreshFolderRebuildsOnColumnChange(t *testing.T) {
 	p := NewPanel("")
 	ctx := t.Context()
 	p.UseFolder(ctx, true)
-	p.SetDimensions(ctx, 80, 20)
+	if model, _ := p.Update(tea.WindowSizeMsg{Width: 80, Height: 20}); model != nil {
+		p = model.(*Panel)
+	}
 	p.SetFolder(ctx, ff, false)
 	if cols := p.ColumnTitles(ctx); len(cols) != 1 {
 		t.Fatalf("expected 1 column initially, got %d", len(cols))

@@ -54,7 +54,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		}
 		return a, a.showViewOptionsModalForPanel(a.panelByIndex(1))
 	case "alt+w":
-		a.cyclePanelWidth(a.activePanel)
+		if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
+			return a, tea.Batch(resizeCmds...)
+		}
 		return a, nil
 	case "ctrl+o":
 		// Toggle terminal mode
@@ -65,6 +67,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		a.invalidateTerminalArea("terminal toggle")
 		// Always keep terminal focused for typing
 		a.terminal.Focus()
+		if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
+			return a, tea.Batch(resizeCmds...)
+		}
 		return a, nil
 
 	case "ctrl+u":
@@ -198,7 +203,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, nil
 		case "w":
 			a.escPressed = false
-			a.cyclePanelWidth(a.activePanel)
+			if resizeCmds := a.cyclePanelWidth(a.activePanel); len(resizeCmds) > 0 {
+				return a, tea.Batch(resizeCmds...)
+			}
 			return a, nil
 		default:
 			// Not a number, cancel escape sequence
@@ -215,6 +222,9 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			a.invalidateView("ctrl+o exit terminal")
 			a.invalidateFunctionBar("terminal exit")
 			a.invalidateTerminalArea("terminal exit")
+			if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
+				return a, tea.Batch(resizeCmds...)
+			}
 			return a, nil
 		}
 		// Everything else goes to the terminal

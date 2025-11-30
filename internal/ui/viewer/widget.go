@@ -203,6 +203,9 @@ func (w *Widget) Resize(width, height int) {
 // Update processes key/mouse input. Returns a command when an action is triggered.
 func (w *Widget) Update(msg tea.Msg) (tea.Cmd, bool) {
 	switch m := msg.(type) {
+	case tea.WindowSizeMsg:
+		w.Resize(max(1, m.Width), max(1, m.Height))
+		return nil, true
 	case tea.KeyMsg:
 		if w.searchMode {
 			if cmd, handled := w.handleSearchInput(m); handled {

@@ -46,7 +46,7 @@ func TestCtrlCycleSkipsHiddenPanel(t *testing.T) {
 	app.height = 24
 
 	// Hide right panel
-	app.setPanelWidthPercent(1, 100)
+	_ = app.setPanelWidthPercent(1, 100)
 
 	model, _ := app.Update(tea.KeyPressMsg{Code: '2', Text: "2", Mod: tea.ModCtrl})
 	app = model.(*App)
@@ -56,7 +56,7 @@ func TestCtrlCycleSkipsHiddenPanel(t *testing.T) {
 	}
 
 	// Hide left panel
-	app.setPanelWidthPercent(0, 100)
+	_ = app.setPanelWidthPercent(0, 100)
 
 	model, _ = app.Update(tea.KeyPressMsg{Code: '1', Text: "1", Mod: tea.ModCtrl})
 	app = model.(*App)

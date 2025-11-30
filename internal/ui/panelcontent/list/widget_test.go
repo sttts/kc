@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
 	table "github.com/sttts/kc/internal/table"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
@@ -28,7 +29,7 @@ func TestFrameInfoEmptyList(t *testing.T) {
 func TestFrameInfoIndicatorsAndStatus(t *testing.T) {
 	ctx := context.Background()
 	w := New(panelcontent.WidgetDeps{})
-	w.Resize(ctx, panelcontent.Size{Width: 16, Height: 6})
+	_, _ = w.Update(ctx, tea.WindowSizeMsg{Width: 16, Height: 6})
 
 	items := make([]Item, 10)
 	for i := range items {

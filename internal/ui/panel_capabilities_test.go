@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/table"
@@ -68,7 +69,9 @@ func TestPanelCapabilities_BackItem(t *testing.T) {
 		items: []models.Item{mockItem{id: "item1"}},
 	}
 	p.UseFolder(ctx, true)
-	p.SetDimensions(ctx, 80, 24)
+	if model, _ := p.Update(tea.WindowSizeMsg{Width: 80, Height: 24}); model != nil {
+		p = model.(*Panel)
+	}
 	p.SetFolder(ctx, folder, false)
 	p.SelectByRowID(ctx, "item1")
 

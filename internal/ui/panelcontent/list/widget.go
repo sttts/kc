@@ -75,6 +75,13 @@ func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	var cmd tea.Cmd
 	var handled bool
 	switch m := msg.(type) {
+	case tea.WindowSizeMsg:
+		w.width = m.Width
+		w.height = m.Height
+		if w.bt != nil {
+			w.bt.SetSize(ctx, max(1, m.Width), max(1, m.Height))
+		}
+		return nil, true
 	case tea.KeyMsg:
 		cmd, handled = w.handleKey(ctx, m)
 	case panelcontent.MouseMsg:
@@ -90,14 +97,6 @@ func (w *Widget) View(ctx context.Context, frame panelcontent.Frame) tea.View {
 	w.width = frame.Size.Width
 	w.height = frame.Size.Height
 	return tea.NewView(w.render(ctx, frame.Focused))
-}
-
-func (w *Widget) Resize(ctx context.Context, size panelcontent.Size) {
-	w.width = size.Width
-	w.height = size.Height
-	if w.bt != nil {
-		w.bt.SetSize(ctx, max(1, size.Width), max(1, size.Height))
-	}
 }
 
 func (w *Widget) SetFocus(ctx context.Context, focused bool) {

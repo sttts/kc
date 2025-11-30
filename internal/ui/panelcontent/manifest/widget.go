@@ -30,6 +30,18 @@ func New(deps panelcontent.WidgetDeps) *Widget {
 func (w *Widget) Init(context.Context) tea.Cmd { return nil }
 
 func (w *Widget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
+	if m, ok := msg.(tea.WindowSizeMsg); ok {
+		width := m.Width
+		height := m.Height
+		if width < 1 {
+			width = 1
+		}
+		if height < 1 {
+			height = 1
+		}
+		w.viewer.Resize(width, height)
+		return nil, true
+	}
 	return w.viewersUpdate(msg)
 }
 
@@ -46,10 +58,6 @@ func (w *Widget) View(ctx context.Context, frame panelcontent.Frame) tea.View {
 		Height:  frame.Size.Height,
 		Focused: frame.Focused,
 	}))
-}
-
-func (w *Widget) Resize(ctx context.Context, size panelcontent.Size) {
-	w.viewer.Resize(size.Width, size.Height)
 }
 
 func (w *Widget) SetFocus(context.Context, bool) {}

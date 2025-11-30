@@ -96,6 +96,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		if sizeChanged {
+			if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
+				cmds = append(cmds, resizeCmds...)
+			}
+		}
+
 		if !sizeChanged && len(cmds) == 0 {
 			return a, nil
 		}
@@ -134,7 +140,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				saveHandled := false
 				if m.SetPanelWidth && (m.Accept || m.SaveDefault) {
 					targetPercent := clampPercent(m.PanelWidthPercent)
-					a.setPanelWidthPercent(targetIdx, targetPercent)
+					if resizeCmds := a.setPanelWidthPercent(targetIdx, targetPercent); len(resizeCmds) > 0 {
+						cmds = append(cmds, resizeCmds...)
+					}
 					if m.SaveDefault {
 						if a.cfg == nil {
 							a.cfg = appconfig.Default()
@@ -414,13 +422,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.toastUntil = time.Now().Add(msg.ttl)
 		a.invalidateView("toast show")
 		a.invalidateFunctionBar("toast show")
-		return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
+		var cmds []tea.Cmd
+		if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
+			cmds = append(cmds, resizeCmds...)
+		}
+		cmds = append(cmds, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} }))
+		return a, tea.Batch(cmds...)
 	case toastTickMsg:
 		if a.toastActive {
 			if time.Now().After(a.toastUntil) {
 				a.toastActive = false
 				a.invalidateView("toast hide")
 				a.invalidateFunctionBar("toast hide")
+				if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
+					return a, tea.Batch(resizeCmds...)
+				}
 			} else {
 				return a, tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return toastTickMsg{} })
 			}

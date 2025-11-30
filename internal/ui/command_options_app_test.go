@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/sttts/kc/pkg/appconfig"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -19,7 +20,9 @@ func TestCommandOptionsChangedMsgAppliesWatchInterval(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 
-	app.leftPanel.SetDimensions(ctx, 80, 24)
+	if model, _ := app.leftPanel.Update(tea.WindowSizeMsg{Width: 80, Height: 24}); model != nil {
+		app.leftPanel = model.(*Panel)
+	}
 
 	cmdCfg := appconfig.CommandConfig{
 		Name:    "Top Nodes",

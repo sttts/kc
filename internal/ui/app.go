@@ -584,25 +584,6 @@ func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int
 	return
 }
 
-func (a *App) resizePanelsForCurrentLayout() {
-	if a == nil {
-		return
-	}
-	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
-	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-	defer cancel()
-	log := ctrllog.FromContext(ctx).WithName("ui").WithName("panelResize")
-	resize := func(p *Panel, width int) {
-		if p == nil || width <= 0 {
-			return
-		}
-		p.SetFrameDimensions(ctx, width, panelHeight)
-	}
-	resize(a.leftPanel, leftWidth)
-	resize(a.rightPanel, rightWidth)
-	log.V(1).Info("panels resized", "leftWidth", leftWidth, "rightWidth", rightWidth, "panelHeight", panelHeight)
-}
-
 func (a *App) panelWidthPercentFor(panelIdx int) int {
 	if panelIdx == 1 {
 		return clampPercent(a.rightPanelWidthPercent)
@@ -649,7 +630,7 @@ func (a *App) panelWidthsFor(total int) (int, int) {
 	return left, total - left
 }
 
-func (a *App) setPanelWidthPercent(panelIdx int, percent int) {
+func (a *App) setPanelWidthPercent(panelIdx int, percent int) []tea.Cmd {
 	percent = clampPercent(percent)
 	switch panelIdx {
 	case 1:
@@ -674,8 +655,40 @@ func (a *App) setPanelWidthPercent(panelIdx int, percent int) {
 	} else if a.leftPanelWidthPercent == 100 && a.rightPanelWidthPercent == 0 {
 		a.setActivePanel(0, "panel width forced left")
 	}
-	a.resizePanelsForCurrentLayout()
+	cmds := a.resizePanelsForCurrentLayout()
 	a.invalidateView("panel width percent")
+	return cmds
+}
+
+func (a *App) resizePanelsForCurrentLayout() []tea.Cmd {
+	if a == nil {
+		return nil
+	}
+	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+	defer cancel()
+	log := ctrllog.FromContext(ctx).WithName("ui").WithName("panelResize")
+	var cmds []tea.Cmd
+	if a.leftPanel != nil {
+		model, cmd := a.leftPanel.Update(tea.WindowSizeMsg{Width: leftWidth, Height: panelHeight})
+		if model != nil {
+			a.leftPanel = model.(*Panel)
+		}
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if a.rightPanel != nil {
+		model, cmd := a.rightPanel.Update(tea.WindowSizeMsg{Width: rightWidth, Height: panelHeight})
+		if model != nil {
+			a.rightPanel = model.(*Panel)
+		}
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	log.V(1).Info("panels resized", "leftWidth", leftWidth, "rightWidth", rightWidth, "panelHeight", panelHeight)
+	return cmds
 }
 
 var panelWidthCycle = panelWidthPercentOptions
@@ -692,13 +705,13 @@ func nextPanelWidthPercent(current int) int {
 	return panelWidthCycle[len(panelWidthCycle)-1]
 }
 
-func (a *App) cyclePanelWidth(panelIdx int) {
+func (a *App) cyclePanelWidth(panelIdx int) []tea.Cmd {
 	current := a.panelWidthPercentFor(panelIdx)
 	next := nextPanelWidthPercent(current)
 	if next == current {
-		return
+		return nil
 	}
-	a.setPanelWidthPercent(panelIdx, next)
+	return a.setPanelWidthPercent(panelIdx, next)
 }
 
 func normalizePanelWidthPercents(left, right int) (int, int) {

@@ -68,7 +68,7 @@ func TestRenderFrameIndicatorsWithFooter(t *testing.T) {
 
 func TestFooterIndentWithoutMode(t *testing.T) {
 	p := NewPanel("test")
-	p.width = 20
+	p.Update(tea.WindowSizeMsg{Width: 20, Height: 5})
 	stub := &footerStub{footer: "footer"}
 	p.widgets[p.mode] = stub
 
@@ -98,6 +98,8 @@ func TestRenderWithoutFooterKeepsContentHeight(t *testing.T) {
 	p.widgets[p.mode] = stub
 
 	panelHeight := 8
+	model, _ := p.Update(tea.WindowSizeMsg{Width: 30, Height: panelHeight})
+	p = model.(*Panel)
 	p.Render(ctx, 30, panelHeight, false)
 
 	expectedHeight := max(1, panelHeight-2)
@@ -115,10 +117,9 @@ func (f *footerStub) Update(context.Context, tea.Msg) (tea.Cmd, bool) { return n
 func (f *footerStub) View(context.Context, panelcontent.Frame) tea.View {
 	return tea.NewView(f.footer)
 }
-func (f *footerStub) Resize(context.Context, panelcontent.Size) {}
-func (f *footerStub) SetFocus(context.Context, bool)            {}
-func (f *footerStub) Teardown(context.Context)                  {}
-func (f *footerStub) Footer(context.Context, int) string        { return f.footer }
+func (f *footerStub) SetFocus(context.Context, bool)     {}
+func (f *footerStub) Teardown(context.Context)           {}
+func (f *footerStub) Footer(context.Context, int) string { return f.footer }
 func (f *footerStub) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
 	return panelcontent.FrameInfo{}
 }
@@ -128,8 +129,14 @@ type sizingWidget struct {
 	last panelcontent.Size
 }
 
-func (s *sizingWidget) Init(context.Context) tea.Cmd                    { return nil }
-func (s *sizingWidget) Update(context.Context, tea.Msg) (tea.Cmd, bool) { return nil, false }
+func (s *sizingWidget) Init(context.Context) tea.Cmd { return nil }
+func (s *sizingWidget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		s.last = panelcontent.Size{Width: ws.Width, Height: ws.Height}
+		return nil, true
+	}
+	return nil, false
+}
 func (s *sizingWidget) View(_ context.Context, frame panelcontent.Frame) tea.View {
 	lines := make([]string, max(1, frame.Size.Height))
 	for i := range lines {
@@ -137,9 +144,8 @@ func (s *sizingWidget) View(_ context.Context, frame panelcontent.Frame) tea.Vie
 	}
 	return tea.NewView(strings.Join(lines, "\n"))
 }
-func (s *sizingWidget) Resize(_ context.Context, size panelcontent.Size) { s.last = size }
-func (s *sizingWidget) SetFocus(context.Context, bool)                   {}
-func (s *sizingWidget) Teardown(context.Context)                         {}
+func (s *sizingWidget) SetFocus(context.Context, bool) {}
+func (s *sizingWidget) Teardown(context.Context)       {}
 func (s *sizingWidget) FrameInfo(context.Context, panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
 	return s.info
 }

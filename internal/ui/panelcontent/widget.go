@@ -26,7 +26,6 @@ type Widget interface {
 	Init(context.Context) tea.Cmd
 	Update(context.Context, tea.Msg) (tea.Cmd, bool)
 	View(context.Context, Frame) tea.View
-	Resize(context.Context, Size)
 	SetFocus(context.Context, bool)
 	Teardown(context.Context)
 }

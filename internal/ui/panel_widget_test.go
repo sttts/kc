@@ -13,7 +13,7 @@ import (
 func TestPanelModeSwitchesToManifest(t *testing.T) {
 	panel := NewPanel("test")
 	ctx := context.Background()
-	panel.SetDimensions(ctx, 20, 5)
+	panel.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
 	panel.SetMode(ctx, PanelModeManifest)
 	if panel.Mode() != PanelModeManifest {
 		t.Fatalf("expected manifest mode, got %v", panel.Mode())
@@ -73,9 +73,8 @@ func (s *selectionSpyWidget) Update(context.Context, tea.Msg) (tea.Cmd, bool) { 
 func (s *selectionSpyWidget) View(context.Context, panelcontent.Frame) tea.View {
 	return tea.NewView("")
 }
-func (s *selectionSpyWidget) Resize(context.Context, panelcontent.Size) {}
-func (s *selectionSpyWidget) SetFocus(context.Context, bool)            {}
-func (s *selectionSpyWidget) Teardown(context.Context)                  {}
+func (s *selectionSpyWidget) SetFocus(context.Context, bool) {}
+func (s *selectionSpyWidget) Teardown(context.Context)       {}
 func (s *selectionSpyWidget) OnSelectionChanged(_ context.Context, sel panelcontent.Selection) {
 	s.events = append(s.events, sel)
 }
@@ -83,7 +82,7 @@ func (s *selectionSpyWidget) OnSelectionChanged(_ context.Context, sel panelcont
 func TestPanelDescribeModeReplaysSelection(t *testing.T) {
 	ctx := context.Background()
 	panel := NewPanel("test")
-	panel.SetDimensions(ctx, 20, 5)
+	panel.Update(tea.WindowSizeMsg{Width: 20, Height: 5})
 	spy := &selectionSpyWidget{}
 	panel.RegisterMode(PanelModeDescribe, func(*Panel) PanelWidget { return spy })
 	item := models.NewSimpleItem("foo", []string{"/foo"}, nil, models.WhiteStyle())

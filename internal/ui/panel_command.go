@@ -91,6 +91,18 @@ func (w *CommandWidget) Teardown(ctx context.Context) {
 }
 
 func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
+	if m, ok := msg.(tea.WindowSizeMsg); ok {
+		w.width = m.Width
+		w.height = m.Height
+		if w.terminal != nil {
+			model, cmd := w.terminal.Update(m)
+			if term, ok := model.(*bubbleterm.Model); ok {
+				w.terminal = term
+			}
+			return cmd, true
+		}
+		return nil, true
+	}
 	// Mouse events should respect interactive focus.
 	if mm, ok := msg.(panelcontent.MouseMsg); ok && w.interactiveOn {
 		if mm.Row > 0 {
@@ -234,19 +246,6 @@ func (w *CommandWidget) Cursor() *tea.Cursor {
 	}
 	view := w.terminal.View()
 	return view.Cursor
-}
-
-func (w *CommandWidget) Resize(ctx context.Context, size panelcontent.Size) {
-	w.width = size.Width
-	w.height = size.Height
-	if w.log.GetSink() != nil {
-		w.log.V(1).Info("command widget resized", "width", w.width, "height", w.height)
-	}
-	if w.terminal != nil {
-		msg := tea.WindowSizeMsg{Width: size.Width, Height: size.Height}
-		model, _ := w.terminal.Update(msg)
-		w.terminal = model.(*bubbleterm.Model)
-	}
 }
 
 func (w *CommandWidget) SetFocus(ctx context.Context, focused bool) {

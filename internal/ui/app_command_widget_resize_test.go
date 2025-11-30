@@ -13,14 +13,17 @@ type recordingWidget struct {
 	resizeCount int
 }
 
-func (w *recordingWidget) Init(context.Context) tea.Cmd                    { return nil }
-func (w *recordingWidget) Update(context.Context, tea.Msg) (tea.Cmd, bool) { return nil, false }
+func (w *recordingWidget) Init(context.Context) tea.Cmd { return nil }
+func (w *recordingWidget) Update(_ context.Context, msg tea.Msg) (tea.Cmd, bool) {
+	if m, ok := msg.(tea.WindowSizeMsg); ok {
+		w.resizeCount++
+		w.lastSize = panelcontent.Size{Width: m.Width, Height: m.Height}
+		return nil, true
+	}
+	return nil, false
+}
 func (w *recordingWidget) View(context.Context, panelcontent.Frame) tea.View {
 	return tea.NewView("")
-}
-func (w *recordingWidget) Resize(_ context.Context, size panelcontent.Size) {
-	w.resizeCount++
-	w.lastSize = size
 }
 func (w *recordingWidget) SetFocus(context.Context, bool) {}
 func (w *recordingWidget) Teardown(context.Context)       {}
@@ -29,6 +32,11 @@ func TestCommandWidgetResizedWhenPanelWidthChangesViaViewOptions(t *testing.T) {
 	app := NewApp()
 	app.width = 120
 	app.height = 30
+	model, cmd := app.Update(tea.WindowSizeMsg{Width: app.width, Height: app.height})
+	app = model.(*App)
+	if cmd != nil {
+		_ = cmd()
+	}
 
 	leftWidget := &recordingWidget{}
 	rightWidget := &recordingWidget{}

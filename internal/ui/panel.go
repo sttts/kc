@@ -21,6 +21,8 @@ import (
 // Panel represents a file/resource panel
 type Panel struct {
 	title                string
+	frameWidth           int
+	frameHeight          int
 	width                int
 	height               int
 	currentPath          string
@@ -109,7 +111,9 @@ func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig
 
 	// Resize to the provided frame size now that the command mode is active.
 	if frameWidth > 0 && frameHeight > 0 {
-		p.SetFrameDimensions(ctx, frameWidth, frameHeight)
+		if resizeCmd := p.applyFrameSize(ctx, frameWidth, frameHeight); resizeCmd != nil {
+			cmd = tea.Batch(cmd, resizeCmd)
+		}
 	}
 
 	// Start command
@@ -262,9 +266,11 @@ func (p *Panel) SetMode(ctx context.Context, mode PanelViewMode) tea.Cmd {
 	if w == nil {
 		return nil
 	}
-	w.Resize(ctx, panelcontent.Size{Width: p.width, Height: p.height})
 	w.SetFocus(ctx, true)
 	var cmds []tea.Cmd
+	if sizeCmd := p.forwardSizeToWidget(ctx, panelcontent.Size{Width: p.width, Height: p.height}); sizeCmd != nil {
+		cmds = append(cmds, sizeCmd)
+	}
 	if initCmd := w.Init(ctx); initCmd != nil {
 		cmds = append(cmds, initCmd)
 	}
@@ -319,7 +325,7 @@ func (p *Panel) ensureWidget(ctx context.Context, mode PanelViewMode) PanelWidge
 		return nil
 	}
 	p.widgets[mode] = widget
-	widget.Resize(ctx, panelcontent.Size{Width: p.width, Height: p.height})
+	p.forwardSizeToWidget(ctx, panelcontent.Size{Width: p.width, Height: p.height})
 	return widget
 }
 
@@ -660,6 +666,10 @@ func (p *Panel) Init() tea.Cmd {
 func (p *Panel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
 	defer cancel()
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		cmd := p.applyFrameSize(ctx, ws.Width, ws.Height)
+		return p, cmd
+	}
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if cmd, handled := widget.Update(ctx, msg); handled {
 			p.invalidateRenderCache()
@@ -701,7 +711,7 @@ func (p *Panel) View() tea.View {
 	ctx, cancel := context.WithTimeout(context.Background(), panelContextTimeout)
 	defer cancel()
 
-	info := p.frameInfo(ctx)
+	info := p.frameInfo(ctx, p.width)
 	header := p.renderHeader(info.Breadcrumb, info.HeaderStatus)
 	content := viewString(p.renderContent(ctx))
 	cursor := p.widgetCursor(ctx)
@@ -738,47 +748,22 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 	if p.renderCacheMatches(width, height, focused) {
 		return p.renderCache
 	}
-	contentWidth := max(1, width-2)
-	frameHeight := max(2, height)
-	// Default content height assumes both top/bottom borders consume 2 rows.
-	contentHeight := max(1, frameHeight-2)
+	p.frameWidth = width
+	p.frameHeight = height
 
-	var (
-		footerFrame  string
-		footerHeight int
-		info         panelcontent.FrameInfo
-	)
-
-	for i := 0; i < 3; i++ {
-		p.SetDimensions(ctx, contentWidth, contentHeight)
-		info = p.frameInfo(ctx)
-		footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
-		footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
-		if info.SuppressFooter {
-			footerFrame = ""
-			footerHeight = 0
-		}
-		if footerHeight >= height {
-			footerFrame = ""
-			footerHeight = 0
-		}
-
-		newFrameHeight := max(2, height-footerHeight)
-		newContentHeight := max(1, newFrameHeight-2)
-		if newFrameHeight == frameHeight && newContentHeight == contentHeight {
-			frameHeight = newFrameHeight
-			contentHeight = newContentHeight
-			break
-		}
-		frameHeight = newFrameHeight
-		contentHeight = newContentHeight
+	size, _ := p.FrameContentSize(ctx, width, height)
+	if size.Width <= 0 {
+		size.Width = 1
 	}
+	if size.Height <= 0 {
+		size.Height = 1
+	}
+	p.width = size.Width
+	p.height = size.Height
 
-	// Ensure final dimensions are applied before rendering.
-	p.SetDimensions(ctx, contentWidth, contentHeight)
-	info = p.frameInfo(ctx)
-	footerContent := p.renderFooter(ctx, info.FooterStatus, info.SuppressFooter)
-	footerFrame, footerHeight = p.renderFramedFooter(footerContent, width)
+	info := p.frameInfo(ctx, size.Width)
+	footerContent := p.renderFooterWithWidth(ctx, info.FooterStatus, info.SuppressFooter, size.Width)
+	footerFrame, footerHeight := p.renderFramedFooter(footerContent, width)
 	if info.SuppressFooter {
 		footerFrame = ""
 		footerHeight = 0
@@ -787,12 +772,12 @@ func (p *Panel) Render(ctx context.Context, width, height int, focused bool) str
 		footerFrame = ""
 		footerHeight = 0
 	}
-	frameHeight = max(2, height-footerHeight)
-	// The frame always includes both a top and bottom border row; keep content height
-	// consistent regardless of whether a footer bar is rendered.
-	contentHeight = max(1, frameHeight-2)
-	p.SetDimensions(ctx, contentWidth, contentHeight)
-	info = p.frameInfo(ctx)
+	frameHeight := max(2, height-footerHeight)
+	contentHeight := max(1, frameHeight-2)
+	if contentHeight != p.height {
+		p.height = contentHeight
+		p.invalidateRenderCache()
+	}
 
 	title := info.Breadcrumb
 	if title == "" {
@@ -827,26 +812,13 @@ func (p *Panel) SetCurrentPath(path string) {
 	p.invalidateRenderCache()
 }
 
-// SetDimensions sets the panel dimensions
-func (p *Panel) SetDimensions(ctx context.Context, width, height int) {
-	if width == p.width && height == p.height {
-		return
-	}
-	p.width = width
-	p.height = height
-	p.invalidateRenderCache()
-	if widget := p.ensureActiveWidget(ctx); widget != nil {
-		widget.Resize(ctx, panelcontent.Size{Width: width, Height: height})
-	}
-}
-
-func (p *Panel) frameInfo(ctx context.Context) panelcontent.FrameInfo {
+func (p *Panel) frameInfo(ctx context.Context, width int) panelcontent.FrameInfo {
 	info := panelcontent.FrameInfo{
 		Breadcrumb: p.currentPath,
 	}
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if provider, ok := widget.(panelcontent.FrameInfoProvider); ok {
-			wi := provider.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: p.width})
+			wi := provider.FrameInfo(ctx, panelcontent.FrameInfoRequest{Width: width})
 			if wi.Breadcrumb != "" {
 				info.Breadcrumb = wi.Breadcrumb
 			}
@@ -961,8 +933,11 @@ func (p *Panel) renderFooterWithWidth(ctx context.Context, status string, suppre
 	renderedFooter := ""
 	if widget := p.ensureActiveWidget(ctx); widget != nil {
 		if fp, ok := widget.(panelcontent.FooterProvider); ok {
-			renderedFooter = fp.Footer(ctx, p.width)
+			renderedFooter = fp.Footer(ctx, width)
 		}
+	}
+	if strings.TrimSpace(renderedFooter) == "" {
+		return ""
 	}
 	lines := strings.Split(strings.TrimRight(renderedFooter, "\n"), "\n")
 	if len(lines) == 0 {
@@ -1007,7 +982,7 @@ func (p *Panel) FrameContentSize(ctx context.Context, frameWidth, frameHeight in
 		frameHeight = 1
 	}
 	contentWidth := max(1, frameWidth-2)
-	info := p.frameInfo(ctx)
+	info := p.frameInfo(ctx, contentWidth)
 	footerContent := p.renderFooterWithWidth(ctx, info.FooterStatus, info.SuppressFooter, contentWidth)
 	footerFrame, footerHeight := p.renderFramedFooter(footerContent, frameWidth)
 	if info.SuppressFooter || footerFrame == "" {
@@ -1017,10 +992,47 @@ func (p *Panel) FrameContentSize(ctx context.Context, frameWidth, frameHeight in
 	return panelcontent.Size{Width: contentWidth, Height: contentHeight}, footerHeight
 }
 
-// SetFrameDimensions accepts a frame size (outer border box) and applies the derived content size.
-func (p *Panel) SetFrameDimensions(ctx context.Context, frameWidth, frameHeight int) {
+func (p *Panel) applyFrameSize(ctx context.Context, frameWidth, frameHeight int) tea.Cmd {
+	if frameWidth <= 0 {
+		p.frameWidth = 0
+		p.frameHeight = 0
+		p.width = 0
+		p.height = 0
+		p.invalidateRenderCache()
+		return nil
+	}
+	if frameHeight <= 0 {
+		p.frameWidth = 0
+		p.frameHeight = 0
+		p.width = 0
+		p.height = 0
+		p.invalidateRenderCache()
+		return nil
+	}
 	size, _ := p.FrameContentSize(ctx, frameWidth, frameHeight)
-	p.SetDimensions(ctx, size.Width, size.Height)
+	changed := frameWidth != p.frameWidth || frameHeight != p.frameHeight || size.Width != p.width || size.Height != p.height
+	p.frameWidth = frameWidth
+	p.frameHeight = frameHeight
+	p.width = size.Width
+	p.height = size.Height
+	if changed {
+		p.invalidateRenderCache()
+	}
+	return p.forwardSizeToWidget(ctx, size)
+}
+
+func (p *Panel) forwardSizeToWidget(ctx context.Context, size panelcontent.Size) tea.Cmd {
+	if size.Width <= 0 || size.Height <= 0 {
+		return nil
+	}
+	widget := p.ensureActiveWidget(ctx)
+	if widget == nil {
+		return nil
+	}
+	if cmd, handled := widget.Update(ctx, tea.WindowSizeMsg{Width: size.Width, Height: size.Height}); handled {
+		return cmd
+	}
+	return nil
 }
 
 func (p *Panel) renderFrame(content string, info panelcontent.FrameInfo, title string, width, height int, focused bool, hasFooter bool) string {

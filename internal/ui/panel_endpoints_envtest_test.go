@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	"github.com/sttts/kc/internal/models"
 	kctesting "github.com/sttts/kc/internal/testing"
@@ -68,7 +69,9 @@ func TestPanelEndpointsColumnsEnvtest(t *testing.T) {
 	// Panel should pick up server columns on SetFolder
 	p := NewPanel("")
 	p.UseFolder(ctx, true)
-	p.SetDimensions(ctx, 120, 20)
+	if model, _ := p.Update(tea.WindowSizeMsg{Width: 120, Height: 20}); model != nil {
+		p = model.(*Panel)
+	}
 	p.SetFolder(ctx, folder, false)
 	cols := p.ColumnTitles(ctx)
 	if len(cols) < 2 {

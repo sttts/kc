@@ -74,14 +74,19 @@ func TestNewTerminal(t *testing.T) {
 
 func TestPanelSetDimensions(t *testing.T) {
 	panel := NewPanel("Test")
-	panel.SetDimensions(t.Context(), 100, 50)
+	model, _ := panel.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
+	panel = model.(*Panel)
 
-	if panel.width != 100 {
-		t.Errorf("Expected width to be 100, got %d", panel.width)
+	if panel.frameWidth != 100 {
+		t.Errorf("Expected frame width to be 100, got %d", panel.frameWidth)
 	}
 
-	if panel.height != 50 {
-		t.Errorf("Expected height to be 50, got %d", panel.height)
+	size, _ := panel.FrameContentSize(context.Background(), 100, 50)
+	if panel.width != size.Width {
+		t.Errorf("Expected content width to be %d, got %d", size.Width, panel.width)
+	}
+	if panel.height != size.Height {
+		t.Errorf("Expected content height to be %d, got %d", size.Height, panel.height)
 	}
 }
 

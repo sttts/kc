@@ -37,25 +37,25 @@ func TestPanelWidthsForDistributions(t *testing.T) {
 		t.Fatalf("expected 60/60 for 50%% split, got %d/%d", left, right)
 	}
 
-	app.setPanelWidthPercent(0, 66)
+	_ = app.setPanelWidthPercent(0, 66)
 	left, right = app.panelWidthsFor(120)
 	if left != 79 || right != 41 {
 		t.Fatalf("expected 79/41 for 66%% split, got %d/%d", left, right)
 	}
 
-	app.setPanelWidthPercent(0, 100)
+	_ = app.setPanelWidthPercent(0, 100)
 	left, right = app.panelWidthsFor(80)
 	if left != 80 || right != 0 {
 		t.Fatalf("expected 80/0 for full-width left, got %d/%d", left, right)
 	}
 
-	app.setPanelWidthPercent(1, 100)
+	_ = app.setPanelWidthPercent(1, 100)
 	left, right = app.panelWidthsFor(80)
 	if left != 0 || right != 80 {
 		t.Fatalf("expected 0/80 for full-width right, got %d/%d", left, right)
 	}
 
-	app.setPanelWidthPercent(0, 50)
+	_ = app.setPanelWidthPercent(0, 50)
 	left, right = app.panelWidthsFor(1)
 	if left+right != 1 {
 		t.Fatalf("expected widths to sum to total, got %d/%d", left, right)
@@ -67,16 +67,16 @@ func TestCyclePanelWidthSequence(t *testing.T) {
 
 	sequenceLeft := []int{66, 75, 100, 100}
 	for _, expected := range sequenceLeft {
-		app.cyclePanelWidth(0)
+		_ = app.cyclePanelWidth(0)
 		if app.leftPanelWidthPercent != expected {
 			t.Fatalf("left cycle expected %d, got %d", expected, app.leftPanelWidthPercent)
 		}
 	}
 
-	app.setPanelWidthPercent(0, 50)
+	_ = app.setPanelWidthPercent(0, 50)
 	sequenceRight := []int{66, 75, 100, 100}
 	for _, expected := range sequenceRight {
-		app.cyclePanelWidth(1)
+		_ = app.cyclePanelWidth(1)
 		if app.rightPanelWidthPercent != expected {
 			t.Fatalf("right cycle expected %d, got %d", expected, app.rightPanelWidthPercent)
 		}
@@ -85,14 +85,14 @@ func TestCyclePanelWidthSequence(t *testing.T) {
 
 func TestTabDisabledWhenPanelHidden(t *testing.T) {
 	app := NewApp()
-	app.setPanelWidthPercent(0, 100)
+	_ = app.setPanelWidthPercent(0, 100)
 	app.activePanel = 0
 	app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if app.activePanel != 0 {
 		t.Fatalf("expected active panel to remain left when right hidden, got %d", app.activePanel)
 	}
 
-	app.setPanelWidthPercent(1, 100)
+	_ = app.setPanelWidthPercent(1, 100)
 	app.activePanel = 1
 	app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if app.activePanel != 1 {
@@ -102,7 +102,7 @@ func TestTabDisabledWhenPanelHidden(t *testing.T) {
 
 func TestAltFDisallowedWhenPanelHidden(t *testing.T) {
 	app := NewApp()
-	app.setPanelWidthPercent(1, 100) // right full, left hidden
+	_ = app.setPanelWidthPercent(1, 100) // right full, left hidden
 	app.activePanel = 1
 	if app.modalManager.IsModalVisible() {
 		t.Fatalf("modal should not be visible before test")
@@ -112,7 +112,7 @@ func TestAltFDisallowedWhenPanelHidden(t *testing.T) {
 		t.Fatalf("left view options should not open when left panel hidden")
 	}
 
-	app.setPanelWidthPercent(0, 100) // left full, right hidden
+	_ = app.setPanelWidthPercent(0, 100) // left full, right hidden
 	app.activePanel = 0
 	app.Update(tea.KeyPressMsg{Code: tea.KeyF2, Mod: tea.ModAlt})
 	if app.modalManager.IsModalVisible() {

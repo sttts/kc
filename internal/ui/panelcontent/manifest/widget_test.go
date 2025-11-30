@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -43,7 +44,7 @@ func (objectViewableStub) SupportsVerb(string) bool           { return false }
 func TestFrameInfoProvidesIndicatorsAndStatus(t *testing.T) {
 	ctx := context.Background()
 	w := New(panelcontent.WidgetDeps{})
-	w.Resize(ctx, panelcontent.Size{Width: 40, Height: 5})
+	_, _ = w.Update(ctx, tea.WindowSizeMsg{Width: 40, Height: 5})
 
 	lines := make([]string, 10)
 	for i := range lines {

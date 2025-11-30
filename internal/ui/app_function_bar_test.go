@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/models"
 	"github.com/sttts/kc/internal/table"
@@ -70,6 +71,8 @@ func TestAppFunctionBarUpdate(t *testing.T) {
 	app := NewApp()
 	app.width = 100
 	app.height = 30
+	model, _ := app.Update(tea.WindowSizeMsg{Width: app.width, Height: app.height})
+	app = model.(*App)
 	ctx := t.Context()
 
 	// Setup Left Panel: Normal item selected
@@ -77,7 +80,6 @@ func TestAppFunctionBarUpdate(t *testing.T) {
 		items: []models.Item{mockItemFB{id: "item1"}},
 	}
 	app.leftPanel.UseFolder(ctx, true)
-	app.leftPanel.SetDimensions(ctx, 50, 20)
 	app.leftPanel.SetFolder(ctx, leftFolder, false)
 	app.leftPanel.SelectByRowID(ctx, "item1")
 	app.leftPanel.Init() // Ensure widget init
@@ -96,7 +98,6 @@ func TestAppFunctionBarUpdate(t *testing.T) {
 		items: []models.Item{mockItemFB{id: "stale"}},
 	}
 	app.rightPanel.UseFolder(ctx, true)
-	app.rightPanel.SetDimensions(ctx, 50, 20)
 	app.rightPanel.SetFolder(ctx, staleFolder, false)
 	app.rightPanel.SelectByRowID(ctx, "stale")
 
