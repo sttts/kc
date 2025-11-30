@@ -107,3 +107,34 @@ func TestNamespaceCommandRestartDebounced(t *testing.T) {
 		t.Fatalf("expected namespace target cleared after restart, got %q", got)
 	}
 }
+
+func TestNamespaceCommandPlaceholderDisablesWatch(t *testing.T) {
+	app := NewApp()
+	cfg := appconfig.CommandConfig{
+		Name:          "Top Pods",
+		Type:          appconfig.CommandTypeNamespace,
+		WatchInterval: metav1.Duration{Duration: 5 * time.Second},
+	}
+
+	// Pretend an existing watch was active.
+	app.commandWatchInterval[0] = cfg.WatchInterval.Duration
+	app.commandWatchToken[0] = 7
+
+	oldToken := app.commandWatchToken[0]
+	if cmd := app.startNamespaceCommand(0, cfg, ""); cmd != nil {
+		_ = cmd()
+	}
+
+	if got := app.commandWatchInterval[0]; got != 0 {
+		t.Fatalf("expected watch interval cleared on placeholder, got %v", got)
+	}
+	if got := app.commandWatchToken[0]; got != oldToken+1 {
+		t.Fatalf("expected watch token bumped, got %d want %d", got, oldToken+1)
+	}
+
+	// A stale tick with the old token must be ignored.
+	app.namespaceCommandTarget[0] = "default"
+	if model, cmd := app.handleCommandWatchTick(commandWatchTickMsg{PanelIdx: 0, Token: oldToken}); cmd != nil {
+		t.Fatalf("expected no command from stale tick, got %v (model=%T)", cmd, model)
+	}
+}
