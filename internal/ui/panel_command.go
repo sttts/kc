@@ -436,10 +436,25 @@ func (w *CommandWidget) SetFolderNavHandler(h func(back bool, selID string, next
 func (w *CommandWidget) RefreshFolder(ctx context.Context) {}
 func (w *CommandWidget) FrameInfo(ctx context.Context, req panelcontent.FrameInfoRequest) panelcontent.FrameInfo {
 	return panelcontent.FrameInfo{
-		Breadcrumb:     w.config.Name,
+		Breadcrumb:     w.breadcrumb(),
 		HeaderStatus:   w.heartbeatStatus(),
 		SuppressFooter: true,
 	}
+}
+
+func (w *CommandWidget) breadcrumb() string {
+	if w.config.Type != appconfig.CommandTypeNamespace {
+		return w.config.Name
+	}
+	ns := "-"
+	if len(w.pendingItems) > 0 {
+		if obj, ok := w.pendingItems[0].(models.ObjectItem); ok {
+			if n := obj.Namespace(); n != "" {
+				ns = n
+			}
+		}
+	}
+	return fmt.Sprintf("%s (ns: %s)", w.config.Name, ns)
 }
 
 // WatchInterval reports the active watch interval.

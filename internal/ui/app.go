@@ -17,6 +17,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	readmedoc "github.com/sttts/kc"
 	kccluster "github.com/sttts/kc/internal/cluster"
 	models "github.com/sttts/kc/internal/models"
@@ -93,6 +94,16 @@ type namespaceRetryMsg struct {
 type commandWatchTickMsg struct {
 	PanelIdx int
 	Token    int
+}
+
+type panelNamespaceChangedMsg struct {
+	PanelIdx  int
+	Namespace string
+}
+
+type restartNamespaceCommandMsg struct {
+	PanelIdx  int
+	Namespace string
 }
 
 type startupIntentMsg struct{}
@@ -248,6 +259,8 @@ type App struct {
 	helpViewer             *MarkdownHelpViewer
 	podfsFactory           podfs.Factory
 	folderDirtyCh          chan FolderDirtyMsg
+	panelNamespace         [2]string
+	namespaceCommandTarget [2]string
 }
 
 const (
@@ -289,6 +302,22 @@ func NewApp() *App {
 	app.rightPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(1, f) })
 	app.leftPanel.SetMessagePoster(app.postFromPanel(0))
 	app.rightPanel.SetMessagePoster(app.postFromPanel(1))
+	app.leftPanel.RegisterSelectionObserver(func(ctx context.Context, sel panelcontent.Selection, ns string) tea.Msg {
+		ns = deriveNamespace(sel.Item, app.leftPanel.GetSelectedItems(), ns)
+		if ns == app.panelNamespace[0] {
+			return nil
+		}
+		app.panelNamespace[0] = ns
+		return panelNamespaceChangedMsg{PanelIdx: 0, Namespace: ns}
+	})
+	app.rightPanel.RegisterSelectionObserver(func(ctx context.Context, sel panelcontent.Selection, ns string) tea.Msg {
+		ns = deriveNamespace(sel.Item, app.rightPanel.GetSelectedItems(), ns)
+		if ns == app.panelNamespace[1] {
+			return nil
+		}
+		app.panelNamespace[1] = ns
+		return panelNamespaceChangedMsg{PanelIdx: 1, Namespace: ns}
+	})
 
 	// Register modals
 	app.setupModals()
@@ -3623,6 +3652,8 @@ func (a *App) invalidateTerminalArea(reason string) {
 	a.terminalAreaCache.invalidate()
 }
 
+const namespacePlaceholder = "(no namespace)"
+
 func (a *App) swapPanels() {
 	// Swap panel pointers
 	a.leftPanel, a.rightPanel = a.rightPanel, a.leftPanel
@@ -3669,42 +3700,118 @@ func (a *App) swapPanels() {
 	a.activePanel = (a.activePanel + 1) % 2
 }
 
+func (a *App) panelNamespaceContext(ctx context.Context, p *Panel) (models.Item, []Item, string, string) {
+	if p == nil {
+		return nil, nil, "", ""
+	}
+
+	item, _ := p.SelectedNavItem(ctx)
+	selectedItems := p.GetSelectedItems()
+	folderNamespace := p.namespace(ctx)
+	activeNamespace := deriveNamespace(item, selectedItems, folderNamespace)
+
+	return item, selectedItems, folderNamespace, activeNamespace
+}
+
+func (a *App) startNamespaceCommand(panelIdx int, cfg appconfig.CommandConfig, namespace string) tea.Cmd {
+	panel := a.panelByIndex(panelIdx)
+	if panel == nil {
+		return nil
+	}
+
+	leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
+	frameWidth := leftWidth
+	if panelIdx == 1 {
+		frameWidth = rightWidth
+	}
+
+	a.namespaceCommandTarget[panelIdx] = namespace
+
+	if namespace == "" {
+		return panel.ShowCommandPlaceholder(a.ctx, cfg, "Not in namespace scope", frameWidth, panelHeight)
+	}
+
+	items := []models.Item{namespaceCommandItem{namespace: namespace}}
+	start := panel.StartCommand(a.ctx, cfg, items, schema.GroupVersionResource{}, frameWidth, panelHeight)
+	var sched tea.Cmd
+	ctxCmd, cancelCmd := context.WithTimeout(a.ctx, panelContextTimeout)
+	_ = panel.SetCommandWatchInterval(ctxCmd, cfg.WatchInterval.Duration)
+	cancelCmd()
+	if cfg.WatchInterval.Duration > 0 {
+		sched = a.setCommandWatchInterval(panelIdx, cfg.WatchInterval.Duration)
+	}
+	return tea.Batch(start, sched)
+}
+
+func (a *App) maybeRestartNamespaceCommand(panelIdx int, namespace string) tea.Cmd {
+	panel := a.panelByIndex(panelIdx)
+	if panel == nil {
+		return nil
+	}
+	cfg := panel.CommandConfig()
+	if cfg == nil || cfg.Type != appconfig.CommandTypeNamespace {
+		return nil
+	}
+
+	if namespace == a.namespaceCommandTarget[panelIdx] {
+		return nil
+	}
+
+	if cfg.Debounce.Duration > 0 {
+		return tea.Tick(cfg.Debounce.Duration, func(time.Time) tea.Msg {
+			return restartNamespaceCommandMsg{PanelIdx: panelIdx, Namespace: namespace}
+		})
+	}
+
+	return a.startNamespaceCommand(panelIdx, *cfg, namespace)
+}
+
 func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
 
-	item, ok := p.SelectedNavItem(ctx)
-	if !ok || item == nil {
-		// For now, only show if item selected.
-		// Later we might support global commands without selection if they don't depend on it.
-		// But the requirement says "Global (d): Completely independent of selection".
-		// So we should proceed even if item is nil, but filter accordingly.
+	item, selectedItems, folderNamespace, activeNamespace := a.panelNamespaceContext(ctx, p)
+
+	var otherPanel *Panel
+	if a.panelIndex(p) == 0 {
+		otherPanel = a.rightPanel
+	} else {
+		otherPanel = a.leftPanel
+	}
+	_, _, otherFolderNamespace, otherActiveNamespace := a.panelNamespaceContext(ctx, otherPanel)
+
+	targetNamespace := otherActiveNamespace
+	if targetNamespace == "" {
+		targetNamespace = otherFolderNamespace
+	}
+	if targetNamespace == "" {
+		// Fall back to the current panel's namespace so the arrow reflects a concrete target
+		// when the opposite panel isn't namespaced.
+		targetNamespace = activeNamespace
+	}
+	if targetNamespace == "" {
+		targetNamespace = namespacePlaceholder
 	}
 
-	// Filter commands
-	selectedItems := p.GetSelectedItems()
-	folderNamespace := p.namespace(ctx)
-	itemNamespace := namespaceFromItem(item)
-	var selectedNamespace string
-	for _, sel := range selectedItems {
-		if ns := namespaceFromItem(sel.Item); ns != "" {
-			selectedNamespace = ns
-			break
-		}
-	}
-	activeNamespace := deriveNamespace(item, selectedItems, folderNamespace)
 	ctrllog.FromContext(a.ctx).WithName("commandMenu").V(1).Info("building command list",
 		"panel", a.panelIndex(p),
 		"folderNamespace", folderNamespace,
-		"itemNamespace", itemNamespace,
-		"selectedNamespace", selectedNamespace,
+		"selectedNamespace", activeNamespace,
+		"targetNamespace", targetNamespace,
 		"selectedCount", len(selectedItems),
 		"activeNamespace", activeNamespace,
 		"itemType", fmt.Sprintf("%T", item),
 	)
+
+	namespaceForApplicability := targetNamespace
+	if namespaceForApplicability == "" {
+		namespaceForApplicability = activeNamespace
+	}
+
+	// Filter commands
 	var available []appconfig.CommandConfig
 	for _, cmd := range a.cfg.Commands {
-		if isCommandApplicable(cmd, item, len(selectedItems), activeNamespace) {
+		if isCommandApplicable(cmd, item, len(selectedItems), namespaceForApplicability) {
 			available = append(available, cmd)
 		}
 	}
@@ -3719,10 +3826,6 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	if a.panelIndex(p) == 1 {
 		targetPanel = "left panel"
 		targetLeft = true
-	}
-	targetNamespace := folderNamespace
-	if targetNamespace == "" {
-		targetNamespace = activeNamespace
 	}
 
 	selector := NewCommandSelectorModel(available, targetPanel, targetNamespace, targetLeft, func(cmd appconfig.CommandConfig) tea.Cmd {
@@ -3748,16 +3851,31 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 			}
 		}
 
+		runPanel := p
+		if cmd.Type == appconfig.CommandTypeNamespace && otherPanel != nil {
+			runPanel = otherPanel
+		}
+
+		if cmd.Type == appconfig.CommandTypeNamespace {
+			ns := targetNamespace
+			if ns == namespacePlaceholder {
+				ns = ""
+			}
+			panelIdx := a.panelIndex(runPanel)
+			return a.startNamespaceCommand(panelIdx, cmd, ns)
+		}
+
 		leftWidth, rightWidth, panelHeight, _ := a.panelAreaMetrics()
 		frameWidth := leftWidth
-		if idx := a.panelIndex(p); idx == 1 {
+		if idx := a.panelIndex(runPanel); idx == 1 {
 			frameWidth = rightWidth
 		}
-		start := p.StartCommand(a.ctx, cmd, items, gvr, frameWidth, panelHeight)
+
+		start := runPanel.StartCommand(a.ctx, cmd, items, gvr, frameWidth, panelHeight)
 		var sched tea.Cmd
-		if panelIdx := a.panelIndex(p); panelIdx >= 0 {
+		if panelIdx := a.panelIndex(runPanel); panelIdx >= 0 {
 			ctxCmd, cancelCmd := context.WithTimeout(a.ctx, panelContextTimeout)
-			_ = p.SetCommandWatchInterval(ctxCmd, cmd.WatchInterval.Duration)
+			_ = runPanel.SetCommandWatchInterval(ctxCmd, cmd.WatchInterval.Duration)
 			cancelCmd()
 			if cmd.WatchInterval.Duration > 0 {
 				sched = a.setCommandWatchInterval(panelIdx, cmd.WatchInterval.Duration)
@@ -3781,3 +3899,23 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	a.showModal("command_menu")
 	return nil
 }
+
+type namespaceCommandItem struct {
+	namespace string
+}
+
+func (n namespaceCommandItem) Columns() (string, []string, []*lipgloss.Style, bool) {
+	return "namespace-placeholder", nil, nil, true
+}
+
+func (n namespaceCommandItem) Details() string { return "" }
+
+func (n namespaceCommandItem) Path() []string { return nil }
+
+func (n namespaceCommandItem) GVR() schema.GroupVersionResource { return schema.GroupVersionResource{} }
+
+func (n namespaceCommandItem) Namespace() string { return n.namespace }
+
+func (n namespaceCommandItem) Name() string { return n.namespace }
+
+func (n namespaceCommandItem) SupportsVerb(string) bool { return true }

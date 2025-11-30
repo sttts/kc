@@ -4,6 +4,7 @@ import (
 	"context"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	panelcontent "github.com/sttts/kc/internal/ui/panelcontent"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
 )
@@ -46,7 +47,12 @@ func (w *placeholderWidget) View(ctx context.Context, frame panelcontent.Frame) 
 	if content == "" {
 		content = "Mode not yet available"
 	}
-	style := uistyles.PanelContentStyle.Width(width).Height(height)
+	style := uistyles.PanelContentStyle.
+		Width(width).
+		Height(height).
+		Background(lipgloss.Color(uistyles.ColorBlack)).
+		Foreground(lipgloss.Color(uistyles.ColorWhite)).
+		Padding(0, 1)
 	if frame.Focused {
 		style = style.Copy().Bold(true)
 	}

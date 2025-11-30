@@ -37,6 +37,7 @@ type Panel struct {
 	widgetFactories      map[PanelViewMode]PanelWidgetFactory
 	commandInteractive   bool
 	commandFocused       bool
+	commandConfig        *appconfig.CommandConfig
 	messagePoster        func(tea.Msg)
 	commandFocusHandler  func(bool) tea.Cmd
 	lastSelectionID      string
@@ -46,6 +47,7 @@ type Panel struct {
 	renderCacheHeight    int
 	renderCacheFocused   bool
 	renderCacheValid     bool
+	selectionObservers   []func(context.Context, panelcontent.Selection, string) tea.Msg
 }
 
 const panelContextTimeout = 250 * time.Millisecond
@@ -93,10 +95,15 @@ func (p *Panel) escTimeoutValue() time.Duration {
 // When frameWidth/frameHeight are >0, the panel is resized for the command mode
 // before launching the widget to ensure bubbleterm dimensions are correct.
 func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig, items []models.Item, gvr schema.GroupVersionResource, frameWidth, frameHeight int) tea.Cmd {
+	if existing := p.commandWidget(ctx); existing != nil {
+		existing.Teardown(ctx)
+	}
 	// Ensure a fresh command widget instance for each launch.
 	delete(p.widgets, PanelModeCommand)
 
 	// Create widget if not exists or if config changed (simplified: always create new for now)
+	cfgCopy := config
+	p.commandConfig = &cfgCopy
 	widget := NewCommandWidget(p.listWidgetDeps(), config)
 	widget.SetInteractive(config.Interactive)
 	widget.SetFocusChangedHandler(p.setCommandFocus)
@@ -120,6 +127,36 @@ func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig
 	startCmd := widget.StartCommand(ctx, items, gvr)
 
 	return tea.Batch(cmd, startCmd)
+}
+
+// ShowCommandPlaceholder renders a non-interactive placeholder instead of launching a command widget.
+func (p *Panel) ShowCommandPlaceholder(ctx context.Context, config appconfig.CommandConfig, message string, frameWidth, frameHeight int) tea.Cmd {
+	if existing := p.commandWidget(ctx); existing != nil {
+		existing.Teardown(ctx)
+	}
+	delete(p.widgets, PanelModeCommand)
+
+	cfgCopy := config
+	p.commandConfig = &cfgCopy
+
+	p.RegisterMode(PanelModeCommand, func(panel *Panel) panelcontent.Widget {
+		return newPlaceholderWidget(panel, message)
+	})
+
+	cmd := p.SetMode(ctx, PanelModeCommand)
+
+	if frameWidth > 0 && frameHeight > 0 {
+		if resizeCmd := p.applyFrameSize(ctx, frameWidth, frameHeight); resizeCmd != nil {
+			cmd = tea.Batch(cmd, resizeCmd)
+		}
+	}
+
+	return cmd
+}
+
+// CommandConfig returns the last launched command config for this panel, if any.
+func (p *Panel) CommandConfig() *appconfig.CommandConfig {
+	return p.commandConfig
 }
 
 func (p *Panel) invalidateRenderCache() {
@@ -402,7 +439,7 @@ func (p *Panel) SetFolder(ctx context.Context, f models.Folder, hasBack bool) {
 		lw.SetFolder(ctx, f, hasBack)
 	}
 	p.invalidateRenderCache()
-	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.currentSelectionID(ctx), Path: p.currentPath})
+	p.widgetSelectionChanged(ctx, panelcontent.Selection{ID: p.currentSelectionID(ctx), Path: p.currentPath, Force: true})
 }
 
 // UseFolder toggles folder-backed rendering.
@@ -1356,4 +1393,21 @@ func (p *Panel) notifySelectionListeners(ctx context.Context, sel panelcontent.S
 			listener.OnSelectionChanged(ctx, sel)
 		}
 	}
+	for _, obs := range p.selectionObservers {
+		if obs == nil || p.messagePoster == nil {
+			continue
+		}
+		currentNS := p.namespace(ctx)
+		if msg := obs(ctx, sel, currentNS); msg != nil {
+			p.messagePoster(msg)
+		}
+	}
+}
+
+// RegisterSelectionObserver adds an observer invoked on selection changes. The returned tea.Msg (if any) is posted via the panel's message poster.
+func (p *Panel) RegisterSelectionObserver(fn func(context.Context, panelcontent.Selection, string) tea.Msg) {
+	if fn == nil {
+		return
+	}
+	p.selectionObservers = append(p.selectionObservers, fn)
 }

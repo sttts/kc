@@ -240,6 +240,9 @@ func Default() *Config {
 				Command:  "kubectl top pods -n {{.Namespace}}",
 				Type:     CommandTypeNamespace,
 				Location: CommandLocationPanel,
+				WatchInterval: metav1.Duration{
+					Duration: 5 * time.Second,
+				},
 				Debounce: metav1.Duration{Duration: 500 * time.Millisecond},
 				OnExit:   CommandExitKeepOpen,
 			},

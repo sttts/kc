@@ -57,5 +57,6 @@ commands:
     command: kubectl top pods -n {{.Namespace}}
     type: namespace
     location: panel
+    watchInterval: 5s
     debounce: 500ms
     onExit: keep-open
