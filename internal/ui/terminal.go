@@ -93,8 +93,6 @@ func (t *Terminal) Init() tea.Cmd {
 
 	t.terminal = terminal
 	t.terminal.SetQuietExit(true)
-	t.terminal.WithCtrlCSignal(true)
-	t.terminal.WithCtrlZSignal(true)
 
 	// Set up exit callback to quit when shell exits
 	emulator := t.terminal.GetEmulator()
