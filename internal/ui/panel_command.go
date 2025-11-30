@@ -56,6 +56,8 @@ type CommandWidget struct {
 	escArmed       bool
 	escTimerToken  int
 	onFocusChanged func(bool) tea.Cmd
+	// Last known content size (panel content rectangle)
+	lastSize panelcontent.Size
 }
 
 func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
@@ -92,16 +94,17 @@ func (w *CommandWidget) Teardown(ctx context.Context) {
 
 func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	if m, ok := msg.(tea.WindowSizeMsg); ok {
+		w.lastSize = panelcontent.Size{Width: m.Width, Height: m.Height}
 		w.width = m.Width
 		w.height = m.Height
-		if w.terminal != nil {
-			model, cmd := w.terminal.Update(m)
-			if term, ok := model.(*bubbleterm.Model); ok {
-				w.terminal = term
-			}
-			return cmd, true
+		if w.terminal == nil {
+			return nil, true
 		}
-		return nil, true
+		model, cmd := w.terminal.Update(m)
+		if term, ok := model.(*bubbleterm.Model); ok {
+			w.terminal = term
+		}
+		return cmd, true
 	}
 	// Mouse events should respect interactive focus.
 	if mm, ok := msg.(panelcontent.MouseMsg); ok && w.interactiveOn {
@@ -391,6 +394,7 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 		w.terminal.Init(),
 		w.terminal.StartCommand(w.cmd),
 		w.triggerHeartbeat(),
+		w.applyPendingSize(),
 	)
 }
 
@@ -563,4 +567,19 @@ func (w *CommandWidget) setInteractiveFocus(on bool) tea.Cmd {
 		return w.onFocusChanged(on)
 	}
 	return nil
+}
+
+func (w *CommandWidget) applyPendingSize() tea.Cmd {
+	if w.terminal == nil {
+		return nil
+	}
+	if w.lastSize.Width <= 0 || w.lastSize.Height <= 0 {
+		return nil
+	}
+	msg := tea.WindowSizeMsg{Width: w.lastSize.Width, Height: w.lastSize.Height}
+	model, cmd := w.terminal.Update(msg)
+	if term, ok := model.(*bubbleterm.Model); ok {
+		w.terminal = term
+	}
+	return cmd
 }

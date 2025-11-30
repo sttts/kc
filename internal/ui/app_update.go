@@ -100,6 +100,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if resizeCmds := a.resizePanelsForCurrentLayout(); len(resizeCmds) > 0 {
 				cmds = append(cmds, resizeCmds...)
 			}
+			return a, tea.Batch(cmds...)
 		}
 
 		if !sizeChanged && len(cmds) == 0 {
