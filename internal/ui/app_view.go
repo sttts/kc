@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -36,6 +37,41 @@ func (a *App) View() tea.View {
 		modalView := a.modalManager.View()
 		modalCursor := modalView.Cursor
 		modalContent := viewString(modalView)
+
+		// If command menu is active, draw an external arrow toward the target panel namespace.
+		if a.activeCommandSelector != nil && a.modalManager.GetActiveModal() != nil {
+			if winX, winY, winW, _, ok := a.modalManager.GetActiveModal().WindowPosition(); ok {
+				if a.activeCommandSelector.SelectedIsNamespaced() {
+					row := a.activeCommandSelector.SelectedRow()
+					leftArrow := "\u25c0"  // ◀
+					rightArrow := "\u25b6" // ▶
+					arrowHead := rightArrow
+					arrowText := fmt.Sprintf("\u2500\u2500\u2500\u2500\u2500\u2500\u2500(ns: %s)\u2500\u2500\u2500\u2500\u2500\u2500\u2500%s", a.activeCommandSelector.TargetNamespace(), arrowHead)
+					arrowView := lipgloss.NewStyle().
+						Background(lipgloss.Blue).
+						Foreground(lipgloss.Color(uistyles.ColorOrange)).
+						Bold(true).
+						Render(arrowText)
+					// Position: to the right of the window, aligned with the selected row.
+					dx := winX + winW
+					if a.activeCommandSelector.TargetLeft() {
+						arrowHead = leftArrow
+						arrowText = fmt.Sprintf("%s\u2500\u2500\u2500\u2500\u2500\u2500\u2500(ns: %s)\u2500\u2500\u2500\u2500\u2500\u2500\u2500", arrowHead, a.activeCommandSelector.TargetNamespace())
+						arrowView = lipgloss.NewStyle().
+							Background(lipgloss.Blue).
+							Foreground(lipgloss.Color(uistyles.ColorOrange)).
+							Bold(true).
+							Render(arrowText)
+						dx = winX - lipgloss.Width(arrowText) - 1
+					}
+					dy := winY + 1 + row
+					if dx < a.width && dx >= 0 {
+						modalContent = overlay.Composite(arrowView, modalContent, overlay.Top, overlay.Left, dx, dy)
+					}
+				}
+			}
+		}
+
 		a.mainViewCache.set(modalContent, modalCursor)
 		v := viewWithCursor(modalContent, modalCursor)
 		v.AltScreen = true

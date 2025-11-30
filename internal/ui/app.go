@@ -234,9 +234,10 @@ type App struct {
 	// Recent Bubble Tea messages for idle-loop diagnostics
 	msgLog []string
 	// Cached views
-	mainViewCache     cachedView
-	functionBarCache  cachedView
-	terminalAreaCache cachedView
+	mainViewCache         cachedView
+	functionBarCache      cachedView
+	terminalAreaCache     cachedView
+	activeCommandSelector *CommandSelectorModel
 	// Namespace auto-navigation state
 	namespaceAutoTarget    string
 	namespaceAutoAttempts  int
@@ -497,6 +498,7 @@ func (a *App) hideModal() {
 		return
 	}
 	a.modalManager.Hide()
+	a.activeCommandSelector = nil
 	a.invalidateView("hide modal")
 }
 
@@ -505,6 +507,9 @@ func (a *App) hideModalName(name string) {
 		return
 	}
 	a.modalManager.HideName(name)
+	if name == "command_menu" {
+		a.activeCommandSelector = nil
+	}
 	a.invalidateView("hide modal " + name)
 }
 
@@ -3709,7 +3714,18 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	}
 
 	// Create selector
-	selector := NewCommandSelectorModel(available, func(cmd appconfig.CommandConfig) tea.Cmd {
+	targetPanel := "right panel"
+	targetLeft := false
+	if a.panelIndex(p) == 1 {
+		targetPanel = "left panel"
+		targetLeft = true
+	}
+	targetNamespace := folderNamespace
+	if targetNamespace == "" {
+		targetNamespace = activeNamespace
+	}
+
+	selector := NewCommandSelectorModel(available, targetPanel, targetNamespace, targetLeft, func(cmd appconfig.CommandConfig) tea.Cmd {
 		a.hideModal()
 		// Get items (handle multi-selection if supported)
 		var items []models.Item
@@ -3758,6 +3774,7 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 	panelIdx := a.panelIndex(p)
 	// Rebuild each time so we pick up fresh command lists and selection state.
 	a.modalManager.Register("command_menu", modal)
+	a.activeCommandSelector = selector
 	// Size and position like other panel-scoped modals.
 	a.configureModalWindow(modal, selector, panelIdx, "", 48, len(selector.entries)+3)
 	modal.SetOnClose(func() tea.Cmd { return nil })

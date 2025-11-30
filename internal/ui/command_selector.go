@@ -12,13 +12,16 @@ import (
 )
 
 type CommandSelectorModel struct {
-	entries  []commandSelectorEntry
-	selected int
-	scroll   int
-	width    int
-	height   int
-	onSelect func(appconfig.CommandConfig) tea.Cmd
-	onCancel func() tea.Cmd
+	entries         []commandSelectorEntry
+	selected        int
+	scroll          int
+	width           int
+	height          int
+	targetPanel     string
+	targetNamespace string
+	targetLeft      bool
+	onSelect        func(appconfig.CommandConfig) tea.Cmd
+	onCancel        func() tea.Cmd
 }
 
 type commandSelectorEntry struct {
@@ -26,18 +29,45 @@ type commandSelectorEntry struct {
 	command *appconfig.CommandConfig
 }
 
-func NewCommandSelectorModel(commands []appconfig.CommandConfig, onSelect func(appconfig.CommandConfig) tea.Cmd, onCancel func() tea.Cmd) *CommandSelectorModel {
+func NewCommandSelectorModel(commands []appconfig.CommandConfig, targetPanel, targetNamespace string, targetLeft bool, onSelect func(appconfig.CommandConfig) tea.Cmd, onCancel func() tea.Cmd) *CommandSelectorModel {
 	entries := buildCommandEntries(commands)
 	return &CommandSelectorModel{
-		entries:  entries,
-		selected: firstSelectable(entries),
-		scroll:   0,
-		onSelect: onSelect,
-		onCancel: onCancel,
+		entries:         entries,
+		selected:        firstSelectable(entries),
+		scroll:          0,
+		targetPanel:     targetPanel,
+		targetNamespace: targetNamespace,
+		targetLeft:      targetLeft,
+		onSelect:        onSelect,
+		onCancel:        onCancel,
 	}
 }
 
 func (m *CommandSelectorModel) Init() tea.Cmd { return nil }
+
+// SetDimensions is used by the modal to size the selector content.
+// SelectedRow returns the visible row index of the selection (0-based).
+func (m *CommandSelectorModel) SelectedRow() int {
+	if m.selected < 0 {
+		return 0
+	}
+	return max(0, min(m.selected-m.scroll, m.height-1))
+}
+
+// SelectedIsNamespaced reports whether the current selection is a namespaced command.
+func (m *CommandSelectorModel) SelectedIsNamespaced() bool {
+	if m.selected < 0 || m.selected >= len(m.entries) {
+		return false
+	}
+	entry := m.entries[m.selected]
+	return entry.command != nil && entry.command.Type == appconfig.CommandTypeNamespace
+}
+
+// TargetNamespace returns the target namespace string.
+func (m *CommandSelectorModel) TargetNamespace() string { return m.targetNamespace }
+
+// TargetLeft reports whether the arrow should point left.
+func (m *CommandSelectorModel) TargetLeft() bool { return m.targetLeft }
 
 func (m *CommandSelectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -105,13 +135,14 @@ func (m *CommandSelectorModel) View() tea.View {
 		}
 		cursor := "  "
 		style := rowStyle
+		lineWidth := m.width
 		if i == m.selected {
 			cursor = "> "
 			style = focusStyle
 		}
 		name := entry.command.Name
 		line := fmt.Sprintf("%s%s", cursor, name)
-		s.WriteString(style.Width(m.width).Render(line))
+		s.WriteString(style.Width(lineWidth).Render(line))
 		if i < end-1 {
 			s.WriteString("\n")
 		}

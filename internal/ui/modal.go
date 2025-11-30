@@ -160,6 +160,14 @@ func (m *Modal) SetWindowOffset(offsetX, offsetY int) {
 	m.windowHasPos = true
 }
 
+// WindowPosition returns the configured window offset and size when windowed.
+func (m *Modal) WindowPosition() (winX, winY, winW, winH int, ok bool) {
+	if !m.windowed {
+		return 0, 0, 0, 0, false
+	}
+	return m.windowOffsetX, m.windowOffsetY, m.winWidth, m.winHeight, true
+}
+
 // SetMode configures the modal presentation style.
 func (m *Modal) SetMode(mode ModalMode) { m.mode = mode }
 
