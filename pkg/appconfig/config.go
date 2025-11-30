@@ -59,7 +59,8 @@ type MouseConfig struct {
 }
 
 type InputConfig struct {
-	Mouse MouseConfig `json:"mouse"`
+	Mouse      MouseConfig     `json:"mouse"`
+	EscTimeout metav1.Duration `json:"escTimeout"`
 }
 
 type ClustersConfig struct {
@@ -197,7 +198,10 @@ func Default() *Config {
 			Table:     TableConfig{Mode: TableModeScroll},
 			Width:     PanelWidthConfig{LeftPercent: 50, RightPercent: 50},
 		},
-		Input: InputConfig{Mouse: MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}}},
+		Input: InputConfig{
+			Mouse:      MouseConfig{DoubleClickTimeout: metav1.Duration{Duration: 300 * time.Millisecond}},
+			EscTimeout: metav1.Duration{Duration: 300 * time.Millisecond},
+		},
 		Kubernetes: KubernetesConfig{
 			Clusters:  ClustersConfig{TTL: metav1.Duration{Duration: 2 * time.Minute}},
 			Discovery: DiscoveryConfig{Refresh: metav1.Duration{Duration: 30 * time.Second}},

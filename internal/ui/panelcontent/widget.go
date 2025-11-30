@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	models "github.com/sttts/kc/internal/models"
+	"github.com/sttts/kc/pkg/appconfig"
 	"github.com/sttts/kc/pkg/describe"
 )
 
@@ -41,6 +42,7 @@ type WidgetDeps struct {
 	SelectedItem     func(context.Context) (models.Item, bool)
 	Describe         DescribeFunc
 	Post             func(tea.Msg)
+	Config           *appconfig.Config
 }
 
 // DescribeFunc renders describe output for widget selections.

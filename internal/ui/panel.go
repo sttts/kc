@@ -30,6 +30,7 @@ type Panel struct {
 	actionHandlers       PanelActionHandlers
 	envSupplier          PanelEnvironmentSupplier
 	mode                 PanelViewMode
+	cfg                  *appconfig.Config
 	widgets              map[PanelViewMode]PanelWidget
 	widgetFactories      map[PanelViewMode]PanelWidgetFactory
 	commandInteractive   bool
@@ -50,13 +51,18 @@ const panelContextTimeout = 250 * time.Millisecond
 // Item represents an item in the panel (file, directory, resource, etc.)
 type Item = listwidget.Item
 
-// NewPanel creates a new panel
-func NewPanel(title string) *Panel {
+// NewPanel creates a new panel. If cfg is nil/omitted, defaults are used.
+func NewPanel(title string, cfg ...*appconfig.Config) *Panel {
+	conf := appconfig.Default()
+	if len(cfg) > 0 && cfg[0] != nil {
+		conf = cfg[0]
+	}
 	p := &Panel{
 		title:           title,
 		currentPath:     "/",
 		pathHistory:     make([]string, 0),
 		mode:            PanelModeList,
+		cfg:             conf,
 		widgets:         make(map[PanelViewMode]PanelWidget),
 		widgetFactories: make(map[PanelViewMode]PanelWidgetFactory),
 	}
@@ -71,6 +77,14 @@ func NewPanel(title string) *Panel {
 	})
 	// Command widget is registered dynamically when StartCommand is called.
 	return p
+}
+
+func (p *Panel) escTimeoutValue() time.Duration {
+	timeout := p.cfg.Input.EscTimeout.Duration
+	if timeout <= 0 {
+		return defaultEscTimeout
+	}
+	return timeout
 }
 
 // StartCommand starts a custom command in the panel using an optional frame size.
@@ -131,6 +145,7 @@ func (p *Panel) listWidgetDeps() panelcontent.WidgetDeps {
 		Path:             func() string { return p.currentPath },
 		SelectionChanged: p.widgetSelectionChanged,
 		Post:             p.messagePoster,
+		Config:           p.cfg,
 	}
 }
 
@@ -141,6 +156,7 @@ func (p *Panel) manifestWidgetDeps() panelcontent.WidgetDeps {
 		SelectedItem: func(ctx context.Context) (models.Item, bool) {
 			return p.SelectedNavItem(ctx)
 		},
+		Config: p.cfg,
 	}
 }
 

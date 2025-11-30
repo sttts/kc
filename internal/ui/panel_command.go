@@ -42,6 +42,7 @@ type CommandWidget struct {
 	// Watch state
 	watchInterval time.Duration
 	watchToken    int
+	escTimeout    time.Duration
 	// Heartbeat / status
 	heartbeatToken int
 	heartbeatPhase int
@@ -58,9 +59,17 @@ type CommandWidget struct {
 }
 
 func NewCommandWidget(deps panelcontent.WidgetDeps, config appconfig.CommandConfig) *CommandWidget {
+	if deps.Config == nil {
+		deps.Config = appconfig.Default()
+	}
+	escTimeout := deps.Config.Input.EscTimeout.Duration
+	if escTimeout <= 0 {
+		escTimeout = defaultEscTimeout
+	}
 	return &CommandWidget{
 		panelDeps:   deps,
 		config:      config,
+		escTimeout:  escTimeout,
 		log:         ctrllog.Log.WithName("command"),
 		post:        deps.Post,
 		interactive: config.Interactive,
@@ -84,6 +93,9 @@ func (w *CommandWidget) Teardown(ctx context.Context) {
 func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool) {
 	// Mouse events should respect interactive focus.
 	if mm, ok := msg.(panelcontent.MouseMsg); ok && w.interactiveOn {
+		if mm.Row > 0 {
+			mm.Row--
+		}
 		model, cmd := w.terminal.Update(mm)
 		if term, ok := model.(*bubbleterm.Model); ok {
 			w.terminal = term
@@ -125,6 +137,9 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 
 	if w.terminal != nil {
 		if mm, ok := msg.(panelcontent.MouseMsg); ok && w.interactiveOn {
+			if mm.Row > 0 {
+				mm.Row--
+			}
 			model, cmd := w.terminal.Update(mm)
 			if term, ok := model.(*bubbleterm.Model); ok {
 				w.terminal = term
@@ -153,7 +168,7 @@ func (w *CommandWidget) Update(ctx context.Context, msg tea.Msg) (tea.Cmd, bool)
 				w.escArmed = true
 				w.escTimerToken++
 				token := w.escTimerToken
-				timer := tea.Tick(EscSequenceTimeout, func(time.Time) tea.Msg {
+				timer := tea.Tick(w.escTimeoutValue(), func(time.Time) tea.Msg {
 					return commandEscTimeoutMsg{token: token}
 				})
 				// Forward ESC to the command while arming the double-ESC exit.
@@ -213,7 +228,7 @@ func (w *CommandWidget) View(ctx context.Context, frame panelcontent.Frame) tea.
 
 // Cursor exposes the terminal cursor when present.
 func (w *CommandWidget) Cursor() *tea.Cursor {
-	if w.terminal == nil {
+	if w.terminal == nil || !w.interactiveOn {
 		return nil
 	}
 	view := w.terminal.View()
@@ -504,6 +519,13 @@ func (w *CommandWidget) SetFocusChangedHandler(fn func(bool) tea.Cmd) {
 // HasInteractiveFocus reports whether this widget currently owns keyboard focus.
 func (w *CommandWidget) HasInteractiveFocus() bool {
 	return w.interactiveOn
+}
+
+func (w *CommandWidget) escTimeoutValue() time.Duration {
+	if w.escTimeout <= 0 {
+		return defaultEscTimeout
+	}
+	return w.escTimeout
 }
 
 func (w *CommandWidget) setInteractiveFocus(on bool) tea.Cmd {

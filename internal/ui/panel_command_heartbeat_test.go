@@ -9,7 +9,7 @@ import (
 )
 
 func TestCommandWidgetHeartbeatStatus(t *testing.T) {
-	widget := NewCommandWidget(panelcontent.WidgetDeps{}, appconfig.CommandConfig{Name: "cmd"})
+	widget := NewCommandWidget(panelcontent.WidgetDeps{Config: appconfig.Default()}, appconfig.CommandConfig{Name: "cmd"})
 
 	// No status when nothing running and no exit.
 	if got := widget.heartbeatStatus(); got != "" {

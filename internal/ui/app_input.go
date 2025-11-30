@@ -13,6 +13,19 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	if !isPress {
 		return a, nil
 	}
+	// Interactive command focus: route all keys to the active panel widget first.
+	if a.interactiveCommandActive() {
+		if a.activePanel == 0 {
+			model, cmd := a.leftPanel.Update(msg)
+			a.leftPanel = model.(*Panel)
+			cmds = append(cmds, cmd)
+		} else {
+			model, cmd := a.rightPanel.Update(msg)
+			a.rightPanel = model.(*Panel)
+			cmds = append(cmds, cmd)
+		}
+		return a, tea.Batch(cmds...)
+	}
 	// Prefer modifier-aware matching to cover both KeyMsg and KeyPressMsg forms.
 	if key := press.Key(); key.Mod.Contains(tea.ModCtrl) {
 		switch key.Code {
@@ -85,8 +98,6 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 			return a, tea.Quit
 		}
 		// In fullscreen mode, don't handle F10 here - let it go to terminal
-	case "ctrl+q":
-		return a, tea.Quit
 	}
 
 	// Handle Esc+number escape sequences (Esc then number)
@@ -94,7 +105,11 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 	if keyStr == "esc" && !a.interactiveCommandActive() {
 		// Esc key pressed - start escape sequence with timeout
 		a.escPressed = true
-		return a, tea.Tick(EscSequenceTimeout, func(time.Time) tea.Msg {
+		timeout := a.cfg.Input.EscTimeout.Duration
+		if timeout <= 0 {
+			timeout = defaultEscTimeout
+		}
+		return a, tea.Tick(timeout, func(time.Time) tea.Msg {
 			return EscTimeoutMsg{}
 		})
 	} else if a.escPressed {
@@ -210,7 +225,7 @@ func (a *App) handleKeyMsg(msg tea.KeyMsg, currentCmds []tea.Cmd) (tea.Model, te
 		// In panel mode, use smart key routing based on terminal state
 		// If user typed in the 2-line terminal, Enter and Ctrl+C must be SENT to the terminal,
 		// then reset typed state to return focus to the panels.
-		if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() && !a.hasInteractiveCommandOnPanel() {
+		if (msg.String() == "enter" || msg.String() == "ctrl+c") && a.terminal != nil && a.terminal.HasInput() && !a.interactiveCommandActive() {
 			cmd := a.updateTerminal(msg, "panel forwarded to terminal")
 			a.terminal.ClearTyped() // reset typed; next keys route to panels
 			return a, cmd

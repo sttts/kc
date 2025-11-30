@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/sttts/kc/pkg/appconfig"
 )
 
 // mockModel is a simple mock model for testing
@@ -120,7 +121,7 @@ func TestModalSetOnClose(t *testing.T) {
 }
 
 func TestNewModalManager(t *testing.T) {
-	manager := NewModalManager()
+	manager := NewModalManager(appconfig.Default())
 
 	if manager == nil {
 		t.Fatal("NewModalManager returned nil")
@@ -136,7 +137,7 @@ func TestNewModalManager(t *testing.T) {
 }
 
 func TestModalManagerRegister(t *testing.T) {
-	manager := NewModalManager()
+	manager := NewModalManager(appconfig.Default())
 	content := &mockModel{content: "test content"}
 	modal := NewModal("Test Modal", content)
 
@@ -148,7 +149,7 @@ func TestModalManagerRegister(t *testing.T) {
 }
 
 func TestModalManagerShow(t *testing.T) {
-	manager := NewModalManager()
+	manager := NewModalManager(appconfig.Default())
 	content := &mockModel{content: "test content"}
 	modal := NewModal("Test Modal", content)
 
@@ -169,7 +170,7 @@ func TestModalManagerShow(t *testing.T) {
 }
 
 func TestModalManagerHide(t *testing.T) {
-	manager := NewModalManager()
+	manager := NewModalManager(appconfig.Default())
 	content := &mockModel{content: "test content"}
 	modal := NewModal("Test Modal", content)
 
@@ -191,7 +192,7 @@ func TestModalManagerHide(t *testing.T) {
 }
 
 func TestModalManagerGetActiveModal(t *testing.T) {
-	manager := NewModalManager()
+	manager := NewModalManager(appconfig.Default())
 	content := &mockModel{content: "test content"}
 	modal := NewModal("Test Modal", content)
 

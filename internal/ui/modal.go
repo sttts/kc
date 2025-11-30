@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/sttts/kc/internal/overlay"
 	uistyles "github.com/sttts/kc/internal/ui/styles"
+	"github.com/sttts/kc/pkg/appconfig"
 )
 
 // Modal represents a modal dialog
@@ -36,6 +37,7 @@ type Modal struct {
 	footerHotspots []footerHotspot
 	footerCursor   *tea.Cursor
 	mode           ModalMode
+	escTimeout     time.Duration
 }
 
 type modalEscapeHandler interface {
@@ -89,6 +91,7 @@ func NewModal(title string, content tea.Model) *Modal {
 		visible:          false,
 		closeOnSingleEsc: true,
 		mode:             ModalModeStacked,
+		escTimeout:       defaultEscTimeout,
 	}
 }
 
@@ -124,6 +127,14 @@ func (m *Modal) SetOnClose(callback func() tea.Cmd) {
 // SetCloseOnSingleEsc controls whether a lone Esc closes the modal. Esc+digit
 // handling remains active regardless.
 func (m *Modal) SetCloseOnSingleEsc(v bool) { m.closeOnSingleEsc = v }
+
+// SetEscTimeout configures the double-ESC timeout window.
+func (m *Modal) SetEscTimeout(timeout time.Duration) {
+	if timeout <= 0 {
+		timeout = defaultEscTimeout
+	}
+	m.escTimeout = timeout
+}
 
 // SetWindowed configures the modal to render as a centered window of the given
 // size over the provided background (full-screen base). If bg is empty, the
@@ -196,7 +207,7 @@ func (m *Modal) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Otherwise arm ESC sequence to allow ESC ESC close
 			m.escPressed = true
-			return m, tea.Tick(EscSequenceTimeout, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
+			return m, tea.Tick(m.escTimeout, func(time.Time) tea.Msg { return EscTimeoutMsg{} })
 		case "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
 			if m.escPressed {
 				if fk, ok := functionKeyFromDigit(msg.String()); ok {
@@ -826,6 +837,7 @@ func functionKeyConstant(n int) (rune, bool) {
 type ModalManager struct {
 	modals map[string]*Modal
 	stack  []string // modal name stack; top-most is last
+	cfg    *appconfig.Config
 }
 
 // Init initializes the modal manager
@@ -834,16 +846,32 @@ func (mm *ModalManager) Init() tea.Cmd {
 }
 
 // NewModalManager creates a new modal manager
-func NewModalManager() *ModalManager {
+func NewModalManager(cfg *appconfig.Config) *ModalManager {
+	if cfg == nil {
+		cfg = appconfig.Default()
+	}
 	return &ModalManager{
 		modals: make(map[string]*Modal),
 		stack:  []string{},
+		cfg:    cfg,
 	}
 }
 
 // Register registers a modal
 func (mm *ModalManager) Register(name string, modal *Modal) {
+	modal.SetEscTimeout(mm.cfg.Input.EscTimeout.Duration)
 	mm.modals[name] = modal
+}
+
+// SyncEscTimeout reapplies the configured ESC timeout to all managed modals.
+func (mm *ModalManager) SyncEscTimeout() {
+	timeout := mm.cfg.Input.EscTimeout.Duration
+	if timeout <= 0 {
+		timeout = defaultEscTimeout
+	}
+	for _, modal := range mm.modals {
+		modal.SetEscTimeout(timeout)
+	}
 }
 
 // Show shows a modal by name

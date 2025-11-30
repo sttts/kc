@@ -60,6 +60,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 		if out.Input.Mouse.DoubleClickTimeout.Duration == 0 {
 			out.Input.Mouse.DoubleClickTimeout = metav1.Duration{Duration: Default().Input.Mouse.DoubleClickTimeout.Duration}
 		}
+		if out.Input.EscTimeout.Duration == 0 {
+			out.Input.EscTimeout = metav1.Duration{Duration: Default().Input.EscTimeout.Duration}
+		}
 		if out.Kubernetes.Clusters.TTL.Duration == 0 {
 			out.Kubernetes.Clusters.TTL = metav1.Duration{Duration: Default().Kubernetes.Clusters.TTL.Duration}
 		}
@@ -99,6 +102,9 @@ func TestConfigDefaultsYAMLMatchesCode(t *testing.T) {
 	}
 	if a.Input.Mouse.DoubleClickTimeout.Duration != b.Input.Mouse.DoubleClickTimeout.Duration {
 		t.Fatalf("input.mouse.doubleClickTimeout mismatch: yaml=%v code=%v", a.Input.Mouse.DoubleClickTimeout.Duration, b.Input.Mouse.DoubleClickTimeout.Duration)
+	}
+	if a.Input.EscTimeout.Duration != b.Input.EscTimeout.Duration {
+		t.Fatalf("input.escTimeout mismatch: yaml=%v code=%v", a.Input.EscTimeout.Duration, b.Input.EscTimeout.Duration)
 	}
 	if a.Kubernetes.Clusters.TTL.Duration != b.Kubernetes.Clusters.TTL.Duration {
 		t.Fatalf("kubernetes.clusters.ttl mismatch: yaml=%v code=%v", a.Kubernetes.Clusters.TTL.Duration, b.Kubernetes.Clusters.TTL.Duration)

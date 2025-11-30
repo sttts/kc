@@ -264,24 +264,24 @@ var panelWidthPercentOptions = []int{25, 33, 50, 66, 75, 100}
 
 // NewApp creates a new application instance
 func NewApp() *App {
+	cfg := appconfig.Default()
 	app := &App{
-		leftPanel:    NewPanel(""),
-		rightPanel:   NewPanel(""),
-		terminal:     NewTerminal(),
-		modalManager: NewModalManager(),
-		activePanel:  0,
-		showTerminal: false,
-		allResources: make([]schema.GroupVersionKind, 0),
-		escPressed:   false,
-		viewConfig:   NewViewConfig(),
-		// Invariant: cfg is always non-nil; initialize with defaults
-		cfg:                    appconfig.Default(),
+		cfg:                    cfg,
+		terminal:               NewTerminal(),
+		modalManager:           NewModalManager(cfg),
+		activePanel:            0,
+		showTerminal:           false,
+		allResources:           make([]schema.GroupVersionKind, 0),
+		escPressed:             false,
+		viewConfig:             NewViewConfig(),
 		namespaceCreatePanel:   -1,
 		leftPanelWidthPercent:  50,
 		rightPanelWidthPercent: 50,
 		folderDirtyCh:          make(chan FolderDirtyMsg, 64),
 	}
 	app.ctx, app.cancel = context.WithCancel(context.Background())
+	app.leftPanel = NewPanel("", app.cfg)
+	app.rightPanel = NewPanel("", app.cfg)
 	app.terminal.SetLogger(ctrllog.Log.WithName("terminal"))
 	app.toastLogger = NewToastLogger(app, 2*time.Second)
 	app.leftPanel.SetCommandFocusHandler(func(f bool) tea.Cmd { return app.onCommandFocusChanged(0, f) })
@@ -303,7 +303,8 @@ func (a *App) Init() tea.Cmd {
 	if err != nil {
 		cfg = appconfig.Default()
 	}
-	a.cfg = cfg
+	*a.cfg = *cfg
+	a.modalManager.SyncEscTimeout()
 	leftPercent, rightPercent := normalizePanelWidthPercents(cfg.Panel.Width.LeftPercent, cfg.Panel.Width.RightPercent)
 	a.leftPanelWidthPercent = leftPercent
 	a.rightPanelWidthPercent = rightPercent
@@ -579,7 +580,7 @@ func (a *App) panelAreaMetrics() (leftWidth int, rightWidth int, panelHeight int
 		panelHeight = 0
 	}
 	leftWidth, rightWidth = a.panelWidthsFor(a.width)
-	headerOffset = 2
+	headerOffset = 1
 	return
 }
 
