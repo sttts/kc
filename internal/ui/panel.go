@@ -104,6 +104,7 @@ func (p *Panel) StartCommand(ctx context.Context, config appconfig.CommandConfig
 	// Create widget if not exists or if config changed (simplified: always create new for now)
 	cfgCopy := config
 	p.commandConfig = &cfgCopy
+	p.commandInteractive = config.Interactive
 	widget := NewCommandWidget(p.listWidgetDeps(), config)
 	widget.SetInteractive(config.Interactive)
 	widget.SetFocusChangedHandler(p.setCommandFocus)
@@ -138,6 +139,7 @@ func (p *Panel) ShowCommandPlaceholder(ctx context.Context, config appconfig.Com
 
 	cfgCopy := config
 	p.commandConfig = &cfgCopy
+	p.commandInteractive = false
 
 	p.RegisterMode(PanelModeCommand, func(panel *Panel) panelcontent.Widget {
 		return newPlaceholderWidget(panel, message, breadcrumb)
@@ -557,6 +559,14 @@ func (p *Panel) CommandWatchInterval(ctx context.Context) time.Duration {
 func (p *Panel) SetCommandWatchInterval(ctx context.Context, interval time.Duration) tea.Cmd {
 	if cw := p.commandWidget(ctx); cw != nil {
 		return cw.SetWatchInterval(ctx, interval)
+	}
+	return nil
+}
+
+// FocusCommand requests interactive focus for the active command widget when available.
+func (p *Panel) FocusCommand(ctx context.Context) tea.Cmd {
+	if cw := p.commandWidget(ctx); cw != nil {
+		return cw.FocusInteractive(ctx)
 	}
 	return nil
 }

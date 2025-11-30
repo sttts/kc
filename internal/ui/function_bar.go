@@ -17,6 +17,8 @@ type functionBarState struct {
 	PanelHasCommandFocus bool
 	Capabilities         PanelCapabilities
 	PanelMode            PanelViewMode
+	PanelInteractive     bool
+	TerminalHasInput     bool
 }
 
 type functionBar struct {
@@ -56,7 +58,11 @@ func (f *functionBar) Render(state functionBarState) string {
 	if state.ShowTerminal {
 		keys = []string{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels")}
 	} else if state.PanelHasCommandFocus {
-		keys = []string{uistyles.FunctionKeyStyle.Render("Esc Esc") + uistyles.FunctionKeyDescriptionStyle.Render("Drop focus")}
+		keys = []string{
+			uistyles.FunctionKeyStyle.Render("Esc Esc") + uistyles.FunctionKeyDescriptionStyle.Render("Drop focus"),
+			uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
+			uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
+		}
 	} else {
 		caps := state.Capabilities
 		renderKey := func(key, label string, enabled bool) string {
@@ -72,7 +78,7 @@ func (f *functionBar) Render(state functionBarState) string {
 			return uistyles.FunctionKeyStyle.Render(key) + desc.Render(label)
 		}
 
-		keys = []string{
+		keys = append(keys,
 			renderKey("F1", "Help", caps.HasHelp),
 			renderKey("F2", "Options", caps.HasOptions),
 			renderKey("F3", "View", caps.CanView),
@@ -82,9 +88,17 @@ func (f *functionBar) Render(state functionBarState) string {
 			renderKey("F7", "Namespace", caps.CanCreateNS),
 			renderKey("F8", "Delete", caps.CanDelete),
 			renderKey("F9", "Commands", caps.HasContextMenu),
-			uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
-			uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
+			uistyles.FunctionKeyStyle.Render("F10")+uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
+		)
+		if state.PanelMode == PanelModeCommand && state.PanelInteractive {
+			enterEnabled := !state.TerminalHasInput
+			keys = append(keys,
+				renderKey("Enter", "Focus", enterEnabled),
+			)
 		}
+		keys = append(keys,
+			uistyles.FunctionKeyStyle.Render("Ctrl+O")+uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
+		)
 	}
 
 	joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
@@ -105,7 +119,7 @@ func (f *functionBar) Render(state functionBarState) string {
 
 func (f *functionBar) signature(state functionBarState) string {
 	c := state.Capabilities
-	return fmt.Sprintf("w=%d toast=%t tt=%s term=%t panel=%d cmd=%t mode=%d caps=%t-%t-%t-%t-%t-%t-%t-%t",
+	return fmt.Sprintf("w=%d toast=%t tt=%s term=%t panel=%d cmd=%t mode=%d interactive=%t termInput=%t caps=%t-%t-%t-%t-%t-%t-%t-%t",
 		state.Width,
 		state.ToastActive,
 		state.ToastText,
@@ -113,6 +127,8 @@ func (f *functionBar) signature(state functionBarState) string {
 		state.ActivePanel,
 		state.PanelHasCommandFocus,
 		state.PanelMode,
+		state.PanelInteractive,
+		state.TerminalHasInput,
 		c.CanView, c.CanCopy, c.CanEdit, c.CanDelete, c.CanCreateNS, c.HasOptions, c.HasContextMenu, c.HasHelp)
 }
 

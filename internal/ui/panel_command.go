@@ -585,6 +585,11 @@ func (w *CommandWidget) setInteractiveFocus(on bool) tea.Cmd {
 	return nil
 }
 
+// FocusInteractive requests interactive focus when supported.
+func (w *CommandWidget) FocusInteractive(ctx context.Context) tea.Cmd {
+	return w.setInteractiveFocus(true)
+}
+
 func (w *CommandWidget) applyPendingSize() tea.Cmd {
 	if w.terminal == nil {
 		return nil

@@ -311,8 +311,12 @@ func (a *App) renderFunctionKeys() string {
 	}
 	if panel := a.activePanelRef(); panel != nil {
 		state.PanelHasCommandFocus = panel.HasCommandFocus()
+		state.PanelInteractive = panel.HasInteractiveCommand()
 		state.Capabilities = a.capabilitiesForPanel(panel)
 		state.PanelMode = panel.Mode()
+	}
+	if a.terminal != nil {
+		state.TerminalHasInput = a.terminal.HasInput()
 	}
 	if a.functionBar == nil {
 		return ""
@@ -334,6 +338,12 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 		label   string
 		enabled bool
 		action  func() tea.Cmd
+	}
+	enterEnabled := false
+	if panel := a.activePanelRef(); panel != nil {
+		if panel.Mode() == PanelModeCommand && panel.HasInteractiveCommand() && !panel.HasCommandFocus() && a.terminal != nil && !a.terminal.HasInput() {
+			enterEnabled = true
+		}
 	}
 	if a.showTerminal {
 		keys = []struct {
@@ -371,6 +381,17 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 				return cmd
 			}
 		}
+		enterAction := func() tea.Cmd {
+			if !enterEnabled {
+				return nil
+			}
+			if panel == nil {
+				return nil
+			}
+			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
+			defer cancel()
+			return panel.FocusCommand(ctx)
+		}
 		keys = []struct {
 			label   string
 			enabled bool
@@ -386,15 +407,28 @@ func (a *App) handleFunctionKeyClick(x int) tea.Cmd {
 			{makeLbl("F8", "Delete", caps.CanDelete), caps.CanDelete, invoke(PanelActionDelete)},
 			{uistyles.FunctionKeyStyle.Render("F9") + uistyles.FunctionKeyDescriptionStyle.Render("Commands"), caps.HasContextMenu, invoke(PanelActionMenu)},
 			{uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"), true, func() tea.Cmd { return tea.Quit }},
-			{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
+		}
+		if enterEnabled {
+			keys = append(keys, struct {
+				label   string
+				enabled bool
+				action  func() tea.Cmd
+			}{makeLbl("Enter", "Focus", enterEnabled), enterEnabled, enterAction})
+		}
+		keys = append(keys, struct {
+			label   string
+			enabled bool
+			action  func() tea.Cmd
+		}{
+			uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"), true, func() tea.Cmd {
 				a.showTerminal = true
 				a.terminal.SetShowPanels(false)
 				a.invalidateView("function bar fullscreen")
 				a.invalidateFunctionBar("terminal enter")
 				a.invalidateTerminalArea("terminal enter")
 				return nil
-			}},
-		}
+			},
+		})
 	}
 
 	spans := make([]int, len(keys)+1)
