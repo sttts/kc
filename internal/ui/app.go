@@ -1202,6 +1202,19 @@ func (a *App) capabilitiesForPanel(panel *Panel) PanelCapabilities {
 	return caps
 }
 
+func (a *App) setPanelMode(ctx context.Context, panel *Panel, mode PanelViewMode, reason string) tea.Cmd {
+	if panel == nil {
+		return nil
+	}
+	prev := panel.Mode()
+	cmd := panel.SetMode(ctx, mode)
+	if panel.Mode() != prev {
+		a.invalidateView(reason)
+		a.invalidateFunctionBar(reason)
+	}
+	return cmd
+}
+
 func (a *App) updatePanelsWithMsg(msg tea.Msg) []tea.Cmd {
 	var cmds []tea.Cmd
 	if a.leftPanel != nil {
@@ -1233,7 +1246,7 @@ func (a *App) cyclePanelMode(idx int) tea.Cmd {
 	next := NextPanelMode(panel.Mode())
 	ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
 	defer cancel()
-	return panel.SetMode(ctx, next)
+	return a.setPanelMode(ctx, panel, next, fmt.Sprintf("cycle panel %d mode", idx))
 }
 
 func (a *App) cyclePanelModeIfVisible(idx int) tea.Cmd {
@@ -2437,7 +2450,7 @@ func (a *App) ensureManifestPreview(res resolvedResource, namespace, name string
 	a.rightPanel.SelectByRowID(ctxSel, name)
 	cancelSel()
 	ctxMode, cancelMode := context.WithTimeout(a.ctx, panelContextTimeout)
-	cmd := a.rightPanel.SetMode(ctxMode, PanelModeManifest)
+	cmd := a.setPanelMode(ctxMode, a.rightPanel, PanelModeManifest, "manifest preview mode")
 	cancelMode()
 	return cmd
 }

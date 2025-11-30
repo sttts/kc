@@ -604,7 +604,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			log := ctrllog.FromContext(a.ctx).WithName("panelMode").WithValues("panelIdx", msg.PanelIndex, "mode", msg.Mode)
 			log.Info("switching panel mode")
 			ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-			modeCmd := panel.SetMode(ctx, msg.Mode)
+			modeCmd := a.setPanelMode(ctx, panel, msg.Mode, fmt.Sprintf("panel %d mode %v", msg.PanelIndex, msg.Mode))
 			cancel()
 			if modeCmd != nil {
 				cmds = append(cmds, modeCmd)
@@ -678,14 +678,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.OnExit == appconfig.CommandExitRestore || msg.OnExit == appconfig.CommandExitClose {
 			if panel := a.panelByIndex(msg.PanelIdx); panel != nil {
 				ctx, cancel := context.WithTimeout(a.ctx, panelContextTimeout)
-				modeCmd := panel.SetMode(ctx, PanelModeList)
+				modeCmd := a.setPanelMode(ctx, panel, PanelModeList, "command exit restore")
 				panel.setCommandFocus(false)
 				cancel()
 				if modeCmd != nil {
 					cmds = append(cmds, modeCmd)
 				}
-				a.invalidateView("command exit restore")
-				a.invalidateFunctionBar("command exit restore")
 			}
 		}
 		return a, tea.Batch(cmds...)
