@@ -302,77 +302,22 @@ func (a *App) refreshFoldersAfterViewChange() {
 
 // renderFunctionKeys renders the function key bar
 func (a *App) renderFunctionKeys() string {
-	if view, _, ok := a.functionBarCache.get(); ok {
-		return view
+	state := functionBarState{
+		Width:        a.width,
+		ToastActive:  a.toastActive,
+		ToastText:    a.toastText,
+		ShowTerminal: a.showTerminal,
+		ActivePanel:  a.activePanel,
 	}
-	if a.toastActive {
-		msg := a.toastText
-		maxw := a.width
-		if lipgloss.Width(msg) > maxw {
-			if maxw > 1 {
-				msg = sliceANSIColsRaw(msg, 0, maxw-1) + "…"
-			} else {
-				msg = sliceANSIColsRaw(msg, 0, maxw)
-			}
-		}
-		toastStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color("196")).
-			Foreground(lipgloss.White).
-			Bold(true)
-		return toastStyle.Width(a.width).Render(msg)
+	if panel := a.activePanelRef(); panel != nil {
+		state.PanelHasCommandFocus = panel.HasCommandFocus()
+		state.Capabilities = a.capabilitiesForPanel(panel)
+		state.PanelMode = panel.Mode()
 	}
-
-	var keys []string
-
-	if a.showTerminal {
-		keys = []string{uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Return to panels")}
-	} else {
-		panel := a.activePanelRef()
-		if panel != nil && panel.HasCommandFocus() {
-			keys = []string{uistyles.FunctionKeyStyle.Render("Esc Esc") + uistyles.FunctionKeyDescriptionStyle.Render("Drop focus")}
-		} else {
-			caps := a.capabilitiesForPanel(panel)
-			renderKey := func(key, label string, enabled bool) string {
-				desc := uistyles.FunctionKeyDescriptionStyle
-				if !enabled {
-					desc = uistyles.FunctionKeyDisabledStyle
-				}
-				trimmed := strings.TrimSpace(label)
-				if trimmed == "" {
-					placeholder := desc.Copy().Padding(0, 0, 0, 0)
-					return uistyles.FunctionKeyStyle.Render(key) + placeholder.Render(" - ")
-				}
-				return uistyles.FunctionKeyStyle.Render(key) + desc.Render(label)
-			}
-
-			keys = []string{
-				renderKey("F1", "Help", caps.HasHelp),
-				renderKey("F2", "Options", caps.HasOptions),
-				renderKey("F3", "View", caps.CanView),
-				renderKey("F4", "Edit", caps.CanEdit),
-				renderKey("F5", "Copy", caps.CanCopy),
-				renderKey("F6", "", false),
-				renderKey("F7", "Namespace", caps.CanCreateNS),
-				renderKey("F8", "Delete", caps.CanDelete),
-				renderKey("F9", "Commands", caps.HasContextMenu),
-				uistyles.FunctionKeyStyle.Render("F10") + uistyles.FunctionKeyDescriptionStyle.Render("Quit"),
-				uistyles.FunctionKeyStyle.Render("Ctrl+O") + uistyles.FunctionKeyDescriptionStyle.Render("Fullscreen"),
-			}
-		}
+	if a.functionBar == nil {
+		return ""
 	}
-
-	joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
-	title := " Kubernetes Commander "
-	fullWidthStyle := uistyles.FunctionKeyBarStyle.Width(a.width).Align(lipgloss.Left)
-	available := a.width - lipgloss.Width(joined) - 1
-	if available < lipgloss.Width(title) {
-		title = " kc "
-	}
-	titleStyle := uistyles.FunctionKeyTitleStyle.Align(lipgloss.Center).Width(max(0, available))
-	titleRendered := titleStyle.Render(title)
-	a.functionBarCache.set(fullWidthStyle.Render(joined+" "+titleRendered), nil)
-	view, _, _ := a.functionBarCache.get()
-	return view
+	return a.functionBar.Render(state)
 }
 
 // handleFunctionKeyClick maps an x coordinate on the function key bar to a key action.

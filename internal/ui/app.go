@@ -246,9 +246,9 @@ type App struct {
 	msgLog []string
 	// Cached views
 	mainViewCache         cachedView
-	functionBarCache      cachedView
 	terminalAreaCache     cachedView
 	activeCommandSelector *CommandSelectorModel
+	functionBar           *functionBar
 	// Namespace auto-navigation state
 	namespaceAutoTarget    string
 	namespaceAutoAttempts  int
@@ -282,6 +282,7 @@ func NewApp() *App {
 	app := &App{
 		cfg:                    cfg,
 		terminal:               NewTerminal(),
+		functionBar:            newFunctionBar(),
 		modalManager:           NewModalManager(cfg),
 		activePanel:            0,
 		showTerminal:           false,
@@ -3639,7 +3640,9 @@ func (a *App) invalidateFunctionBar(reason string) {
 	if reason != "" {
 		ctrllog.FromContext(a.ctx).WithName("ui").Info("function bar invalidated", "reason", reason)
 	}
-	a.functionBarCache.invalidate()
+	if a.functionBar != nil {
+		a.functionBar.Invalidate()
+	}
 }
 
 func (a *App) invalidateTerminalArea(reason string) {
