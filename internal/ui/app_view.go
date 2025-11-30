@@ -328,7 +328,11 @@ func (a *App) renderFunctionKeys() string {
 	joined := lipgloss.JoinHorizontal(lipgloss.Left, keys...)
 	title := " Kubernetes Commander "
 	fullWidthStyle := uistyles.FunctionKeyBarStyle.Width(a.width).Align(lipgloss.Left)
-	titleStyle := uistyles.FunctionKeyTitleStyle.Align(lipgloss.Center).Width(a.width - lipgloss.Width(joined) - 1)
+	available := a.width - lipgloss.Width(joined) - 1
+	if available < lipgloss.Width(title) {
+		title = " kc "
+	}
+	titleStyle := uistyles.FunctionKeyTitleStyle.Align(lipgloss.Center).Width(max(0, available))
 	titleRendered := titleStyle.Render(title)
 	a.functionBarCache.set(fullWidthStyle.Render(joined+" "+titleRendered), nil)
 	view, _, _ := a.functionBarCache.get()
