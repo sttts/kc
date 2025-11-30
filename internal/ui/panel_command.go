@@ -347,6 +347,8 @@ func (w *CommandWidget) startPendingCommand() tea.Cmd {
 	term.SetAutoPoll(true)
 	term.SetPollInterval(100 * time.Millisecond)
 	term.SetQuietExit(true)
+	term.WithCtrlCSignal(true)
+	term.WithCtrlZSignal(true)
 	w.terminal = term
 
 	// Prepare command

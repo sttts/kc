@@ -41,6 +41,8 @@ func newModel() (*model, error) {
 	if err != nil {
 		return nil, err
 	}
+	term.WithCtrlCSignal(true)
+	term.WithCtrlZSignal(true)
 	return &model{
 		term:   term,
 		width:  defaultWidth,
