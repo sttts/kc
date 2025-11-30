@@ -36,7 +36,12 @@ func isCommandApplicable(cmd appconfig.CommandConfig, item models.Item, selected
 
 	obj, ok := item.(models.ObjectItem)
 	if !ok {
-		return false
+		// Non-object items (e.g., resource groups) are eligible unless the command
+		// narrows to specific GVRs.
+		if len(cmd.ShowFor.Resources) > 0 || len(cmd.ShowFor.Groups) > 0 {
+			return false
+		}
+		return true
 	}
 	gvr := obj.GVR()
 
@@ -76,6 +81,15 @@ func deriveNamespace(item models.Item, selected []Item, folderNamespace string) 
 	for _, sel := range selected {
 		if ns := namespaceFromItem(sel.Item); ns != "" {
 			return ns
+		}
+	}
+	// Namespace objects themselves carry no namespace; use their name.
+	if obj, ok := item.(models.ObjectItem); ok {
+		gvr := obj.GVR()
+		if gvr.Group == "" && gvr.Resource == "namespaces" {
+			if name := obj.Name(); name != "" {
+				return name
+			}
 		}
 	}
 	if folderNamespace != "" {

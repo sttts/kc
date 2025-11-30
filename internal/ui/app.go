@@ -3678,7 +3678,25 @@ func (a *App) showContextMenuForPanel(p *Panel) tea.Cmd {
 
 	// Filter commands
 	selectedItems := p.GetSelectedItems()
-	activeNamespace := deriveNamespace(item, selectedItems, p.namespace(ctx))
+	folderNamespace := p.namespace(ctx)
+	itemNamespace := namespaceFromItem(item)
+	var selectedNamespace string
+	for _, sel := range selectedItems {
+		if ns := namespaceFromItem(sel.Item); ns != "" {
+			selectedNamespace = ns
+			break
+		}
+	}
+	activeNamespace := deriveNamespace(item, selectedItems, folderNamespace)
+	ctrllog.FromContext(a.ctx).WithName("commandMenu").V(1).Info("building command list",
+		"panel", a.panelIndex(p),
+		"folderNamespace", folderNamespace,
+		"itemNamespace", itemNamespace,
+		"selectedNamespace", selectedNamespace,
+		"selectedCount", len(selectedItems),
+		"activeNamespace", activeNamespace,
+		"itemType", fmt.Sprintf("%T", item),
+	)
 	var available []appconfig.CommandConfig
 	for _, cmd := range a.cfg.Commands {
 		if isCommandApplicable(cmd, item, len(selectedItems), activeNamespace) {
