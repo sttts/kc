@@ -138,3 +138,43 @@ func TestNamespaceCommandPlaceholderDisablesWatch(t *testing.T) {
 		t.Fatalf("expected no command from stale tick, got %v (model=%T)", cmd, model)
 	}
 }
+
+// runCmdQueue executes commands and feeds resulting messages back through app.Update, breadth-first.
+func runCmdQueue(app *App, cmd tea.Cmd) {
+	queue := flattenCmd(cmd)
+	for len(queue) > 0 {
+		msg := queue[0]
+		queue = queue[1:]
+		_, nextCmd := app.Update(msg)
+		if nextCmd != nil {
+			queue = append(queue, flattenCmd(nextCmd)...)
+		}
+	}
+}
+
+func TestNamespaceFollowAcrossPanels(t *testing.T) {
+	app := NewApp()
+	cfg := appconfig.CommandConfig{
+		Name: "Top Pods",
+		Type: appconfig.CommandTypeNamespace,
+	}
+
+	// Start a namespaced command on panel 1.
+	if cmd := app.startNamespaceCommand(1, cfg, "default"); cmd != nil {
+		runCmdQueue(app, cmd)
+	}
+	if app.namespaceCommandTarget[1] != "default" {
+		t.Fatalf("expected initial namespace target set, got %q", app.namespaceCommandTarget[1])
+	}
+
+	// Simulate panel 0 changing namespaces; the other panel (1) should restart and track the new namespace.
+	_, cmd := app.Update(panelNamespaceChangedMsg{PanelIdx: 0, Namespace: "kube-public"})
+	runCmdQueue(app, cmd)
+
+	if got := app.namespaceCommandTarget[1]; got != "kube-public" {
+		t.Fatalf("expected panel 1 to follow namespace kube-public, got %q", got)
+	}
+	if app.panelByIndex(1).Mode() != PanelModeCommand {
+		t.Fatalf("panel 1 should remain in command mode")
+	}
+}
