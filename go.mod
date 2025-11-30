@@ -127,4 +127,4 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
 
-replace github.com/taigrr/bubbleterm => github.com/sttts/bubbleterm v0.0.0-20251130203433-1bfe24859168
+replace github.com/taigrr/bubbleterm => github.com/sttts/bubbleterm v0.0.0-20251130204558-ed6faf64f974
